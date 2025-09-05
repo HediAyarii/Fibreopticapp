@@ -1,0 +1,3 @@
+Num Inter,Date RDV,Region,Plaque,Societe,Nom Technicien,Prenom Technicien,Client,Statut
+TEST001,2024-01-15,Paris,ABC-123,Test Company,Dupont,Jean,Client Test,Termine
+TEST002,2024-01-16,Lyon,DEF-456,Test Company,Martin,Pierre,Client Test 2,En cours
