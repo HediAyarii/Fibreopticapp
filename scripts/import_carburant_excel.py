@@ -9,6 +9,11 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 import argparse
+import warnings
+
+# Supprimer les warnings d'openpyxl qui ne sont pas critiques
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
 # Configuration de la base de données
 DB_CONFIG = {
@@ -24,8 +29,14 @@ def import_carburant_excel(excel_file_path):
     print(f"Lecture du fichier Excel: {excel_file_path}")
     
     try:
-        # Lire le fichier Excel en sautant la première ligne (en-tête)
-        df = pd.read_excel(excel_file_path, sheet_name='Sheet0', skiprows=1)
+        # Lire le fichier Excel avec les en-têtes corrects
+        # Le fichier a un titre sur la première ligne, puis les en-têtes sur la deuxième ligne
+        # On ignore la première ligne (titre) et utilise la deuxième ligne comme en-têtes
+        try:
+            df = pd.read_excel(excel_file_path, sheet_name='Sheet0', skiprows=1, header=0)
+        except ValueError:
+            # Si 'Sheet0' n'existe pas, utiliser la première feuille
+            df = pd.read_excel(excel_file_path, skiprows=1, header=0)
         print(f"Données chargées: {len(df)} lignes, {len(df.columns)} colonnes")
         
         # Afficher les colonnes pour debug
@@ -71,26 +82,32 @@ def import_carburant_excel(excel_file_path):
                     
                     seen_numero_justificatif.add(numero_justificatif)
                     
+                    # Fonction pour nettoyer les nombres avec virgules
+                    def clean_number(value):
+                        if pd.isna(value) or value == '' or str(value).strip() == '':
+                            return '0'
+                        return str(value).replace(',', '.').strip()
+                    
                     carburant_record = {
                         'date_fact': str(row.get('Date fact.', '')).strip(),
                         'date_livraison': str(row.get('Date de livraison', '')).strip(),
                         'heure_livraison': str(row.get('Heure de livraison', '')).strip(),
                         'immat_vehicule': str(row.get('Immat. véhicule', '')).strip(),
                         'numero_carte': str(row.get('N° de carte', '')).strip(),
-                        'km': str(row.get('km', '')).strip(),
-                        'poste_1': str(row.get('Poste 1', '')).strip(),
-                        'poste_2': str(row.get('Poste 2', '')).strip(),
+                        'km': clean_number(row.get('km', '0')),
+                        'poste_1': clean_number(row.get('Poste 1', '0')),
+                        'poste_2': clean_number(row.get('Poste 2', '0')),
                         'pays': str(row.get('Pays', '')).strip(),
-                        'numero_station': str(row.get('N° de station', '')).strip(),
+                        'numero_station': clean_number(row.get('N° de station', '0')),
                         'point_acceptation': str(row.get('Point d\'acceptation', '')).strip(),
                         'identifiant_autoroute': str(row.get('Identifiant autoroute', '')).strip(),
                         'cp': str(row.get('CP', '')).strip(),
                         'type_marchandises': str(row.get('Type marchandises', '')).strip(),
-                        'quantite': str(row.get('Quantité', '')).strip(),
-                        'taux_tva': str(row.get('Taux TVA', '')).strip(),
-                        'ca_ht': str(row.get('CA HT', '')).strip(),
-                        'tva': str(row.get('TVA', '')).strip(),
-                        'ca_ttc': str(row.get('CA TTC', '')).strip(),
+                        'quantite': clean_number(row.get('Quantité', '0')),
+                        'taux_tva': clean_number(row.get('Taux TVA', '0')),
+                        'ca_ht': clean_number(row.get('CA HT', '0')),
+                        'tva': clean_number(row.get('TVA', '0')),
+                        'ca_ttc': clean_number(row.get('CA TTC', '0')),
                         'numero_justificatif': numero_justificatif
                     }
                     
@@ -153,9 +170,9 @@ def main():
     
     success = import_carburant_excel(args.file)
     if success:
-        print("\n🎉 Import carburant terminé avec succès!")
+        print("\n[SUCCES] Import carburant termine avec succes!")
     else:
-        print("\n💥 Import carburant échoué!")
+        print("\n[ERREUR] Import carburant echoue!")
         sys.exit(1)
 
 if __name__ == "__main__":

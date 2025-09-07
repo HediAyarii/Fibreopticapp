@@ -10,7 +10,7 @@ export async function GET() {
         m.type_materiel,
         m.marque,
         m.modele,
-        m.prix_unitaire,
+        m.cout_acquisition,
         e.nom as employe_nom,
         e.prenom as employe_prenom
       FROM affectations_materiel a
@@ -22,7 +22,7 @@ export async function GET() {
     const affectations = result.rows.map(row => ({
       ...row,
       quantite_assignee: row.quantite_assignee ? Number(row.quantite_assignee) : 0,
-      prix_unitaire: row.prix_unitaire ? Number(row.prix_unitaire) : 0
+      cout_acquisition: row.cout_acquisition ? Number(row.cout_acquisition) : 0
     }))
     
     return NextResponse.json({ affectations })

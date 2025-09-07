@@ -124,36 +124,16 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "ID pénalité requis" }, { status: 400 })
     }
 
-    // Nettoyer les données : convertir les chaînes vides en null pour les champs entiers et dates
-    const cleanedData = { ...updateData }
+    // Filtrer les champs à mettre à jour
+    const fields = Object.keys(updateData).filter(key => updateData[key] !== undefined)
     
-    // Champs entiers qui doivent être null si vides
-    const integerFields = ['employe_id', 'montant', 'intervention_concernee', 'reclamation_concernee', 'materiel_concerne']
-    
-    // Champs de date qui doivent être null si vides
-    const dateFields = ['date_echeance', 'date_paiement']
-    
-    integerFields.forEach(field => {
-      if (cleanedData[field] === '' || cleanedData[field] === undefined) {
-        cleanedData[field] = null
-      } else if (typeof cleanedData[field] === 'string' && !isNaN(Number(cleanedData[field]))) {
-        cleanedData[field] = Number(cleanedData[field])
-      }
-    })
-    
-    dateFields.forEach(field => {
-      if (cleanedData[field] === '' || cleanedData[field] === undefined) {
-        cleanedData[field] = null
-      }
-    })
-
-    const fields = Object.keys(cleanedData).filter(key => cleanedData[key] !== undefined)
     if (fields.length === 0) {
       return NextResponse.json({ error: "Aucune donnée à mettre à jour" }, { status: 400 })
     }
 
+    // Construire la requête SQL
     const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ')
-    const values = [id, ...fields.map(field => cleanedData[field])]
+    const values = [id, ...fields.map(field => updateData[field])]
 
     const updateQuery = `
       UPDATE penalites 

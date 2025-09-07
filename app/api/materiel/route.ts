@@ -82,6 +82,16 @@ export async function POST(request: NextRequest) {
       maintenance_prochaine: maintenance_prochaine === '' ? null : maintenance_prochaine
     }
 
+    // Nettoyer les champs de tableau : convertir les chaînes vides en null et les chaînes en tableaux PostgreSQL
+    const cleanedArrayFields = {
+      accessoires_inclus: accessoires_inclus === '' ? null : 
+        (accessoires_inclus ? `{${accessoires_inclus.split(',').map(item => `"${item.trim()}"`).join(',')}}` : null),
+      certificats_conformite: certificats_conformite === '' ? null : 
+        (certificats_conformite ? `{${certificats_conformite.split(',').map(item => `"${item.trim()}"`).join(',')}}` : null),
+      photos: photos === '' ? null : 
+        (photos ? `{${photos.split(',').map(item => `"${item.trim()}"`).join(',')}}` : null)
+    }
+
     const insertQuery = `
       INSERT INTO materiel (
         numero_serie, nom_equipement, type_materiel, marque, modele, statut,
@@ -101,8 +111,8 @@ export async function POST(request: NextRequest) {
       localisation, cleanedData.quantite, cleanedData.prix_unitaire, cleanedData.date_acquisition, cleanedData.cout_acquisition,
       cleanedData.garantie_jusqu_a, cleanedData.maintenance_derniere, cleanedData.maintenance_prochaine,
       cleanedData.kilometrage_vehicule, cleanedData.consommation_carburant, cleanedData.capacite_reservoir,
-      cleanedData.niveau_carburant, etat_general || 'bon', notes_maintenance, accessoires_inclus,
-      certificats_conformite, photos
+      cleanedData.niveau_carburant, etat_general || 'bon', notes_maintenance, cleanedArrayFields.accessoires_inclus,
+      cleanedArrayFields.certificats_conformite, cleanedArrayFields.photos
     ]
 
     const result = await query(insertQuery, values)
@@ -148,6 +158,18 @@ export async function PUT(request: NextRequest) {
       }
     })
 
+    // Champs de tableau qui doivent être null si vides ou convertis en format PostgreSQL
+    const arrayFields = ['accessoires_inclus', 'certificats_conformite', 'photos']
+    
+    arrayFields.forEach(field => {
+      if (cleanedData[field] === '' || cleanedData[field] === undefined) {
+        cleanedData[field] = null
+      } else if (cleanedData[field] && typeof cleanedData[field] === 'string') {
+        // Convertir la chaîne en format de tableau PostgreSQL
+        cleanedData[field] = `{${cleanedData[field].split(',').map(item => `"${item.trim()}"`).join(',')}}`
+      }
+    })
+
     const fields = Object.keys(cleanedData).filter(key => cleanedData[key] !== undefined)
     if (fields.length === 0) {
       return NextResponse.json({ error: "Aucune donnée à mettre à jour" }, { status: 400 })
@@ -188,16 +210,45 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "ID matériel requis" }, { status: 400 })
     }
 
-    const result = await query('DELETE FROM materiel WHERE id = $1 RETURNING *', [id])
-    
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Matériel non trouvé" }, { status: 404 })
-    }
+    // Commencer une transaction pour gérer les contraintes de clé étrangère
+    await query('BEGIN')
 
-    return NextResponse.json({
-      success: true,
-      message: "Matériel supprimé avec succès"
-    })
+    try {
+      // 1. Vérifier si le matériel existe
+      const materielResult = await query('SELECT * FROM materiel WHERE id = $1', [id])
+      
+      if (materielResult.rows.length === 0) {
+        await query('ROLLBACK')
+        return NextResponse.json({ error: "Matériel non trouvé" }, { status: 404 })
+      }
+
+      // 2. Récupérer toutes les affectations liées à ce matériel
+      const affectationsResult = await query(
+        'SELECT id, quantite_assignee FROM affectations_materiel WHERE materiel_id = $1',
+        [id]
+      )
+
+      // 3. Supprimer toutes les affectations liées à ce matériel
+      if (affectationsResult.rows.length > 0) {
+        await query('DELETE FROM affectations_materiel WHERE materiel_id = $1', [id])
+        console.log(`Suppression de ${affectationsResult.rows.length} affectation(s) liée(s) au matériel ${id}`)
+      }
+
+      // 4. Supprimer le matériel
+      const result = await query('DELETE FROM materiel WHERE id = $1 RETURNING *', [id])
+
+      // 5. Valider la transaction
+      await query('COMMIT')
+
+      return NextResponse.json({
+        success: true,
+        message: `Matériel supprimé avec succès${affectationsResult.rows.length > 0 ? ` (${affectationsResult.rows.length} affectation(s) supprimée(s) automatiquement)` : ''}`
+      })
+    } catch (error) {
+      // Annuler la transaction en cas d'erreur
+      await query('ROLLBACK')
+      throw error
+    }
   } catch (error) {
     console.error("Erreur API matériel DELETE:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })

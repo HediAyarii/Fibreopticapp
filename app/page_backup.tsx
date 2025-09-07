@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -49,6 +48,8 @@ import {
   Plus,
   Edit,
   PieChartIcon,
+  RefreshCw,
+  User,
   Activity,
   DollarSign,
   Fuel,
@@ -58,9 +59,10 @@ import {
   AlertTriangle,
   CreditCard,
   BarChart3,
+  CheckCircle,
 } from "lucide-react"
 
-// User authentication data (kept for login functionality)
+// User authentication data
 const users = {
   superadmin: { email: "admin@fibertech.com", password: "admin123", role: "superadmin", name: "Admin Principal" },
   teamlead: { email: "chef@fibertech.com", password: "chef123", role: "teamlead", name: "Chef Équipe" },
@@ -119,66 +121,6 @@ const loadFuelDataFromDatabase = async () => {
   }
 }
 
-const saveInterventionsToDatabase = async (data: any[]) => {
-  try {
-    const response = await fetch("/api/interventions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ interventions: data }),
-    })
-
-    if (!response.ok) {
-      throw new Error("Erreur lors de la sauvegarde en base de données")
-    }
-
-    const result = await response.json()
-    console.log("[v0] Interventions sauvegardées:", result.saved, "nouvelles,", result.duplicates, "doublons ignorés")
-    return result
-  } catch (error) {
-    console.error("[v0] Erreur sauvegarde interventions:", error)
-    throw error
-  }
-}
-
-const saveFuelDataToDatabase = async (data: any[]) => {
-  try {
-    const response = await fetch("/api/carburant", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ carburant: data }),
-    })
-
-    if (!response.ok) {
-      throw new Error("Erreur lors de la sauvegarde en base de données")
-    }
-
-    const result = await response.json()
-    console.log("[v0] Carburant sauvegardé:", result.saved, "nouvelles,", result.duplicates, "doublons ignorés")
-    return result
-  } catch (error) {
-    console.error("[v0] Erreur sauvegarde carburant:", error)
-    throw error
-  }
-}
-
-// Function to filter fuel data
-const filterFuelData = (data: any[], dateLivraisonFilter: string, dateFactFilter: string, numeroCarteFilter: string) => {
-  return data.filter(item => {
-    const matchesDateLivraison = !dateLivraisonFilter || 
-      item.date_livraison?.toLowerCase().includes(dateLivraisonFilter.toLowerCase())
-    const matchesDateFact = !dateFactFilter || 
-      item.date_fact?.toLowerCase().includes(dateFactFilter.toLowerCase())
-    const matchesNumeroCarte = !numeroCarteFilter || 
-      item.numero_carte?.toLowerCase().includes(numeroCarteFilter.toLowerCase())
-    
-    return matchesDateLivraison && matchesDateFact && matchesNumeroCarte
-  })
-}
-
 export default function EmployeeTracker() {
   // Helper function to safely check if data is valid
   const isValidArray = (data: any): data is any[] => {
@@ -203,14 +145,6 @@ export default function EmployeeTracker() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState("dashboard")
-  const [showInterventions, setShowInterventions] = useState(false)
-  const [showFuelConsumption, setShowFuelConsumption] = useState(false)
-  const [showMaterials, setShowMaterials] = useState(false)
-  const [showPenalties, setShowPenalties] = useState(false)
-  const [showClaims, setShowClaims] = useState(false)
-  const [showEmployees, setShowEmployees] = useState(false)
-  const [showReports, setShowReports] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
 
   // Data states - loaded from PostgreSQL
   const [interventions, setInterventions] = useState<any[]>([])
@@ -222,8 +156,6 @@ export default function EmployeeTracker() {
   const [affectations, setAffectations] = useState<any[]>([])
   const [consommationCarburant, setConsommationCarburant] = useState<any[]>([])
   const [employeesFromInterventions, setEmployeesFromInterventions] = useState<any[]>([])
-  
-
 
   // Loading states
   const [loadingInterventions, setLoadingInterventions] = useState(false)
@@ -249,11 +181,22 @@ export default function EmployeeTracker() {
   const [showCardAssignmentModal, setShowCardAssignmentModal] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
   const [availableCards, setAvailableCards] = useState<any[]>([])
+  const [showCardHistoryModal, setShowCardHistoryModal] = useState(false)
+  const [selectedEmployeeHistory, setSelectedEmployeeHistory] = useState<any>(null)
+  const [cardHistory, setCardHistory] = useState<any[]>([])
 
-  // Fuel data filters
-  const [fuelDateLivraisonFilter, setFuelDateLivraisonFilter] = useState("")
-  const [fuelDateFactFilter, setFuelDateFactFilter] = useState("")
-  const [fuelNumeroCarteFilter, setFuelNumeroCarteFilter] = useState("")
+  // Fuel consumption grouped data
+  const [fuelGroupedData, setFuelGroupedData] = useState<any[]>([])
+  const [fuelGroupedSummary, setFuelGroupedSummary] = useState<any>({})
+  const [fuelViewMode, setFuelViewMode] = useState<'table' | 'grouped' | 'employees'>('grouped')
+  const [fuelPeriod, setFuelPeriod] = useState<'month' | 'week' | 'year'>('month')
+  const [fuelDateRange, setFuelDateRange] = useState({ start: '', end: '' })
+
+  // Fuel consumption by employee
+  const [fuelEmployeesData, setFuelEmployeesData] = useState<any[]>([])
+  const [fuelEmployeesSummary, setFuelEmployeesSummary] = useState<any>({})
+  const [showEmployeeFuelModal, setShowEmployeeFuelModal] = useState(false)
+  const [selectedEmployeeFuel, setSelectedEmployeeFuel] = useState<any>(null)
 
   // Assignation data
   const [assignationData, setAssignationData] = useState({
@@ -265,9 +208,140 @@ export default function EmployeeTracker() {
   useEffect(() => {
     if (isLoggedIn) {
       loadDataFromDatabase()
-      loadAllCRUDData() // Charger aussi les données CRUD
+      loadAllCRUDData()
+      loadAvailableCards()
+      loadFuelGroupedData()
+      loadFuelEmployeesData()
     }
   }, [isLoggedIn])
+
+  // Reload grouped data when period or date range changes
+  useEffect(() => {
+    if (isLoggedIn) {
+      loadFuelGroupedData()
+    }
+  }, [fuelPeriod, fuelDateRange])
+
+  // Load card history for an employee
+  const loadCardHistory = async (employeId: number) => {
+    try {
+      const response = await fetch(`/api/carburant-histoire?employe_id=${employeId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setCardHistory(data.consommation_par_employe || [])
+        console.log("Historique des cartes chargé:", data)
+      } else {
+        console.error("Erreur lors du chargement de l'historique")
+        setCardHistory([])
+      }
+    } catch (error) {
+      console.error("Erreur chargement historique:", error)
+      setCardHistory([])
+    }
+  }
+
+  // Load fuel consumption by employee
+  const loadFuelEmployeesData = async () => {
+    try {
+      const response = await fetch('/api/carburant-employes')
+      if (response.ok) {
+        const data = await response.json()
+        setFuelEmployeesData(data.employees_consumption || [])
+        setFuelEmployeesSummary(data.summary || {})
+        console.log("Consommation par employé chargée:", data)
+      } else {
+        console.error("Erreur lors du chargement de la consommation par employé")
+      }
+    } catch (error) {
+      console.error("Erreur chargement consommation par employé:", error)
+    }
+  }
+
+  // Load grouped fuel consumption data
+  const loadFuelGroupedData = async () => {
+    try {
+      const params = new URLSearchParams({
+        period: fuelPeriod,
+        ...(fuelDateRange.start && { start_date: fuelDateRange.start }),
+        ...(fuelDateRange.end && { end_date: fuelDateRange.end })
+      })
+      
+      const response = await fetch(`/api/carburant-grouped?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setFuelGroupedData(data.grouped_data || [])
+        setFuelGroupedSummary(data.summary || {})
+        console.log("Données groupées carburant chargées:", data)
+      } else {
+        console.error("Erreur lors du chargement des données groupées")
+      }
+    } catch (error) {
+      console.error("Erreur chargement données groupées:", error)
+    }
+  }
+
+  // Load available fuel cards
+  const loadAvailableCards = async () => {
+    try {
+      const response = await fetch('/api/carburant')
+      if (response.ok) {
+        const data = await response.json()
+        console.log("Données carburant reçues:", data)
+        
+        // Extract unique card numbers from fuel data
+        const carburantData = data.carburant || data || []
+        const uniqueCards = carburantData.reduce((acc: any[], item: any) => {
+          if (item.numero_carte && !acc.find(card => card.numero_carte === item.numero_carte)) {
+            acc.push({
+              numero_carte: item.numero_carte,
+              label: `Carte ${item.numero_carte}`,
+              statut: 'disponible',
+              montant: item.ca_ttc || item.montant || 0,
+              date_livraison: item.date_livraison,
+              date_facture: item.date_fact,
+              fournisseur: 'Station Service',
+              montant_total: item.ca_ttc || item.montant || 0,
+              immat_vehicule: item.immat_vehicule,
+              numero_station: item.numero_station
+            })
+          }
+          return acc
+        }, [])
+        
+        console.log("Cartes uniques extraites:", uniqueCards)
+        setAvailableCards(uniqueCards)
+        
+        // Si aucune carte n'est trouvée, créer des cartes de test
+        if (uniqueCards.length === 0) {
+          console.log("Aucune carte trouvée dans la base de données, utilisation des cartes de test")
+          const testCards = [
+            { numero_carte: "1234567890", label: "Carte 1234567890", statut: "disponible", montant: 1000, fournisseur: "Test" },
+            { numero_carte: "0987654321", label: "Carte 0987654321", statut: "disponible", montant: 1500, fournisseur: "Test" },
+            { numero_carte: "1122334455", label: "Carte 1122334455", statut: "disponible", montant: 2000, fournisseur: "Test" }
+          ]
+          setAvailableCards(testCards)
+        }
+      } else {
+        console.error("Erreur lors du chargement des cartes:", response.status)
+        // Cartes de test en cas d'erreur
+        const testCards = [
+          { numero_carte: "1234567890", label: "Carte 1234567890", statut: "disponible", montant: 1000, fournisseur: "Test" },
+          { numero_carte: "0987654321", label: "Carte 0987654321", statut: "disponible", montant: 1500, fournisseur: "Test" },
+          { numero_carte: "1122334455", label: "Carte 1122334455", statut: "disponible", montant: 2000, fournisseur: "Test" }
+        ]
+        setAvailableCards(testCards)
+      }
+    } catch (error) {
+      console.error("Erreur chargement cartes:", error)
+      // Cartes de test en cas d'erreur
+      const testCards = [
+        { numero_carte: "1234567890", label: "Carte 1234567890", statut: "disponible", montant: 1000, fournisseur: "Test" },
+        { numero_carte: "0987654321", label: "Carte 0987654321", statut: "disponible", montant: 1500, fournisseur: "Test" },
+        { numero_carte: "1122334455", label: "Carte 1122334455", statut: "disponible", montant: 2000, fournisseur: "Test" }
+      ]
+      setAvailableCards(testCards)
+    }
+  }
 
   // Load data functions for CRUD operations
   const loadEmployeesFromDatabase = async () => {
@@ -448,6 +522,23 @@ export default function EmployeeTracker() {
     }
   }
 
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    const foundUser = Object.values(users).find((u) => u.email === email && u.password === password)
+    if (foundUser) {
+      setUser(foundUser)
+      setIsLoggedIn(true)
+    } else {
+      alert("Email ou mot de passe incorrect")
+    }
+  }
+
+  const handleLogout = () => {
+    setUser(null)
+    setIsLoggedIn(false)
+    setActiveTab("dashboard")
+  }
+
   const handleImportInterventions = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
@@ -513,7 +604,7 @@ export default function EmployeeTracker() {
 
       reader.readAsArrayBuffer(file)
     })
-  };
+  }
 
   const handleImportFuelConsumption = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -549,23 +640,6 @@ export default function EmployeeTracker() {
       }
     }
   }
-
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault()
-    const foundUser = Object.values(users).find((u) => u.email === email && u.password === password)
-    if (foundUser) {
-      setUser(foundUser)
-      setIsLoggedIn(true)
-    } else {
-      alert("Email ou mot de passe incorrect")
-    }
-  };
-
-  const handleLogout = () => {
-    setUser(null)
-    setIsLoggedIn(false)
-    setActiveTab("dashboard")
-  };
 
   // CRUD Functions for Employees
   const saveEmployee = async (employeeData: any) => {
@@ -636,7 +710,7 @@ export default function EmployeeTracker() {
       setShowMaterialModal(false)
       setEditingItem(null)
       alert(editingItem ? "Matériel modifié avec succès" : "Matériel ajouté avec succès")
-            } catch (error) {
+    } catch (error) {
       console.error("Erreur sauvegarde matériel:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
     }
@@ -688,7 +762,7 @@ export default function EmployeeTracker() {
       setShowAffectationModal(false)
       setEditingItem(null)
       alert(editingItem ? "Affectation modifiée avec succès" : "Affectation créée avec succès")
-      } catch (error) {
+    } catch (error) {
       console.error("Erreur sauvegarde affectation:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
     }
@@ -861,13 +935,13 @@ export default function EmployeeTracker() {
       console.error("Erreur assignation:", error)
       alert("Erreur lors de l'assignation")
     }
-  };
+  }
 
   // Function to show employee details
   const showEmployeeDetails = (employee: any) => {
     setSelectedEmployee(employee)
     setShowEmployeeDetailsModal(true)
-  };
+  }
 
   // Function to show card assignment modal
   const showCardAssignment = async (employee: any) => {
@@ -890,11 +964,16 @@ export default function EmployeeTracker() {
     }
     
     setShowCardAssignmentModal(true)
-  };
+  }
 
   // Function to assign card to employee
   const assignCardToEmployee = async (numeroCarte: string) => {
     try {
+      if (!selectedEmployee) {
+        alert("Aucun employé sélectionné")
+        return
+      }
+
       const response = await fetch('/api/carburant-assignation', {
         method: 'POST',
         headers: {
@@ -902,7 +981,10 @@ export default function EmployeeTracker() {
         },
         body: JSON.stringify({
           numero_carte: numeroCarte,
-          employe_id: selectedEmployee.id
+          employe_id: selectedEmployee.id,
+          employe_nom: `${selectedEmployee.prenom} ${selectedEmployee.nom}`,
+          date_assignation: new Date().toISOString().split('T')[0],
+          statut: 'active'
         })
       })
 
@@ -934,7 +1016,7 @@ export default function EmployeeTracker() {
       console.error('Erreur assignation carte:', error)
       alert(`Erreur lors de l'assignation de la carte: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
     }
-  };
+  }
 
   if (!isLoggedIn) {
     return (
@@ -1064,46 +1146,46 @@ export default function EmployeeTracker() {
               <h2 className="text-lg font-semibold text-muted-foreground mb-4">Navigation</h2>
             </div>
 
-              <Button
+            <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                  activeTab === "dashboard"
-                    ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                    : "glass-card border border-white/20 hover:bg-primary/5"
-                }`}
-                onClick={() => setActiveTab("dashboard")}
-              >
+                activeTab === "dashboard"
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
+              onClick={() => setActiveTab("dashboard")}
+            >
               <BarChart3 className="w-5 h-5" />
               Tableau de Bord
-              </Button>
+            </Button>
 
-              <Button
+            <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                  activeTab === "employees"
-                    ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                    : "glass-card border border-white/20 hover:bg-primary/5"
-                }`}
-                onClick={() => setActiveTab("employees")}
-              >
-                <Users className="w-5 h-5" />
+                activeTab === "employees"
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
+              onClick={() => setActiveTab("employees")}
+            >
+              <Users className="w-5 h-5" />
               Employés
-              </Button>
+            </Button>
 
-                <Button
+            <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "interventions"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
               onClick={() => setActiveTab("interventions")}
-                >
-                  <FileText className="w-5 h-5" />
+            >
+              <FileText className="w-5 h-5" />
               Interventions
-                </Button>
+            </Button>
 
-                <Button
+            <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "fuel"
@@ -1119,122 +1201,115 @@ export default function EmployeeTracker() {
             <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "materials"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-                  onClick={() => setActiveTab("materials")}
-                >
-                  <Package className="w-5 h-5" />
+                activeTab === "materials"
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
+              onClick={() => setActiveTab("materials")}
+            >
+              <Package className="w-5 h-5" />
               Matériel
-                </Button>
+            </Button>
 
-                <Button
+            <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "penalties"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
               onClick={() => setActiveTab("penalties")}
-                >
+            >
               <AlertTriangle className="w-5 h-5" />
               Pénalités
-                </Button>
+            </Button>
 
-                <Button
+            <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "claims"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
               onClick={() => setActiveTab("claims")}
-                >
+            >
               <FileText className="w-5 h-5" />
               Réclamations
-                </Button>
+            </Button>
 
-                <Button
+            <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "consommation-carburant"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("consommation-carburant")}
-                >
+                activeTab === "fuel-consumption"
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
+              onClick={() => setActiveTab("fuel-consumption")}
+            >
               <Fuel className="w-5 h-5" />
               Consommation Carburant
-                </Button>
+            </Button>
 
-                <Button
+            <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "reports"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
               onClick={() => setActiveTab("reports")}
-                >
+            >
               <TrendingUp className="w-5 h-5" />
               Rapports
-                </Button>
+            </Button>
           </nav>
         </aside>
 
-        {/* Main Content */}
-        <main className="flex-1 p-8 overflow-y-auto">
+        <main className="flex-1 p-8">
+          {/* Dashboard Tab */}
           {activeTab === "dashboard" && (
-            <div className="space-y-10 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-5xl font-bold bg-gradient-to-r from-primary via-chart-2 to-chart-3 bg-clip-text text-transparent text-balance">
-                      Tableau de Bord
-                    </h1>
-                    <p className="text-lg text-muted-foreground mt-2">
-                      Vue d'ensemble de votre activité FinalFibre
-                    </p>
+            <div className="space-y-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
+                    Tableau de Bord
+                  </h1>
+                  <p className="text-muted-foreground mt-2">
+                    Vue d'ensemble de votre activité FinalFibre
+                  </p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground">Dernière mise à jour</p>
+                    <p className="text-sm font-medium">{new Date().toLocaleDateString('fr-FR')}</p>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Dernière mise à jour</p>
-                      <p className="font-semibold">{new Date().toLocaleDateString()}</p>
-                    </div>
-                    <Button
-                      onClick={loadDataFromDatabase}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                    >
-                      <Activity className="w-4 h-4 mr-2" />
-                      Actualiser
-                    </Button>
-                  </div>
+                  <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                    <Activity className="w-4 h-4 mr-2" />
+                    Actualiser
+                  </Button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-chart-1/20 via-chart-1/10 to-transparent" />
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 relative">
-                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              {/* KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card className="glass-card border border-white/20 hover-lift">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">
                       Employés Actifs
                     </CardTitle>
                     <Users className="h-4 w-4 text-chart-1" />
                   </CardHeader>
                   <CardContent className="relative">
-                  <div className="text-3xl font-bold">{employeesFromInterventions.length}</div>
-
+                    <div className="text-3xl font-bold">{employeesFromInterventions.length}</div>
                     <p className="text-xs text-muted-foreground mt-1">
                       Techniciens en activité
                     </p>
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-chart-2/20 via-chart-2/10 to-transparent" />
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 relative">
-                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                <Card className="glass-card border border-white/20 hover-lift">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">
                       Interventions
                     </CardTitle>
                     <FileText className="h-4 w-4 text-chart-2" />
@@ -1247,10 +1322,9 @@ export default function EmployeeTracker() {
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-chart-3/20 via-chart-3/10 to-transparent" />
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 relative">
-                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                <Card className="glass-card border border-white/20 hover-lift">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">
                       Transactions Carburant
                     </CardTitle>
                     <Fuel className="h-4 w-4 text-chart-3" />
@@ -1263,10 +1337,9 @@ export default function EmployeeTracker() {
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-chart-4/20 via-chart-4/10 to-transparent" />
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 relative">
-                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                <Card className="glass-card border border-white/20 hover-lift">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">
                       CA Total Estimé
                     </CardTitle>
                     <DollarSign className="h-4 w-4 text-chart-4" />
@@ -1283,1397 +1356,1670 @@ export default function EmployeeTracker() {
               </div>
 
               {/* Recent Interventions */}
-                <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                  <CardHeader className="pb-6">
-                    <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <FileText className="w-6 h-6 text-primary" />
+              <Card className="glass-card border border-white/20 hover-lift">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
                     Interventions Récentes
-                    </CardTitle>
+                  </CardTitle>
                   <CardDescription>
                     Dernières interventions enregistrées dans la base de données
                   </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                  {loadingInterventions ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement des interventions...</p>
-                      </div>
-                  ) : interventions.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucune intervention trouvée</h3>
-                      <p>Importez des données pour commencer à voir vos interventions ici.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {interventions.slice(0, 5).map((intervention, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between p-5 rounded-2xl hover:bg-white/5 transition-colors"
-                        >
-                          <div className="flex items-center gap-5">
-                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 font-semibold">
-                              {intervention.prenom_technicien?.charAt(0) || 'T'}
-                      </div>
-                            <div>
-                              <p className="font-semibold">
-                                {intervention.prenom_technicien} {intervention.nom_technicien}
-                              </p>
-                              <p className="text-sm text-muted-foreground">{intervention.client}</p>
-                              <p className="text-xs text-muted-foreground">{intervention.date_rdv}</p>
-                            </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {interventions.slice(0, 3).map((intervention, index) => (
+                      <div key={index} className="flex items-center justify-between p-4 glass-card border border-white/10 rounded-xl">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-white font-semibold">
+                            {intervention.prenom_technicien?.charAt(0) || 'A'}
                           </div>
-                          <Badge 
-                            variant={intervention.statut === 'Terminé' ? 'default' : 'secondary'}
-                            className="glass-card border border-white/20"
-                          >
+                          <div>
+                            <p className="font-medium">
+                              {intervention.prenom_technicien} {intervention.nom_technicien}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {intervention.client} - {intervention.ville}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">{intervention.date_intervention}</p>
+                          <Badge variant="default" className="mt-1">
                             {intervention.statut || 'En cours'}
                           </Badge>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  </CardContent>
-                </Card>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
-          {/* Interventions Tab */}
-          {activeTab === "interventions" && (
-            <div className="space-y-8 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift">
-                <div className="flex items-center justify-between">
+          {/* Employees Tab */}
+          {/* Employees Section */}
+          {activeTab === "employees" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <Users className="w-5 h-5 text-primary" />
+                  </div>
                   <div>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
-                      Gestion des Interventions
-                    </h1>
-                    <p className="text-lg text-muted-foreground mt-2">
-                      Importez et gérez vos interventions techniques
+                    <h2 className="text-3xl font-bold">Liste des Employés</h2>
+                    <p className="text-muted-foreground">
+                      {employees.length} employés trouvés dans la base de données
                     </p>
-                      </div>
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium text-gray-900 font-medium">
-                        <Upload className="h-4 w-4 mr-2" />
-                        Importer Interventions
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="glass-card border border-white/20">
-                      <DialogHeader>
-                        <DialogTitle>Importer des Interventions</DialogTitle>
-                        <DialogDescription>
-                          Sélectionnez un fichier CSV contenant les données d'interventions
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label htmlFor="import-inter">Fichier CSV Interventions</Label>
-                          <Input
-                            id="import-inter"
-                            type="file"
-                            accept=".csv"
-                            onChange={handleImportInterventions}
-                            className="mt-2 glass-card border border-white/20"
-                          />
-                        </div>
-                        <Button
-                          onClick={async () => {
-                            await loadDataFromDatabase()
-                            setShowInterventions(!showInterventions)
-                          }}
-                          className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium text-gray-900 font-medium"
-                        >
-                          Actualiser les Données
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => loadEmployeesFromDatabase()}
+                    className="glass-card border border-white/20 hover:bg-white/10"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Actualiser
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      setEditingItem(null)
+                      setShowEmployeeModal(true)
+                    }}
+                    className="gradient-primary text-white"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Ajouter Employé
+                  </Button>
                 </div>
               </div>
 
-              <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                <CardHeader className="pb-6">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <FileText className="w-6 h-6 text-primary" />
-                    Toutes les Interventions
-                  </CardTitle>
-                  <CardDescription>
-                    {interventions.length} interventions trouvées dans la base de données PostgreSQL
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {loadingInterventions ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement des interventions...</p>
-                    </div>
-                  ) : interventions.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucune intervention trouvée</h3>
-                      <p>Importez des données pour commencer à voir vos interventions ici.</p>
-                    </div>
-                  ) : (
+              {/* Employees List Card */}
+              <Card className="glass-card border border-white/20 hover-lift">
+                <CardContent className="p-0">
                   <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
+                    <table className="w-full">
                       <thead>
-                          <tr className="border-b border-white/10">
-                            <th className="text-left p-4 font-semibold">Technicien</th>
-                            <th className="text-left p-4 font-semibold">Client</th>
-                            <th className="text-left p-4 font-semibold">Date RDV</th>
-                            <th className="text-left p-4 font-semibold">Type</th>
-                            <th className="text-left p-4 font-semibold">Articles</th>
-                            <th className="text-left p-4 font-semibold">Statut</th>
-                            <th className="text-left p-4 font-semibold">Ville</th>
+                        <tr className="border-b border-white/10">
+                          <th className="text-left p-4 font-medium">Employé</th>
+                          <th className="text-left p-4 font-medium">Matricule</th>
+                          <th className="text-left p-4 font-medium">Téléphone</th>
+                          <th className="text-left p-4 font-medium">Email</th>
+                          <th className="text-left p-4 font-medium">Poste</th>
+                          <th className="text-left p-4 font-medium">Taxe %</th>
+                          <th className="text-left p-4 font-medium">Statut</th>
+                          <th className="text-left p-4 font-medium">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                          {interventions.slice(0, 100).map((intervention, index) => (
-                            <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        {employees.map((employee) => (
+                          <tr key={employee.id} className="border-b border-white/5 hover:bg-white/5">
                             <td className="p-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
-                                    {intervention.prenom_technicien?.charAt(0) || 'T'}
-                                  </div>
-                                  <span className="font-medium">
-                                    {intervention.prenom_technicien} {intervention.nom_technicien}
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
+                                  <span className="text-sm font-medium text-primary">
+                                    {employee.prenom ? employee.prenom[0] : ''}{employee.nom ? employee.nom[0] : ''}
                                   </span>
                                 </div>
-                            </td>
-                              <td className="p-4">{intervention.client}</td>
-                              <td className="p-4">{intervention.date_rdv}</td>
-                              <td className="p-4">{intervention.type_intervention}</td>
-                            <td className="p-4">
-                                <div className="max-w-xs">
-                                  <span className="text-sm text-gray-600">
-                                    {intervention.articles || 'N/A'}
-                                  </span>
+                                <div>
+                                  <div className="font-medium">{employee.prenom} {employee.nom}</div>
+                                </div>
                               </div>
                             </td>
                             <td className="p-4">
-                              <Badge
-                                  variant={intervention.statut === 'Terminé' ? 'default' : 'secondary'}
-                                  className="glass-card border border-white/20"
-                                >
-                                  {intervention.statut || 'En cours'}
+                              <div className="font-mono text-sm">{employee.matricule || 'N/A'}</div>
+                            </td>
+                            <td className="p-4">
+                              <div className="text-sm text-muted-foreground">{employee.telephone || 'N/A'}</div>
+                            </td>
+                            <td className="p-4">
+                              <div className="text-sm text-muted-foreground">{employee.email || 'N/A'}</div>
+                            </td>
+                            <td className="p-4">
+                              <div className="text-sm text-muted-foreground">{employee.poste || 'N/A'}</div>
+                            </td>
+                            <td className="p-4">
+                              <div className="font-medium text-primary">
+                                {employee.pourcentage_taxe ? `${employee.pourcentage_taxe}%` : '0.00%'}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <Badge 
+                                variant={employee.statut === 'actif' ? 'default' : 'secondary'}
+                                className="glass-card border border-white/20"
+                              >
+                                {employee.statut || 'actif'}
                               </Badge>
                             </td>
-                              <td className="p-4">{intervention.ville}</td>
+                            <td className="p-4">
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedEmployee(employee)
+                                    setShowEmployeeDetailsModal(true)
+                                  }}
+                                  className="glass-card border border-white/20 hover:bg-white/10"
+                                  title="Voir les détails"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedEmployee(employee)
+                                    setShowCardAssignmentModal(true)
+                                  }}
+                                  className="glass-card border border-white/20 hover:bg-white/10"
+                                  title="Affecter carte carburant"
+                                >
+                                  <CreditCard className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedEmployeeHistory(employee)
+                                    loadCardHistory(employee.id)
+                                    setShowCardHistoryModal(true)
+                                  }}
+                                  className="glass-card border border-white/20 hover:bg-white/10"
+                                  title="Voir l'historique des cartes"
+                                >
+                                  <BarChart3 className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingItem(employee)
+                                    setShowEmployeeModal(true)
+                                  }}
+                                  className="glass-card border border-white/20 hover:bg-white/10"
+                                  title="Modifier"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => deleteEmployee(employee.id)}
+                                  className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  )}
                 </CardContent>
               </Card>
             </div>
           )}
 
-        {/* Fuel Consumption Tab */}
-
-          {/* Other tabs placeholder with glassmorphism */}
-          {activeTab === "fuel" && (
-            <div className="space-y-8 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent">
-                      Consommation Carburant
-                    </h1>
-                    <p className="text-lg text-muted-foreground mt-2">
-                      Gérez les transactions de carburant de vos véhicules
-                    </p>
-                  </div>
-                  <div className="flex gap-3">
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium text-gray-900 font-medium">
-                          <Upload className="h-4 w-4 mr-2" />
-                          Importer Carburant
-                        </Button>
-                      </DialogTrigger>
-                    <DialogContent className="glass-card border border-white/20">
-                      <DialogHeader>
-                        <DialogTitle>Importer des Données Carburant</DialogTitle>
-                        <DialogDescription>
-                          Sélectionnez un fichier CSV ou XLSX contenant les données de consommation carburant
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label htmlFor="import-fuel">Fichier Carburant (CSV/XLSX)</Label>
-                          <Input
-                            id="import-fuel"
-                            type="file"
-                            accept=".csv,.xlsx"
-                            onChange={handleImportFuelConsumption}
-                            className="mt-2 glass-card border border-white/20"
-                          />
-                        </div>
-                        <Button
-                          onClick={async () => {
-                            await loadDataFromDatabase()
-                            setShowFuelConsumption(!showFuelConsumption)
-                          }}
-                          className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium text-gray-900 font-medium"
-                        >
-                          Actualiser les Données
-                        </Button>
-                      </div>
-                    </DialogContent>
-                    </Dialog>
-                    
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
-                          <Users className="h-4 w-4 mr-2" />
-                          Assigner Employé
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="glass-card border border-white/20">
-                        <DialogHeader>
-                          <DialogTitle>Assigner un Employé à une Carte Carburant</DialogTitle>
-                          <DialogDescription>
-                            Sélectionnez un employé et un numéro de carte pour l'assignation
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div>
-                            <Label htmlFor="numero-carte">Numéro de Carte</Label>
-                            <Input
-                              id="numero-carte"
-                              placeholder="Ex: 17, 0, etc."
-                              value={assignationData.numero_carte}
-                              onChange={(e) => setAssignationData({...assignationData, numero_carte: e.target.value})}
-                              className="mt-1 bg-white/90 border border-white/30 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:border-white"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="employe-assignation">Employé</Label>
-                            <Select value={assignationData.employe_id} onValueChange={(value) => setAssignationData({...assignationData, employe_id: value})}>
-                              <SelectTrigger className="mt-1 bg-white/90 border border-white/30 text-gray-900">
-                                <SelectValue placeholder="Sélectionner un employé" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {employees.map((emp) => (
-                                  <SelectItem key={emp.id} value={emp.id.toString()}>
-                                    {emp.prenom} {emp.nom} - {emp.telephone}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <DialogFooter>
-                            <Button
-                              onClick={handleAssignation}
-                              className="gradient-primary text-white"
-                            >
-                              Assigner
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => setAssignationData({numero_carte: '', employe_id: ''})}
-                              className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                            >
-                              Annuler
-                            </Button>
-                          </DialogFooter>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </div>
-              </div>
-
-              <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                <CardHeader className="pb-6">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <Fuel className="w-6 h-6 text-primary" />
-                    Transactions Carburant
-                  </CardTitle>
-                  <CardDescription>
-                    {filterFuelData(fuelData, fuelDateLivraisonFilter, fuelDateFactFilter, fuelNumeroCarteFilter).length} transactions trouvées dans la base de données PostgreSQL
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {/* Filters */}
-                  <div className="mb-6 p-4 glass-card border border-white/20 rounded-2xl">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Filtres</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <Label htmlFor="dateLivraisonFilter2" className="text-xs text-gray-900 font-medium">Date Livraison</Label>
-                        <Input
-                          id="dateLivraisonFilter2"
-                          placeholder="Filtrer par date de livraison..."
-                          value={fuelDateLivraisonFilter}
-                          onChange={(e) => setFuelDateLivraisonFilter(e.target.value)}
-                          className="mt-1 bg-white/90 border border-white/30 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:border-white"
-                        />
-                          </div>
-                          <div>
-                        <Label htmlFor="dateFactFilter2" className="text-xs text-gray-900 font-medium">Date Fact</Label>
-                        <Input
-                          id="dateFactFilter2"
-                          placeholder="Filtrer par date de facturation..."
-                          value={fuelDateFactFilter}
-                          onChange={(e) => setFuelDateFactFilter(e.target.value)}
-                          className="mt-1 bg-white/90 border border-white/30 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:border-white"
-                        />
-                          </div>
-                      <div>
-                        <Label htmlFor="numeroCarteFilter2" className="text-xs text-gray-900 font-medium">N° Carte</Label>
-                        <Input
-                          id="numeroCarteFilter2"
-                          placeholder="Filtrer par numéro de carte..."
-                          value={fuelNumeroCarteFilter}
-                          onChange={(e) => setFuelNumeroCarteFilter(e.target.value)}
-                          className="mt-1 bg-white/90 border border-white/30 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:border-white"
-                        />
-                        </div>
-                    </div>
-                    {(fuelDateLivraisonFilter || fuelDateFactFilter || fuelNumeroCarteFilter) && (
-                      <div className="mt-3">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setFuelDateLivraisonFilter("")
-                            setFuelDateFactFilter("")
-                            setFuelNumeroCarteFilter("")
-                          }}
-                          className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                        >
-                          Effacer les filtres
-                        </Button>
-            </div>
-          )}
-                </div>
-                  {loadingFuel ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement des données carburant...</p>
-              </div>
-                  ) : fuelData.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Fuel className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucune transaction carburant trouvée</h3>
-                      <p>Importez des données pour commencer à voir vos transactions ici.</p>
-                    </div>
-                  ) : (
-                <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="border-b border-white/10">
-                            <th className="text-left p-4 font-semibold">Date Livraison</th>
-                            <th className="text-left p-4 font-semibold">Date Fact</th>
-                            <th className="text-left p-4 font-semibold">Véhicule</th>
-                            <th className="text-left p-4 font-semibold">N° Carte</th>
-                            <th className="text-left p-4 font-semibold">Employé Assigné</th>
-                            <th className="text-left p-4 font-semibold">Station</th>
-                            <th className="text-left p-4 font-semibold">Quantité</th>
-                            <th className="text-left p-4 font-semibold">Montant TTC</th>
-                            <th className="text-left p-4 font-semibold">Justificatif</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                          {filterFuelData(fuelData, fuelDateLivraisonFilter, fuelDateFactFilter, fuelNumeroCarteFilter).slice(0, 100).map((transaction, index) => (
-                            <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                              <td className="p-4">{transaction.date_livraison}</td>
-                              <td className="p-4">{transaction.date_fact}</td>
-                              <td className="p-4">
-                                <div className="flex items-center gap-2">
-                                  <Fuel className="w-4 h-4 text-chart-3" />
-                                  {transaction.immat_vehicule}
-                            </div>
-                          </td>
-                              <td className="p-4">{transaction.numero_carte}</td>
-                              <td className="p-4">
-                                {transaction.employe_assigné ? (
-                            <div className="flex items-center gap-2">
-                                    <Users className="w-4 h-4 text-primary" />
-                                    <span className="text-sm">{transaction.employe_assigné.nom} {transaction.employe_assigné.prenom}</span>
-                              </div>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">Non assigné</span>
-                                )}
-                          </td>
-                              <td className="p-4">{transaction.numero_station}</td>
-                              <td className="p-4">{transaction.quantite || 'N/A'} L</td>
-                              <td className="p-4 font-semibold">{transaction.ca_ttc || 'N/A'} €</td>
-                              <td className="p-4 text-sm text-muted-foreground">{transaction.numero_justificatif}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {activeTab === "employees" && (
-            <div className="space-y-8 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift">
-              <div className="flex items-center justify-between">
+          {/* Fuel Consumption Tab */}
+          {activeTab === "fuel-consumption" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-1 bg-clip-text text-transparent">
-                      Gestion des Employés
-                    </h1>
-                    <p className="text-lg text-muted-foreground mt-2">
-                      Gérez vos employés et leurs informations
-                    </p>
-                  </div>
-                  <div className="flex gap-3">
-                    <Button
-                      onClick={loadAllCRUDData}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                    >
-                      <Activity className="h-4 w-4 mr-2" />
-                      Actualiser
-                    </Button>
-                    <Button
-                      onClick={async () => {
-                        try {
-                          const response = await fetch('/api/sync-employees', {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                            },
-                          })
-                          const result = await response.json()
-                          if (response.ok) {
-                            alert(`Synchronisation réussie: ${result.stats.created} créés, ${result.stats.updated} mis à jour`)
-                            await loadAllCRUDData()
-                          } else {
-                            alert(`Erreur: ${result.error}`)
-                          }
-                        } catch (error) {
-                          console.error("Erreur synchronisation:", error)
-                          alert("Erreur lors de la synchronisation")
-                        }
-                      }}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                    >
-                      <Users className="h-4 w-4 mr-2" />
-                      Sync Interventions
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setEditingItem(null)
-                        setShowEmployeeModal(true)
-                      }}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium text-gray-900 font-medium"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Ajouter Employé
-                    </Button>
-                  </div>
+                  <h2 className="text-3xl font-bold">Consommation Carburant</h2>
+                  <p className="text-muted-foreground">Suivi de la consommation carburant par employé</p>
                 </div>
-              </div>
-
-              <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                <CardHeader className="pb-6">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <Users className="w-6 h-6 text-primary" />
-                    Liste des Employés
-                  </CardTitle>
-                  <CardDescription>
-                    {employees.length} employés trouvés dans la base de données
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {loadingEmployees ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement des employés...</p>
-                    </div>
-                  ) : employees.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucun employé trouvé</h3>
-                      <p>Ajoutez des employés pour commencer à les gérer.</p>
-                    </div>
-                  ) : (
-                  <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="border-b border-white/10">
-                            <th className="text-left p-4 font-semibold">Employé</th>
-                            <th className="text-left p-4 font-semibold">Matricule</th>
-                          <th className="text-left p-4 font-semibold">Téléphone</th>
-                            <th className="text-left p-4 font-semibold">Email</th>
-                            <th className="text-left p-4 font-semibold">Poste</th>
-                            <th className="text-left p-4 font-semibold">Taxe %</th>
-                            <th className="text-left p-4 font-semibold">Statut</th>
-                            <th className="text-left p-4 font-semibold">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                          {employees && isValidArray(employees) ? employees.map((employee, index) => (
-                          <tr key={employee.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                            <td className="p-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-chart-1 flex items-center justify-center text-gray-900 text-sm font-semibold">
-                                    {employee.prenom?.charAt(0) || 'E'}{employee.nom?.charAt(0) || 'M'}
-                                  </div>
-                                  <div>
-                                    <span className="font-medium">{employee.prenom} {employee.nom}</span>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-4">{employee.matricule || 'N/A'}</td>
-                              <td className="p-4">{employee.telephone || 'N/A'}</td>
-                              <td className="p-4">{employee.email || 'N/A'}</td>
-                              <td className="p-4">{employee.poste || 'N/A'}</td>
-                              <td className="p-4">
-                                <span className="font-medium text-blue-600">
-                                  {employee.pourcentage_taxe ? `${employee.pourcentage_taxe}%` : 'N/A'}
-                                </span>
-                              </td>
-                              <td className="p-4">
-                                <Badge 
-                                  variant={employee.statut === 'actif' ? 'default' : 'secondary'}
-                                  className="glass-card border border-white/20"
-                                >
-                                  {employee.statut || 'actif'}
-                                </Badge>
-                              </td>
-                              <td className="p-4">
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => showEmployeeDetails(employee)}
-                                    className="glass-card border border-white/20 hover:bg-white/10 text-gray-900"
-                                    title="Voir les détails"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => showCardAssignment(employee)}
-                                    className="glass-card border border-white/20 hover:bg-blue-500/20 text-gray-900"
-                                    title="Assigner carte carburant"
-                                  >
-                                    <CreditCard className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      setEditingItem(employee)
-                                      setShowEmployeeModal(true)
-                                    }}
-                                    className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                                  >
-                                    <Edit className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      if (confirm('Êtes-vous sûr de vouloir supprimer cet employé ?')) {
-                                        deleteEmployee(employee.id)
-                                      }
-                                    }}
-                                    className="glass-card border border-white/20 hover:bg-destructive/10 hover:text-destructive"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                            </td>
-                          </tr>
-                        )) : (
-                          <tr>
-                            <td colSpan={8} className="text-center py-8 text-muted-foreground">
-                              <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                              <h3 className="text-lg font-semibold mb-2">Aucun employé trouvé</h3>
-                              <p>Ajoutez des employés pour commencer à les gérer.</p>
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* Materials Tab */}
-          {activeTab === "materials" && (
-            <div className="space-y-8 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift">
-              <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
-                      Gestion du Matériel
-                    </h1>
-                    <p className="text-lg text-muted-foreground mt-2">
-                      Gérez votre inventaire d'équipements et matériels
-                    </p>
-                </div>
-                  <div className="flex gap-3">
-                <Button
-                      onClick={loadAllCRUDData}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                    >
-                      <Activity className="h-4 w-4 mr-2" />
-                      Actualiser
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setEditingItem(null)
-                        setShowMaterialModal(true)
-                      }}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium text-gray-900 font-medium"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Ajouter Matériel
+                <Button variant="outline">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Importer Données
                 </Button>
-                  </div>
-                </div>
               </div>
 
-              <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                <CardHeader className="pb-6">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <Package className="w-6 h-6 text-primary" />
-                    Inventaire du Matériel
-                  </CardTitle>
+              <Card className="glass-card border border-white/20 hover-lift">
+                <CardHeader>
+                  <CardTitle>Données de Consommation</CardTitle>
                   <CardDescription>
-                    {materials.length} équipements trouvés dans la base de données
+                    Données chargées depuis la base de données
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {loadingMaterials ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement du matériel...</p>
-                    </div>
-                  ) : materials.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucun matériel trouvé</h3>
-                      <p>Ajoutez du matériel pour commencer à gérer votre inventaire.</p>
-                    </div>
-                  ) : (
-                  <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="border-b border-white/10">
-                            <th className="text-left p-4 font-semibold">Équipement</th>
-                          <th className="text-left p-4 font-semibold">Type</th>
-                            <th className="text-left p-4 font-semibold">Marque/Modèle</th>
-                            <th className="text-left p-4 font-semibold">Statut</th>
-                            <th className="text-left p-4 font-semibold">Quantité</th>
-                            <th className="text-left p-4 font-semibold">Prix Unitaire</th>
-                            <th className="text-left p-4 font-semibold">Prix Total</th>
-                            <th className="text-left p-4 font-semibold">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                          {materials.map((material, index) => (
-                            <tr key={material.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                            <td className="p-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
-                                    <Package className="w-5 h-5" />
-                                  </div>
-                                  <div>
-                                    <span className="font-medium">{material.nom_equipement}</span>
-                                    <p className="text-xs text-muted-foreground">{material.numero_serie}</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-4">{material.type_materiel}</td>
-                              <td className="p-4">{material.marque} {material.modele}</td>
-                              <td className="p-4">
-                                <Badge 
-                                  variant={material.statut === 'disponible' ? 'default' : 'secondary'}
-                                  className="glass-card border border-white/20"
-                                >
-                                  {material.statut}
-                                </Badge>
-                              </td>
-                              <td className="p-4">
-                                <Badge variant="outline" className="glass-card border border-white/20">
-                                  {material.quantite || 0}
-                                </Badge>
-                              </td>
-                              <td className="p-4">
-                                <span className="text-sm font-medium">
-                                  {formatCurrency(material.prix_unitaire)} €
-                              </span>
-                            </td>
-                            <td className="p-4">
-                                <span className="text-sm font-bold text-primary">
-                                  {formatCurrency(safeNumber(material.quantite) * safeNumber(material.prix_unitaire))} €
-                                </span>
-                              </td>
-                              <td className="p-4">
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      setEditingItem(material)
-                                      setShowMaterialModal(true)
-                                    }}
-                                    className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                                  >
-                                    <Edit className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      if (confirm('Êtes-vous sûr de vouloir supprimer ce matériel ?')) {
-                                        deleteMaterial(material.id)
-                                      }
-                                    }}
-                                    className="glass-card border border-white/20 hover:bg-destructive/10 hover:text-destructive"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Affectations de Matériel Section */}
-              <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                <CardHeader className="pb-6">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <Users className="w-6 h-6 text-primary" />
-                    Affectations de Matériel
-                  </CardTitle>
-                  <CardDescription>
-                    Gérez les assignations de matériel aux employés
-                  </CardDescription>
-                    </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center mb-6">
-                    <div className="flex gap-3">
-                      <Button
-                        onClick={() => {
-                          setEditingItem(null)
-                          setShowAffectationModal(true)
-                        }}
-                        className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Nouvelle Affectation
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setEditingItem(null)
-                          setShowMultiAffectationModal(true)
-                        }}
-                        className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                      >
-                        <Users className="h-4 w-4 mr-2" />
-                        Affectation Multiple
-                      </Button>
-                      </div>
-                    <div className="flex gap-3">
-                      <Input
-                        type="date"
-                        placeholder="Date de début"
-                        className="glass-card border border-white/20 text-gray-900"
-                        onChange={(e) => {
-                          // TODO: Implémenter le filtre par date
-                        }}
-                      />
-                      <Input
-                        type="date"
-                        placeholder="Date de fin"
-                        className="glass-card border border-white/20 text-gray-900"
-                        onChange={(e) => {
-                          // TODO: Implémenter le filtre par date
-                        }}
-                      />
-                      <Button
-                        onClick={() => {
-                          // TODO: Réinitialiser les filtres
-                        }}
-                        className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                      >
-                        Effacer Filtres
-                      </Button>
-                    </div>
-                  </div>
-
-                  {loadingAffectations ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement des affectations...</p>
-                    </div>
-                  ) : affectations.length === 0 ? (
-                    <div className="text-center py-12">
-                      <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">Aucune affectation</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Commencez par assigner du matériel à vos employés
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {(() => {
-                        // Grouper les affectations par employé
-                        const groupedAffectations = affectations.reduce((acc, affectation) => {
-                          const key = `${affectation.employe_prenom} ${affectation.employe_nom}`
-                          if (!acc[key]) {
-                            acc[key] = {
-                              employe: {
-                                nom: affectation.employe_nom,
-                                prenom: affectation.employe_prenom
-                              },
-                              affectations: []
-                            }
-                          }
-                          acc[key].affectations.push(affectation)
-                          return acc
-                        }, {} as any)
-
-                        return Object.entries(groupedAffectations).map(([employeKey, group]: [string, any]) => (
-                          <div key={employeKey} className="glass-card p-6 rounded-2xl border border-white/20">
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
-                                <Users className="w-5 h-5" />
-                      </div>
-                      <div>
-                                <h3 className="text-lg font-semibold">
-                                  {group.employe.prenom} {group.employe.nom}
-                                </h3>
-                                <p className="text-sm text-muted-foreground">
-                                  {group.affectations.length} affectation(s) - 
-                                  Coût total: <span className="font-semibold text-primary">
-                                    {formatCurrency(group.affectations.reduce((total: number, aff: any) => 
-                                      total + (safeNumber(aff.prix_unitaire) * safeNumber(aff.quantite_assignee)), 0
-                                    ))} €
-                                  </span>
-                                </p>
-                      </div>
-                            </div>
-                            
-                            <div className="overflow-x-auto">
-                              <table className="w-full">
-                                <thead>
-                                  <tr className="border-b border-white/10">
-                                    <th className="text-left p-3 font-semibold text-sm">Matériel</th>
-                                    <th className="text-left p-3 font-semibold text-sm">Quantité</th>
-                                    <th className="text-left p-3 font-semibold text-sm">Prix Unitaire</th>
-                                    <th className="text-left p-3 font-semibold text-sm">Prix Total</th>
-                                    <th className="text-left p-3 font-semibold text-sm">Date Affectation</th>
-                                    <th className="text-left p-3 font-semibold text-sm">Statut</th>
-                                    <th className="text-left p-3 font-semibold text-sm">Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {group.affectations.map((affectation: any) => (
-                                    <tr key={affectation.id} className="border-b border-white/5 hover:bg-white/5">
-                                      <td className="p-3">
-                      <div>
-                                          <div className="font-medium text-sm">{affectation.nom_equipement}</div>
-                                          <div className="text-xs text-muted-foreground">
-                                            {affectation.type_materiel} - {affectation.marque} {affectation.modele}
-                      </div>
-                                        </div>
-                                      </td>
-                                      <td className="p-3">
-                                        <Badge variant="outline" className="glass-card border border-white/20">
-                                          {affectation.quantite_assignee}
-                                        </Badge>
-                                      </td>
-                                      <td className="p-3">
-                                        <span className="text-sm font-medium">
-                                          {formatCurrency(affectation.prix_unitaire)} €
-                                        </span>
-                                      </td>
-                                      <td className="p-3">
-                                        <span className="text-sm font-bold text-primary">
-                                          {formatCurrency(safeNumber(affectation.prix_unitaire) * safeNumber(affectation.quantite_assignee))} €
-                                        </span>
-                                      </td>
-                                      <td className="p-3 text-sm">
-                                        {new Date(affectation.date_affectation).toLocaleDateString('fr-FR')}
-                                      </td>
-                                      <td className="p-3">
-                                        <Badge
-                                          variant={affectation.statut === 'active' ? 'default' : 'secondary'}
-                                          className="glass-card border border-white/20"
-                                        >
-                                          {affectation.statut}
-                                        </Badge>
-                                      </td>
-                                      <td className="p-3">
-                                        <div className="flex gap-2">
-                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                          onClick={() => {
-                                              setEditingItem(affectation)
-                                              setShowAffectationModal(true)
-                                            }}
-                                            className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                                          >
-                                            <Edit className="h-3 w-3" />
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            onClick={() => {
-                                              if (confirm('Êtes-vous sûr de vouloir supprimer cette affectation ?')) {
-                                                deleteAffectation(affectation.id)
-                                              }
-                                            }}
-                                            className="bg-white/90 border border-white/20 hover:bg-destructive/10 hover:text-destructive"
-                                          >
-                                            <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
+                  <div className="space-y-4">
+                    {fuelData.slice(0, 5).map((item, index) => (
+                      <div key={index} className="flex items-center justify-between p-4 glass-card border border-white/10 rounded-xl">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-chart-3 to-chart-4 flex items-center justify-center text-white font-semibold">
+                            <Fuel className="w-5 h-5" />
                           </div>
-                        ))
-                      })()}
-                    </div>
-                  )}
-                    </CardContent>
-                  </Card>
-            </div>
-          )}
-
-          {/* Penalties Tab */}
-          {activeTab === "penalties" && (
-            <div className="space-y-8 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift">
-              <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-4 bg-clip-text text-transparent">
-                      Gestion des Pénalités
-                    </h1>
-                    <p className="text-lg text-muted-foreground mt-2">
-                      Gérez les pénalités et sanctions des employés
-                    </p>
-                  </div>
-                  <div className="flex gap-3">
-                    <Button
-                      onClick={loadAllCRUDData}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                    >
-                      <Activity className="h-4 w-4 mr-2" />
-                      Actualiser
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setEditingItem(null)
-                        setShowPenaltyModal(true)
-                      }}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium text-gray-900 font-medium"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Ajouter Pénalité
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                <CardHeader className="pb-6">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <AlertTriangle className="w-6 h-6 text-primary" />
-                    Liste des Pénalités
-                    </CardTitle>
-                  <CardDescription>
-                    {penalties.length} pénalités trouvées dans la base de données
-                  </CardDescription>
-                  </CardHeader>
-                <CardContent>
-                  {loadingPenalties ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement des pénalités...</p>
-                    </div>
-                  ) : penalties.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucune pénalité trouvée</h3>
-                      <p>Ajoutez des pénalités pour commencer à les gérer.</p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="border-b border-white/10">
-                            <th className="text-left p-4 font-semibold">Employé</th>
-                            <th className="text-left p-4 font-semibold">Type</th>
-                            <th className="text-left p-4 font-semibold">Motif</th>
-                            <th className="text-left p-4 font-semibold">Montant</th>
-                            <th className="text-left p-4 font-semibold">Statut</th>
-                            <th className="text-left p-4 font-semibold">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {penalties.map((penalty, index) => (
-                            <tr key={penalty.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                              <td className="p-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-chart-4 flex items-center justify-center text-gray-900 text-sm font-semibold">
-                                    {penalty.employe_prenom?.charAt(0) || 'E'}{penalty.employe_nom?.charAt(0) || 'M'}
-                                  </div>
-                    <div>
-                                    <span className="font-medium">{penalty.employe_prenom} {penalty.employe_nom}</span>
-                                    <p className="text-xs text-muted-foreground">{penalty.numero_penalite}</p>
-                    </div>
-                                </div>
-                              </td>
-                              <td className="p-4">{penalty.type_penalite}</td>
-                              <td className="p-4">{penalty.motif}</td>
-                              <td className="p-4 font-semibold">{penalty.montant} €</td>
-                              <td className="p-4">
-                                <Badge 
-                                  variant={penalty.statut === 'active' ? 'destructive' : 'secondary'}
-                                  className="glass-card border border-white/20"
-                                >
-                                  {penalty.statut}
-                                </Badge>
-                              </td>
-                              <td className="p-4">
-                                <div className="flex gap-2">
-                    <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      setEditingItem(penalty)
-                                      setShowPenaltyModal(true)
-                                    }}
-                                    className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                                  >
-                                    <Edit className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      if (confirm('Êtes-vous sûr de vouloir supprimer cette pénalité ?')) {
-                                        deletePenalty(penalty.id)
-                                      }
-                                    }}
-                                    className="glass-card border border-white/20 hover:bg-destructive/10 hover:text-destructive"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                    </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  </CardContent>
-                </Card>
-            </div>
-          )}
-
-          {/* Claims Tab */}
-          {activeTab === "claims" && (
-            <div className="space-y-8 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent">
-                      Gestion des Réclamations
-                    </h1>
-                    <p className="text-lg text-muted-foreground mt-2">
-                      Gérez les réclamations et plaintes des clients
-                    </p>
-                  </div>
-                  <div className="flex gap-3">
-                    <Button
-                      onClick={loadAllCRUDData}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                    >
-                      <Activity className="h-4 w-4 mr-2" />
-                      Actualiser
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setEditingItem(null)
-                        setShowClaimModal(true)
-                      }}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium text-gray-900 font-medium"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Ajouter Réclamation
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              
-              <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                <CardHeader className="pb-6">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <FileText className="w-6 h-6 text-primary" />
-                    Liste des Réclamations
-                    </CardTitle>
-                    <CardDescription>
-                    {claims.length} réclamations trouvées dans la base de données
-                    </CardDescription>
-                  </CardHeader>
-                <CardContent>
-                  {loadingClaims ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement des réclamations...</p>
-                    </div>
-                  ) : claims.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucune réclamation trouvée</h3>
-                      <p>Ajoutez des réclamations pour commencer à les gérer.</p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="border-b border-white/10">
-                            <th className="text-left p-4 font-semibold">Client</th>
-                            <th className="text-left p-4 font-semibold">Type</th>
-                            <th className="text-left p-4 font-semibold">Priorité</th>
-                            <th className="text-left p-4 font-semibold">Statut</th>
-                            <th className="text-left p-4 font-semibold">Employé Assigné</th>
-                            <th className="text-left p-4 font-semibold">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {claims.map((claim, index) => (
-                            <tr key={claim.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                              <td className="p-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-chart-3 flex items-center justify-center text-gray-900 text-sm font-semibold">
-                                    {claim.nom_client?.charAt(0) || 'C'}
-                                  </div>
-                    <div>
-                                    <span className="font-medium">{claim.nom_client}</span>
-                                    <p className="text-xs text-muted-foreground">{claim.numero_reclamation}</p>
-                    </div>
-                                </div>
-                              </td>
-                              <td className="p-4">{claim.type_reclamation}</td>
-                              <td className="p-4">
-                                <Badge 
-                                  variant={claim.priorite === 'critique' ? 'destructive' : claim.priorite === 'haute' ? 'default' : 'secondary'}
-                                  className="glass-card border border-white/20"
-                                >
-                                  {claim.priorite}
-                                </Badge>
-                              </td>
-                              <td className="p-4">
-                                <Badge 
-                                  variant={claim.statut === 'resolue' ? 'default' : claim.statut === 'fermee' ? 'secondary' : 'outline'}
-                                  className="glass-card border border-white/20"
-                                >
-                                  {claim.statut}
-                                </Badge>
-                              </td>
-                              <td className="p-4">
-                                {claim.employe_nom ? `${claim.employe_prenom} ${claim.employe_nom}` : 'N/A'}
-                              </td>
-                              <td className="p-4">
-                                <div className="flex gap-2">
-                    <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      setEditingItem(claim)
-                                      setShowClaimModal(true)
-                                    }}
-                                    className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                                  >
-                                    <Edit className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      if (confirm('Êtes-vous sûr de vouloir supprimer cette réclamation ?')) {
-                                        deleteClaim(claim.id)
-                                      }
-                                    }}
-                                    className="glass-card border border-white/20 hover:bg-destructive/10 hover:text-destructive"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                    </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  </CardContent>
-                </Card>
-              </div>
-          )}
-
-          {/* Consommation Carburant Tab */}
-          {activeTab === "consommation-carburant" && (
-            <div className="space-y-8 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent">
-                      Consommation Carburant par Employé
-                    </h1>
-                    <p className="text-lg text-muted-foreground mt-2">
-                      Suivez la consommation carburant de chaque employé avec sa carte assignée
-                    </p>
-                  </div>
-                  <div className="flex gap-3">
-                    <Button
-                      onClick={loadAllCRUDData}
-                      className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                    >
-                      <Activity className="h-4 w-4 mr-2" />
-                      Actualiser
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              
-              <Card className="glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-                <CardHeader className="pb-6">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                    <Fuel className="w-6 h-6 text-primary" />
-                    Consommation Carburant par Employé
-                    </CardTitle>
-                  <CardDescription>
-                    {consommationCarburant.length} employé(s) avec consommation carburant
-                  </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                  {loadingConsommationCarburant ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement de la consommation carburant...</p>
+                          <div>
+                            <p className="font-medium">{item.numero_carte || 'Carte inconnue'}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {item.date_livraison} - {item.montant} €
+                            </p>
+                          </div>
                         </div>
-                  ) : consommationCarburant.length === 0 ? (
-                    <div className="text-center py-8">
-                      <Fuel className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucune consommation carburant</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Aucun employé n'a encore de consommation carburant enregistrée
-                      </p>
-                          </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {consommationCarburant.map((employe: any) => (
-                        <div key={employe.employe_id} className="glass-card p-6 rounded-2xl border border-white/20">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-lg font-semibold">
-                                <Users className="w-6 h-6" />
-                        </div>
-                              <div>
-                                <h3 className="text-xl font-semibold">
-                                  {employe.prenom} {employe.nom}
-                                </h3>
-                                <p className="text-sm text-muted-foreground">
-                                  {employe.email} • {employe.telephone}
-                                </p>
-                          </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-2xl font-bold text-primary">
-                                {formatCurrency(employe.consommation_totale_ttc)} €
-                              </div>
-                              <div className="text-sm text-muted-foreground">
-                                Total TTC
-                              </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">{item.lieu || 'Lieu non spécifié'}</p>
+                          <Badge variant="outline" className="mt-1">
+                            {item.type_carburant || 'Type inconnu'}
+                          </Badge>
                         </div>
                       </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="glass-card p-4 rounded-xl border border-white/20">
-                              <div className="text-sm text-muted-foreground">Transactions</div>
-                              <div className="text-lg font-semibold">{employe.nombre_transactions}</div>
-                                    </div>
-                            <div className="glass-card p-4 rounded-xl border border-white/20">
-                              <div className="text-sm text-muted-foreground">Moyenne par transaction</div>
-                              <div className="text-lg font-semibold">{formatCurrency(employe.consommation_moyenne_ttc)} €</div>
-                            </div>
-                            <div className="glass-card p-4 rounded-xl border border-white/20">
-                              <div className="text-sm text-muted-foreground">Première consommation</div>
-                              <div className="text-lg font-semibold">
-                                {employe.premiere_consommation ? 
-                                  new Date(employe.premiere_consommation).toLocaleDateString('fr-FR') : 
-                                  'N/A'
-                                }
-                              </div>
-                            </div>
-                            <div className="glass-card p-4 rounded-xl border border-white/20">
-                              <div className="text-sm text-muted-foreground">Dernière consommation</div>
-                              <div className="text-lg font-semibold">
-                                {employe.derniere_consommation ? 
-                                  new Date(employe.derniere_consommation).toLocaleDateString('fr-FR') : 
-                                  'N/A'
-                                }
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {employe.cartes_utilisees && (
-                            <div className="mt-4">
-                              <div className="text-sm text-muted-foreground mb-2">Cartes utilisées:</div>
-                              <div className="flex flex-wrap gap-2">
-                                {employe.cartes_utilisees.split(', ').map((carte: string, index: number) => (
-                                  <Badge key={index} variant="outline" className="glass-card border border-white/20">
-                                    Carte {carte}
-                                  </Badge>
-                                ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                ))}
-                      </div>
-                  )}
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             </div>
           )}
 
-          {activeTab === "reports" && (
-            <div className="space-y-8 animate-slide-in-right">
-              <div className="glass-card p-8 rounded-3xl border border-white/20 hover-lift text-center">
-                <TrendingUp className="h-16 w-16 mx-auto mb-6 text-muted-foreground opacity-50" />
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-chart-1 bg-clip-text text-transparent mb-4">
-                  Rapports et Analyses
-                </h1>
-                <p className="text-lg text-muted-foreground">Cette fonctionnalité sera disponible dans une prochaine version.</p>
-              </div>
-                        </div>
-                      )}
+                     {/* Interventions Tab */}
+           {activeTab === "interventions" && (
+             <div className="space-y-8">
+               <div className="flex items-center justify-between">
+                 <div>
+                   <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
+                     Gestion des Interventions
+                   </h1>
+                   <p className="text-lg text-muted-foreground mt-2">
+                     Importez et gérez vos interventions techniques
+                   </p>
+                 </div>
+                 <Dialog>
+                   <DialogTrigger asChild>
+                     <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
+                       <Upload className="h-4 w-4 mr-2" />
+                       Importer Interventions
+                     </Button>
+                   </DialogTrigger>
+                   <DialogContent className="glass-card border border-white/20">
+                     <DialogHeader>
+                       <DialogTitle>Importer des Interventions</DialogTitle>
+                       <DialogDescription>
+                         Sélectionnez un fichier CSV contenant les données d'interventions
+                       </DialogDescription>
+                     </DialogHeader>
+                     <div className="space-y-4">
+                       <div>
+                         <Label htmlFor="import-inter">Fichier CSV Interventions</Label>
+                         <Input
+                           id="import-inter"
+                           type="file"
+                           accept=".csv"
+                           onChange={handleImportInterventions}
+                           className="mt-2 glass-card border border-white/20"
+                         />
+                       </div>
+                       <Button
+                         onClick={async () => {
+                           await loadDataFromDatabase()
+                         }}
+                         className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
+                       >
+                         Actualiser les Données
+                       </Button>
+                     </div>
+                   </DialogContent>
+                 </Dialog>
+               </div>
+
+               <Card className="glass-card border border-white/20 hover-lift">
+                 <CardHeader>
+                   <CardTitle className="flex items-center gap-3 text-xl font-bold">
+                     <FileText className="w-6 h-6 text-primary" />
+                     Toutes les Interventions
+                   </CardTitle>
+                   <CardDescription>
+                     {interventions.length} interventions trouvées dans la base de données PostgreSQL
+                   </CardDescription>
+                 </CardHeader>
+                 <CardContent>
+                   {loadingInterventions ? (
+                     <div className="text-center py-8">
+                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                       <p className="mt-2 text-muted-foreground">Chargement des interventions...</p>
+                     </div>
+                   ) : interventions.length === 0 ? (
+                     <div className="text-center py-8 text-muted-foreground">
+                       <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                       <h3 className="text-lg font-semibold mb-2">Aucune intervention trouvée</h3>
+                       <p>Importez des données pour commencer à voir vos interventions ici.</p>
+                     </div>
+                   ) : (
+                     <div className="overflow-x-auto">
+                       <table className="w-full border-collapse">
+                         <thead>
+                           <tr className="border-b border-white/10">
+                             <th className="text-left p-4 font-semibold">Technicien</th>
+                             <th className="text-left p-4 font-semibold">Client</th>
+                             <th className="text-left p-4 font-semibold">Date RDV</th>
+                             <th className="text-left p-4 font-semibold">Type</th>
+                             <th className="text-left p-4 font-semibold">Articles</th>
+                             <th className="text-left p-4 font-semibold">Statut</th>
+                             <th className="text-left p-4 font-semibold">Ville</th>
+                           </tr>
+                         </thead>
+                         <tbody>
+                           {interventions.slice(0, 100).map((intervention, index) => (
+                             <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                               <td className="p-4">
+                                 <div className="flex items-center gap-3">
+                                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
+                                     {intervention.prenom_technicien?.charAt(0) || 'T'}
+                                   </div>
+                                   <span className="font-medium">
+                                     {intervention.prenom_technicien} {intervention.nom_technicien}
+                                   </span>
+                                 </div>
+                               </td>
+                               <td className="p-4">{intervention.client}</td>
+                               <td className="p-4">{intervention.date_rdv}</td>
+                               <td className="p-4">{intervention.type_intervention}</td>
+                               <td className="p-4">
+                                 <div className="max-w-xs">
+                                   <span className="text-sm text-gray-600">
+                                     {intervention.articles || 'N/A'}
+                                   </span>
+                                 </div>
+                               </td>
+                               <td className="p-4">
+                                 <Badge
+                                   variant={intervention.statut === 'Terminé' ? 'default' : 'secondary'}
+                                   className="glass-card border border-white/20"
+                                 >
+                                   {intervention.statut || 'En cours'}
+                                 </Badge>
+                               </td>
+                               <td className="p-4">{intervention.ville}</td>
+                             </tr>
+                           ))}
+                         </tbody>
+                       </table>
+                     </div>
+                   )}
+                 </CardContent>
+               </Card>
+             </div>
+           )}
+
+           {/* Fuel Tab */}
+           {activeTab === "fuel" && (
+             <div className="space-y-8">
+               <div className="flex items-center justify-between">
+                 <div>
+                   <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent">
+                     Consommation Carburant
+                   </h1>
+                   <p className="text-lg text-muted-foreground mt-2">
+                     Gérez les transactions de carburant de vos véhicules
+                   </p>
+                 </div>
+                 <div className="flex gap-3">
+                   {/* Boutons de vue */}
+                   <div className="flex gap-2">
+                     <Button
+                       variant={fuelViewMode === 'grouped' ? 'default' : 'outline'}
+                       onClick={() => setFuelViewMode('grouped')}
+                       className={fuelViewMode === 'grouped' ? 'gradient-primary text-white' : 'glass-card border border-white/20'}
+                     >
+                       <BarChart3 className="w-4 h-4 mr-2" />
+                       Vue Groupée
+                     </Button>
+                     <Button
+                       variant={fuelViewMode === 'table' ? 'default' : 'outline'}
+                       onClick={() => setFuelViewMode('table')}
+                       className={fuelViewMode === 'table' ? 'gradient-primary text-white' : 'glass-card border border-white/20'}
+                     >
+                       <Eye className="w-4 h-4 mr-2" />
+                       Vue Tableau
+                     </Button>
+                     <Button
+                       variant={fuelViewMode === 'employees' ? 'default' : 'outline'}
+                       onClick={() => setFuelViewMode('employees')}
+                       className={fuelViewMode === 'employees' ? 'gradient-primary text-white' : 'glass-card border border-white/20'}
+                     >
+                       <Users className="w-4 h-4 mr-2" />
+                       Par Employé
+                     </Button>
+                   </div>
+                   
+                   {/* Filtres de période */}
+                   <Select value={fuelPeriod} onValueChange={(value: 'month' | 'week' | 'year') => setFuelPeriod(value)}>
+                     <SelectTrigger className="glass-card border border-white/20 w-32">
+                       <SelectValue />
+                     </SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="week">Semaine</SelectItem>
+                       <SelectItem value="month">Mois</SelectItem>
+                       <SelectItem value="year">Année</SelectItem>
+                     </SelectContent>
+                   </Select>
+                   
+                   <Button
+                     onClick={loadFuelGroupedData}
+                     className="glass-card border border-white/20 hover:bg-white/10"
+                   >
+                     <RefreshCw className="w-4 h-4 mr-2" />
+                     Actualiser
+                   </Button>
+                   
+                   <Dialog>
+                     <DialogTrigger asChild>
+                       <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
+                         <Upload className="h-4 w-4 mr-2" />
+                         Importer Carburant
+                       </Button>
+                     </DialogTrigger>
+                     <DialogContent className="glass-card border border-white/20">
+                       <DialogHeader>
+                         <DialogTitle>Importer des Données Carburant</DialogTitle>
+                         <DialogDescription>
+                           Sélectionnez un fichier CSV ou XLSX contenant les données de consommation carburant
+                         </DialogDescription>
+                       </DialogHeader>
+                       <div className="space-y-4">
+                         <div>
+                           <Label htmlFor="import-fuel">Fichier Carburant (CSV/XLSX)</Label>
+                           <Input
+                             id="import-fuel"
+                             type="file"
+                             accept=".csv,.xlsx"
+                             onChange={handleImportFuelConsumption}
+                             className="mt-2 glass-card border border-white/20"
+                           />
+                         </div>
+                         <Button
+                           onClick={async () => {
+                             await loadDataFromDatabase()
+                           }}
+                           className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
+                         >
+                           Actualiser les Données
+                         </Button>
+                       </div>
+                     </DialogContent>
+                   </Dialog>
+                   
+                   <Dialog>
+                     <DialogTrigger asChild>
+                       <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
+                         <Users className="h-4 w-4 mr-2" />
+                         Assigner Employé
+                       </Button>
+                     </DialogTrigger>
+                     <DialogContent className="glass-card border border-white/20">
+                       <DialogHeader>
+                         <DialogTitle>Assigner un Employé à une Carte Carburant</DialogTitle>
+                         <DialogDescription>
+                           Sélectionnez un employé et un numéro de carte pour l'assignation
+                         </DialogDescription>
+                       </DialogHeader>
+                       <div className="space-y-4">
+                         <div>
+                           <Label htmlFor="numero-carte">Numéro de Carte</Label>
+                           <Input
+                             id="numero-carte"
+                             placeholder="Ex: 17, 0, etc."
+                             value={assignationData.numero_carte}
+                             onChange={(e) => setAssignationData({...assignationData, numero_carte: e.target.value})}
+                             className="mt-1 bg-white/90 border border-white/30 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:border-white"
+                           />
+                         </div>
+                         <div>
+                           <Label htmlFor="employe-assignation">Employé</Label>
+                           <Select value={assignationData.employe_id} onValueChange={(value) => setAssignationData({...assignationData, employe_id: value})}>
+                             <SelectTrigger className="mt-1 bg-white/90 border border-white/30 text-gray-900">
+                               <SelectValue placeholder="Sélectionner un employé" />
+                             </SelectTrigger>
+                             <SelectContent>
+                               {employees.map((emp) => (
+                                 <SelectItem key={emp.id} value={emp.id.toString()}>
+                                   {emp.prenom} {emp.nom} - {emp.telephone}
+                                 </SelectItem>
+                               ))}
+                             </SelectContent>
+                           </Select>
+                         </div>
+                         <DialogFooter>
+                           <Button
+                             onClick={handleAssignation}
+                             className="gradient-primary text-white"
+                           >
+                             Assigner
+                           </Button>
+                           <Button
+                             variant="outline"
+                             onClick={() => setAssignationData({numero_carte: '', employe_id: ''})}
+                             className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
+                           >
+                             Annuler
+                           </Button>
+                         </DialogFooter>
+                       </div>
+                     </DialogContent>
+                   </Dialog>
+                 </div>
+               </div>
+
+               {/* Résumé global */}
+               {fuelGroupedSummary && Object.keys(fuelGroupedSummary).length > 0 && (
+                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                   <Card className="glass-card border border-white/20">
+                     <CardContent className="p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm text-muted-foreground">Consommation Totale</p>
+                           <p className="text-2xl font-bold text-primary">
+                             {fuelGroupedSummary.total_consommation?.toFixed(2) || 0} DA
+                           </p>
+                         </div>
+                         <DollarSign className="w-8 h-8 text-primary/50" />
+                       </div>
+                     </CardContent>
+                   </Card>
+                   
+                   <Card className="glass-card border border-white/20">
+                     <CardContent className="p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm text-muted-foreground">Transactions</p>
+                           <p className="text-2xl font-bold text-chart-1">
+                             {fuelGroupedSummary.total_transactions || 0}
+                           </p>
+                         </div>
+                         <Fuel className="w-8 h-8 text-chart-1/50" />
+                       </div>
+                     </CardContent>
+                   </Card>
+                   
+                   <Card className="glass-card border border-white/20">
+                     <CardContent className="p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm text-muted-foreground">Périodes</p>
+                           <p className="text-2xl font-bold text-chart-2">
+                             {fuelGroupedSummary.nombre_periodes || 0}
+                           </p>
+                         </div>
+                         <Calendar className="w-8 h-8 text-chart-2/50" />
+                       </div>
+                     </CardContent>
+                   </Card>
+                   
+                   <Card className="glass-card border border-white/20">
+                     <CardContent className="p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm text-muted-foreground">Employés Actifs</p>
+                           <p className="text-2xl font-bold text-chart-3">
+                             {fuelGroupedSummary.nombre_employes || 0}
+                           </p>
+                         </div>
+                         <Users className="w-8 h-8 text-chart-3/50" />
+                       </div>
+                     </CardContent>
+                   </Card>
+                 </div>
+               )}
+
+               {/* Contenu principal */}
+               {fuelViewMode === 'employees' ? (
+                 <Card className="glass-card border border-white/20">
+                   <CardHeader>
+                     <CardTitle className="flex items-center gap-3 text-xl font-bold">
+                       <Users className="w-6 h-6 text-primary" />
+                       Consommation Carburant par Employé
+                     </CardTitle>
+                     <CardDescription>
+                       Vue détaillée de la consommation carburant TTC pour chaque employé
+                     </CardDescription>
+                   </CardHeader>
+                   <CardContent>
+                     {/* Résumé de la consommation par employé */}
+                     {fuelEmployeesSummary && Object.keys(fuelEmployeesSummary).length > 0 && (
+                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                         <Card className="glass-card border border-white/20">
+                           <CardContent className="p-4">
+                             <div className="flex items-center justify-between">
+                               <div>
+                                 <p className="text-sm text-muted-foreground">Total TTC</p>
+                                 <p className="text-xl font-bold text-primary">
+                                   {fuelEmployeesSummary.total_consommation_ttc?.toFixed(2) || 0} DA
+                                 </p>
+                               </div>
+                               <DollarSign className="w-6 h-6 text-primary/50" />
+                             </div>
+                           </CardContent>
+                         </Card>
+                         
+                         <Card className="glass-card border border-white/20">
+                           <CardContent className="p-4">
+                             <div className="flex items-center justify-between">
+                               <div>
+                                 <p className="text-sm text-muted-foreground">Transactions</p>
+                                 <p className="text-xl font-bold text-chart-1">
+                                   {fuelEmployeesSummary.total_transactions || 0}
+                                 </p>
+                               </div>
+                               <Fuel className="w-6 h-6 text-chart-1/50" />
+                             </div>
+                           </CardContent>
+                         </Card>
+                         
+                         <Card className="glass-card border border-white/20">
+                           <CardContent className="p-4">
+                             <div className="flex items-center justify-between">
+                               <div>
+                                 <p className="text-sm text-muted-foreground">Employés Actifs</p>
+                                 <p className="text-xl font-bold text-chart-2">
+                                   {fuelEmployeesSummary.nombre_employes || 0}
+                                 </p>
+                               </div>
+                               <Users className="w-6 h-6 text-chart-2/50" />
+                             </div>
+                           </CardContent>
+                         </Card>
+                         
+                         <Card className="glass-card border border-white/20">
+                           <CardContent className="p-4">
+                             <div className="flex items-center justify-between">
+                               <div>
+                                 <p className="text-sm text-muted-foreground">Moyenne/Employé</p>
+                                 <p className="text-xl font-bold text-chart-3">
+                                   {fuelEmployeesSummary.consommation_moyenne_par_employe?.toFixed(2) || 0} DA
+                                 </p>
+                               </div>
+                               <BarChart3 className="w-6 h-6 text-chart-3/50" />
+                             </div>
+                           </CardContent>
+                         </Card>
+                       </div>
+                     )}
+
+                     {/* Liste des employés avec leur consommation */}
+                     {fuelEmployeesData.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucune consommation trouvée</h3>
+                         <p>Les consommations carburant par employé apparaîtront ici une fois que vous aurez assigné des cartes.</p>
+                       </div>
+                     ) : (
+                       <div className="space-y-4">
+                         {fuelEmployeesData.map((employe, index) => (
+                           <Card key={index} className="glass-card border border-white/10 hover:border-white/20 transition-all">
+                             <CardContent className="p-6">
+                               <div className="flex items-center justify-between">
+                                 {/* Informations employé */}
+                                 <div className="flex items-center gap-4">
+                                   <div className="w-12 h-12 bg-gradient-to-br from-primary to-chart-3 rounded-full flex items-center justify-center">
+                                     <span className="text-white font-bold text-lg">
+                                       {employe.employe_prenom?.[0]}{employe.employe_nom?.[0]}
+                                     </span>
+                                   </div>
+                                   <div>
+                                     <h3 className="text-lg font-semibold">
+                                       {employe.employe_prenom} {employe.employe_nom}
+                                     </h3>
+                                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                       <span>Matricule: {employe.employe_matricule || 'N/A'}</span>
+                                       <span>Tél: {employe.employe_telephone || 'N/A'}</span>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Statistiques de consommation */}
+                                 <div className="flex items-center gap-8">
+                                   <div className="text-center">
+                                     <div className="text-sm text-muted-foreground">Cartes Utilisées</div>
+                                     <div className="text-lg font-semibold text-chart-1">
+                                       {employe.nombre_cartes_utilisees}
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="text-center">
+                                     <div className="text-sm text-muted-foreground">Transactions</div>
+                                     <div className="text-lg font-semibold text-chart-2">
+                                       {employe.nombre_transactions}
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="text-center">
+                                     <div className="text-sm text-muted-foreground">Consommation TTC</div>
+                                     <div className="text-2xl font-bold text-primary">
+                                       {employe.consommation_totale_ttc.toFixed(2)} DA
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="text-center">
+                                     <div className="text-sm text-muted-foreground">Moyenne/Transaction</div>
+                                     <div className="text-lg font-semibold text-chart-3">
+                                       {employe.consommation_moyenne_ttc.toFixed(2)} DA
+                                     </div>
+                                   </div>
+                                 </div>
+                               </div>
+                               
+                               {/* Détails supplémentaires */}
+                               <div className="mt-4 pt-4 border-t border-white/10">
+                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                   <div>
+                                     <span className="text-muted-foreground">Cartes: </span>
+                                     <span className="font-medium">
+                                       {employe.cartes_utilisees.join(', ') || 'Aucune'}
+                                     </span>
+                                   </div>
+                                   <div>
+                                     <span className="text-muted-foreground">Véhicules: </span>
+                                     <span className="font-medium">
+                                       {employe.vehicules_utilises.slice(0, 2).join(', ')}
+                                       {employe.vehicules_utilises.length > 2 && ` (+${employe.vehicules_utilises.length - 2})`}
+                                     </span>
+                                   </div>
+                                   <div>
+                                     <span className="text-muted-foreground">Période: </span>
+                                     <span className="font-medium">
+                                       {employe.premiere_transaction ? new Date(employe.premiere_transaction).toLocaleDateString() : 'N/A'} - 
+                                       {employe.derniere_transaction ? new Date(employe.derniere_transaction).toLocaleDateString() : 'N/A'}
+                                     </span>
+                                   </div>
+                                 </div>
+                               </div>
+
+                               {/* Bouton pour voir les détails */}
+                               <div className="mt-4 flex justify-end">
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                   onClick={() => {
+                                     setSelectedEmployeeFuel(employe)
+                                     setShowEmployeeFuelModal(true)
+                                   }}
+                                   className="glass-card border border-white/20 hover:bg-white/10"
+                                 >
+                                   <Eye className="w-4 h-4 mr-2" />
+                                   Voir Détails
+                                 </Button>
+                               </div>
+                             </CardContent>
+                           </Card>
+                         ))}
+                       </div>
+                     )}
+                   </CardContent>
+                 </Card>
+               ) : fuelViewMode === 'grouped' ? (
+                 <Card className="glass-card border border-white/20">
+                   <CardHeader>
+                     <CardTitle className="flex items-center gap-3 text-xl font-bold">
+                       <BarChart3 className="w-6 h-6 text-primary" />
+                       Consommation Groupée par Période et Employé
+                     </CardTitle>
+                     <CardDescription>
+                       Vue détaillée de la consommation carburant groupée par {fuelPeriod === 'week' ? 'semaine' : fuelPeriod === 'month' ? 'mois' : 'année'}
+                     </CardDescription>
+                   </CardHeader>
+                   <CardContent>
+                     {fuelGroupedData.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucune donnée groupée trouvée</h3>
+                         <p>Les données apparaîtront ici une fois que vous aurez des transactions carburant assignées.</p>
+                       </div>
+                     ) : (
+                       <div className="space-y-6">
+                         {fuelGroupedData.map((periode, index) => (
+                           <div key={index} className="border border-white/10 rounded-lg p-4">
+                             <div className="flex items-center justify-between mb-4">
+                               <h3 className="text-lg font-semibold text-primary">
+                                 Période: {periode.periode}
+                               </h3>
+                               <Badge variant="outline" className="glass-card border border-white/20">
+                                 {periode.employes.length} employé{periode.employes.length > 1 ? 's' : ''}
+                               </Badge>
+                             </div>
+                             
+                             <div className="space-y-3">
+                               {periode.employes.map((employe: any, empIndex: number) => (
+                                 <div key={empIndex} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                                   <div className="flex items-center gap-3">
+                                     <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
+                                       <span className="text-sm font-medium text-primary">
+                                         {employe.employe_prenom?.[0]}{employe.employe_nom?.[0]}
+                                       </span>
+                                     </div>
+                                     <div>
+                                       <div className="font-medium">
+                                         {employe.employe_prenom} {employe.employe_nom}
+                                       </div>
+                                       <div className="text-sm text-muted-foreground">
+                                         Matricule: {employe.employe_matricule || 'N/A'}
+                                       </div>
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="flex items-center gap-6 text-sm">
+                                     <div className="text-center">
+                                       <div className="text-muted-foreground">Cartes</div>
+                                       <div className="font-medium">{employe.nombre_cartes}</div>
+                                     </div>
+                                     <div className="text-center">
+                                       <div className="text-muted-foreground">Transactions</div>
+                                       <div className="font-medium">{employe.nombre_transactions}</div>
+                                     </div>
+                                     <div className="text-center">
+                                       <div className="text-muted-foreground">Consommation</div>
+                                       <div className="font-bold text-primary text-lg">
+                                         {employe.consommation_totale.toFixed(2)} DA
+                                       </div>
+                                     </div>
+                                     <div className="text-center">
+                                       <div className="text-muted-foreground">Moyenne</div>
+                                       <div className="font-medium">
+                                         {employe.consommation_moyenne.toFixed(2)} DA
+                                       </div>
+                                     </div>
+                                   </div>
+                                 </div>
+                               ))}
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </CardContent>
+                 </Card>
+               ) : (
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                     <CardTitle className="flex items-center gap-3 text-xl font-bold">
+                       <Fuel className="w-6 h-6 text-primary" />
+                       Transactions Carburant Détaillées
+                     </CardTitle>
+                     <CardDescription>
+                       Vue détaillée de toutes les transactions carburant
+                     </CardDescription>
+                   </CardHeader>
+                   <CardContent>
+                     {loadingFuel ? (
+                       <div className="text-center py-8">
+                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                         <p className="mt-2 text-muted-foreground">Chargement des données carburant...</p>
+                       </div>
+                     ) : fuelData.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <Fuel className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucune transaction carburant trouvée</h3>
+                         <p>Importez des données pour commencer à voir vos transactions ici.</p>
+                       </div>
+                     ) : (
+                       <div className="overflow-x-auto">
+                         <table className="w-full border-collapse">
+                           <thead>
+                             <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Date Livraison</th>
+                               <th className="text-left p-4 font-semibold">Véhicule</th>
+                               <th className="text-left p-4 font-semibold">N° Carte</th>
+                               <th className="text-left p-4 font-semibold">Employé Assigné</th>
+                               <th className="text-left p-4 font-semibold">Station</th>
+                               <th className="text-left p-4 font-semibold">Montant TTC</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {fuelData.slice(0, 50).map((transaction, index) => (
+                               <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                 <td className="p-4">{transaction.date_livraison}</td>
+                                 <td className="p-4">
+                                   <div className="flex items-center gap-2">
+                                     <Fuel className="w-4 h-4 text-chart-3" />
+                                     {transaction.immat_vehicule}
+                                   </div>
+                                 </td>
+                                 <td className="p-4">{transaction.numero_carte}</td>
+                                 <td className="p-4">
+                                   {transaction.employe_assigné ? (
+                                     <div className="flex items-center gap-2">
+                                       <User className="w-4 h-4 text-primary" />
+                                       <span>{transaction.employe_assigné.prenom} {transaction.employe_assigné.nom}</span>
+                                     </div>
+                                   ) : (
+                                     <span className="text-muted-foreground">Non assigné</span>
+                                   )}
+                                 </td>
+                                 <td className="p-4">{transaction.numero_station}</td>
+                                 <td className="p-4 font-medium text-primary">
+                                   {transaction.ca_ttc} DA
+                                 </td>
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
+                     )}
+                   </CardContent>
+                 </Card>
+               )}
+
+               {/* Modal pour les détails de consommation d'un employé */}
+               {showEmployeeFuelModal && selectedEmployeeFuel && (
+                 <Dialog open={showEmployeeFuelModal} onOpenChange={setShowEmployeeFuelModal}>
+                   <DialogContent className="glass-card border border-white/20 max-w-2xl">
+                     <DialogHeader>
+                       <DialogTitle className="flex items-center gap-3">
+                         <Users className="w-6 h-6 text-primary" />
+                         Détails Consommation - {selectedEmployeeFuel.employe_prenom} {selectedEmployeeFuel.employe_nom}
+                       </DialogTitle>
+                       <DialogDescription>
+                         Détails complets de la consommation carburant TTC pour cet employé
+                       </DialogDescription>
+                     </DialogHeader>
+                     
+                     <div className="space-y-6">
+                       {/* Statistiques détaillées */}
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                         <div className="text-center p-3 bg-white/5 rounded-lg">
+                           <div className="text-2xl font-bold text-primary">
+                             {selectedEmployeeFuel.consommation_totale_ttc.toFixed(2)}
+                           </div>
+                           <div className="text-sm text-muted-foreground">€ TTC Total</div>
+                         </div>
+                         <div className="text-center p-3 bg-white/5 rounded-lg">
+                           <div className="text-2xl font-bold text-chart-1">
+                             {selectedEmployeeFuel.nombre_transactions}
+                           </div>
+                           <div className="text-sm text-muted-foreground">Transactions</div>
+                         </div>
+                         <div className="text-center p-3 bg-white/5 rounded-lg">
+                           <div className="text-2xl font-bold text-chart-2">
+                             {selectedEmployeeFuel.nombre_cartes_utilisees}
+                           </div>
+                           <div className="text-sm text-muted-foreground">Cartes</div>
+                         </div>
+                         <div className="text-center p-3 bg-white/5 rounded-lg">
+                           <div className="text-2xl font-bold text-chart-3">
+                             {selectedEmployeeFuel.consommation_moyenne_ttc.toFixed(2)}
+                           </div>
+                           <div className="text-sm text-muted-foreground">€ Moyenne</div>
+                         </div>
+                       </div>
+
+                       {/* Informations détaillées */}
+                       <div className="space-y-4">
+                         <div>
+                           <h4 className="font-semibold mb-2">Informations Employé</h4>
+                           <div className="bg-white/5 rounded-lg p-4 space-y-2">
+                             <div><span className="text-muted-foreground">Nom complet:</span> {selectedEmployeeFuel.employe_prenom} {selectedEmployeeFuel.employe_nom}</div>
+                             <div><span className="text-muted-foreground">Matricule:</span> {selectedEmployeeFuel.employe_matricule || 'N/A'}</div>
+                             <div><span className="text-muted-foreground">Téléphone:</span> {selectedEmployeeFuel.employe_telephone || 'N/A'}</div>
+                             <div><span className="text-muted-foreground">Email:</span> {selectedEmployeeFuel.employe_email || 'N/A'}</div>
+                           </div>
+                         </div>
+
+                         <div>
+                           <h4 className="font-semibold mb-2">Cartes Utilisées</h4>
+                           <div className="bg-white/5 rounded-lg p-4">
+                             <div className="flex flex-wrap gap-2">
+                               {selectedEmployeeFuel.cartes_utilisees.map((carte: string, index: number) => (
+                                 <Badge key={index} variant="outline" className="glass-card border border-white/20">
+                                   Carte {carte}
+                                 </Badge>
+                               ))}
+                             </div>
+                           </div>
+                         </div>
+
+                         <div>
+                           <h4 className="font-semibold mb-2">Véhicules Utilisés</h4>
+                           <div className="bg-white/5 rounded-lg p-4">
+                             <div className="flex flex-wrap gap-2">
+                               {selectedEmployeeFuel.vehicules_utilises.map((vehicule: string, index: number) => (
+                                 <Badge key={index} variant="outline" className="glass-card border border-white/20">
+                                   {vehicule}
+                                 </Badge>
+                               ))}
+                             </div>
+                           </div>
+                         </div>
+
+                         <div>
+                           <h4 className="font-semibold mb-2">Stations Utilisées</h4>
+                           <div className="bg-white/5 rounded-lg p-4">
+                             <div className="flex flex-wrap gap-2">
+                               {selectedEmployeeFuel.stations_utilisees.map((station: string, index: number) => (
+                                 <Badge key={index} variant="outline" className="glass-card border border-white/20">
+                                   Station {station}
+                                 </Badge>
+                               ))}
+                             </div>
+                           </div>
+                         </div>
+
+                         <div>
+                           <h4 className="font-semibold mb-2">Période d'Activité</h4>
+                           <div className="bg-white/5 rounded-lg p-4">
+                             <div className="flex items-center gap-4">
+                               <div>
+                                 <span className="text-muted-foreground">Première transaction:</span>
+                                 <div className="font-medium">
+                                   {selectedEmployeeFuel.premiere_transaction ? 
+                                     new Date(selectedEmployeeFuel.premiere_transaction).toLocaleString() : 'N/A'}
+                                 </div>
+                               </div>
+                               <div>
+                                 <span className="text-muted-foreground">Dernière transaction:</span>
+                                 <div className="font-medium">
+                                   {selectedEmployeeFuel.derniere_transaction ? 
+                                     new Date(selectedEmployeeFuel.derniere_transaction).toLocaleString() : 'N/A'}
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+
+                     <DialogFooter>
+                       <Button 
+                         variant="outline" 
+                         onClick={() => setShowEmployeeFuelModal(false)}
+                         className="glass-card border border-white/20"
+                       >
+                         Fermer
+                       </Button>
+                     </DialogFooter>
+                   </DialogContent>
+                 </Dialog>
+               )}
+             </div>
+           )}
+
+           {/* Other tabs placeholder */}
+           {activeTab !== "dashboard" && activeTab !== "employees" && activeTab !== "fuel-consumption" && activeTab !== "interventions" && activeTab !== "fuel" && (
+             <div className="space-y-6">
+               <div className="flex justify-between items-center">
+                 <div>
+                   <h2 className="text-3xl font-bold">
+                     {activeTab === "materials" && "Matériel"}
+                     {activeTab === "penalties" && "Pénalités"}
+                     {activeTab === "claims" && "Réclamations"}
+                     {activeTab === "reports" && "Rapports"}
+                   </h2>
+                   <p className="text-muted-foreground">
+                     {activeTab === "materials" && "Gestion du matériel"}
+                     {activeTab === "penalties" && "Gestion des pénalités"}
+                     {activeTab === "claims" && "Gestion des réclamations"}
+                     {activeTab === "reports" && "Génération de rapports"}
+                   </p>
+                 </div>
+                 <Button variant="outline">
+                   <Plus className="w-4 h-4 mr-2" />
+                   Nouveau
+                 </Button>
+               </div>
+
+               {/* Material Management Section */}
+               <div className="space-y-6">
+                 {/* Material Inventory Card */}
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                     <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-primary/10 rounded-lg">
+                           <Package className="w-5 h-5 text-primary" />
+                         </div>
+                         <div>
+                           <CardTitle className="text-xl font-bold">Inventaire du Matériel</CardTitle>
+                           <CardDescription>
+                             {materials.length} équipements trouvés dans la base de données
+                           </CardDescription>
+                         </div>
+                       </div>
+                       <div className="flex gap-2">
+                         <Button 
+                           variant="outline" 
+                           onClick={() => loadMaterialsFromDatabase()}
+                           className="glass-card border border-white/20 hover:bg-white/10"
+                         >
+                           <RefreshCw className="w-4 h-4 mr-2" />
+                           Actualiser
+                         </Button>
+                         <Button 
+                           onClick={() => {
+                             setEditingItem(null)
+                             setShowMaterialModal(true)
+                           }}
+                           className="gradient-primary text-white"
+                         >
+                           <Plus className="w-4 h-4 mr-2" />
+                           Ajouter Matériel
+                         </Button>
+                       </div>
+                     </div>
+                   </CardHeader>
+                   <CardContent>
+                     <div className="overflow-x-auto">
+                       <table className="w-full">
+                         <thead>
+                           <tr className="border-b border-white/10">
+                             <th className="text-left p-3 font-medium">Équipement</th>
+                             <th className="text-left p-3 font-medium">Type</th>
+                             <th className="text-left p-3 font-medium">Marque/Modèle</th>
+                             <th className="text-left p-3 font-medium">Statut</th>
+                             <th className="text-left p-3 font-medium">Quantité</th>
+                             <th className="text-left p-3 font-medium">Prix Unitaire</th>
+                             <th className="text-left p-3 font-medium">Prix Total</th>
+                             <th className="text-left p-3 font-medium">Actions</th>
+                           </tr>
+                         </thead>
+                         <tbody>
+                           {materials.map((material) => (
+                             <tr key={material.id} className="border-b border-white/5 hover:bg-white/5">
+                               <td className="p-3">
+                                 <div className="flex items-center gap-3">
+                                   <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
+                                     <Package className="w-4 h-4 text-primary" />
+                                   </div>
+                                   <div>
+                                     <div className="font-medium">{material.nom}</div>
+                                     <div className="text-sm text-muted-foreground">{material.numero_serie || 'N/A'}</div>
+                                   </div>
+                                 </div>
+                               </td>
+                               <td className="p-3">
+                                 <Badge variant="outline" className="glass-card border border-white/20">
+                                   {material.categorie || 'N/A'}
+                                 </Badge>
+                               </td>
+                               <td className="p-3">{material.fournisseur || 'N/A'}</td>
+                               <td className="p-3">
+                                 <Badge 
+                                   variant={material.statut === 'disponible' ? 'default' : 'secondary'}
+                                   className="glass-card border border-white/20"
+                                 >
+                                   {material.statut || 'disponible'}
+                                 </Badge>
+                               </td>
+                               <td className="p-3">{material.quantite || 0}</td>
+                               <td className="p-3">{material.prix_unitaire ? `${material.prix_unitaire} €` : 'N/A'}</td>
+                               <td className="p-3 font-medium text-primary">
+                                 {material.prix_unitaire && material.quantite 
+                                   ? `${(parseFloat(material.prix_unitaire) * parseInt(material.quantite)).toFixed(2)} €`
+                                   : 'N/A'
+                                 }
+                               </td>
+                               <td className="p-3">
+                                 <div className="flex gap-2">
+                                   <Button
+                                     variant="ghost"
+                                     size="sm"
+                                     onClick={() => {
+                                       setEditingItem(material)
+                                       setShowMaterialModal(true)
+                                     }}
+                                     className="glass-card border border-white/20 hover:bg-white/10"
+                                   >
+                                     <Edit className="w-4 h-4" />
+                                   </Button>
+                                   <Button
+                                     variant="ghost"
+                                     size="sm"
+                                     onClick={() => deleteMaterial(material.id)}
+                                     className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
+                                   >
+                                     <Trash2 className="w-4 h-4" />
+                                   </Button>
+                                 </div>
+                               </td>
+                             </tr>
+                           ))}
+                         </tbody>
+                       </table>
+                     </div>
+                   </CardContent>
+                 </Card>
+
+                 {/* Material Assignments Card */}
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                     <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-primary/10 rounded-lg">
+                           <Users className="w-5 h-5 text-primary" />
+                         </div>
+                         <div>
+                           <CardTitle className="text-xl font-bold">Affectations de Matériel</CardTitle>
+                           <CardDescription>
+                             Gérez les assignations de matériel aux employés
+                           </CardDescription>
+                         </div>
+                       </div>
+                       <div className="flex gap-2">
+                         <Button 
+                           onClick={() => {
+                             setEditingItem(null)
+                             setShowAffectationModal(true)
+                           }}
+                           className="gradient-primary text-white"
+                         >
+                           <Plus className="w-4 h-4 mr-2" />
+                           Nouvelle Affectation
+                         </Button>
+                         <Button 
+                           onClick={() => {
+                             setEditingItem(null)
+                             setShowMultiAffectationModal(true)
+                           }}
+                           variant="outline"
+                           className="glass-card border border-white/20 hover:bg-white/10"
+                         >
+                           <Users className="w-4 h-4 mr-2" />
+                           Affectation Multiple
+                         </Button>
+                       </div>
+                     </div>
+                   </CardHeader>
+                   <CardContent>
+                     <div className="space-y-4">
+                       {/* Date Filters */}
+                       <div className="flex gap-4 items-center">
+                         <div className="flex gap-2">
+                           <Input
+                             type="date"
+                             placeholder="Date début"
+                             className="glass-card border border-white/20"
+                           />
+                           <Input
+                             type="date"
+                             placeholder="Date fin"
+                             className="glass-card border border-white/20"
+                           />
+                           <Button variant="outline" className="glass-card border border-white/20 hover:bg-white/10">
+                             Effacer Filtres
+                           </Button>
+                         </div>
+                       </div>
+
+                       {/* Employee Assignments */}
+                       <div className="space-y-3">
+                         {employees.map((employee) => {
+                           const employeeAssignments = affectations.filter(aff => aff.employee_id === employee.id)
+                           const totalCost = employeeAssignments.reduce((sum, aff) => {
+                             const material = materials.find(mat => mat.id === aff.material_id)
+                             return sum + (material?.prix_unitaire ? parseFloat(material.prix_unitaire) * parseInt(aff.quantite_affectee) : 0)
+                           }, 0)
+
+                           if (employeeAssignments.length === 0) return null
+
+                           return (
+                             <div key={employee.id} className="border border-white/10 rounded-lg p-4">
+                               <div className="flex items-center gap-3 mb-3">
+                                 <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
+                                   <User className="w-4 h-4 text-primary" />
+                                 </div>
+                                 <div>
+                                   <div className="font-medium">{employee.prenom} {employee.nom}</div>
+                                   <div className="text-sm text-muted-foreground">
+                                     {employeeAssignments.length} affectation(s) - Coût total: {totalCost.toFixed(2)} €
+                                   </div>
+                                 </div>
+                               </div>
+                               
+                               <div className="overflow-x-auto">
+                                 <table className="w-full">
+                                   <thead>
+                                     <tr className="border-b border-white/10">
+                                       <th className="text-left p-2 font-medium">Matériel</th>
+                                       <th className="text-left p-2 font-medium">Quantité</th>
+                                       <th className="text-left p-2 font-medium">Prix Unitaire</th>
+                                       <th className="text-left p-2 font-medium">Prix Total</th>
+                                       <th className="text-left p-2 font-medium">Date Affectation</th>
+                                       <th className="text-left p-2 font-medium">Statut</th>
+                                       <th className="text-left p-2 font-medium">Actions</th>
+                                     </tr>
+                                   </thead>
+                                   <tbody>
+                                     {employeeAssignments.map((affectation) => {
+                                       const material = materials.find(mat => mat.id === affectation.material_id)
+                                       return (
+                                         <tr key={affectation.id} className="border-b border-white/5">
+                                           <td className="p-2">{material?.nom || 'N/A'}</td>
+                                           <td className="p-2">{affectation.quantite_affectee}</td>
+                                           <td className="p-2">{material?.prix_unitaire ? `${material.prix_unitaire} €` : 'N/A'}</td>
+                                           <td className="p-2 font-medium text-primary">
+                                             {material?.prix_unitaire 
+                                               ? `${(parseFloat(material.prix_unitaire) * parseInt(affectation.quantite_affectee)).toFixed(2)} €`
+                                               : 'N/A'
+                                             }
+                                           </td>
+                                           <td className="p-2">{affectation.date_affectation || 'N/A'}</td>
+                                           <td className="p-2">
+                                             <Badge 
+                                               variant={affectation.statut === 'en_cours' ? 'default' : 'secondary'}
+                                               className="glass-card border border-white/20"
+                                             >
+                                               {affectation.statut || 'en_cours'}
+                                             </Badge>
+                                           </td>
+                                           <td className="p-2">
+                                             <div className="flex gap-1">
+                                               <Button
+                                                 variant="ghost"
+                                                 size="sm"
+                                                 onClick={() => {
+                                                   setEditingItem(affectation)
+                                                   setShowAffectationModal(true)
+                                                 }}
+                                                 className="glass-card border border-white/20 hover:bg-white/10"
+                                               >
+                                                 <Edit className="w-3 h-3" />
+                                               </Button>
+                                               <Button
+                                                 variant="ghost"
+                                                 size="sm"
+                                                 onClick={() => deleteAffectation(affectation.id)}
+                                                 className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
+                                               >
+                                                 <Trash2 className="w-3 h-3" />
+                                               </Button>
+                                             </div>
+                                           </td>
+                                         </tr>
+                                       )
+                                     })}
+                                   </tbody>
+                                 </table>
+                               </div>
+                             </div>
+                           )
+                         })}
+                       </div>
+                     </div>
+                   </CardContent>
+                 </Card>
+               </div>
+             </div>
+           )}
+
+           {/* Penalties Section */}
+           {activeTab === "penalties" && (
+             <div className="space-y-6">
+               <div className="flex items-center justify-between">
+                 <div>
+                   <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-red-600 bg-clip-text text-transparent">
+                     Gestion des Pénalités
+                   </h2>
+                   <p className="text-muted-foreground">
+                     Gérez les pénalités et sanctions des employés
+                   </p>
+                 </div>
+                 <div className="flex gap-2">
+                   <Button 
+                     variant="outline" 
+                     onClick={() => loadPenaltiesFromDatabase()}
+                     className="glass-card border border-white/20 hover:bg-white/10"
+                   >
+                     <RefreshCw className="w-4 h-4 mr-2" />
+                     Actualiser
+                   </Button>
+                   <Button 
+                     onClick={() => {
+                       setEditingItem(null)
+                       setShowPenaltyModal(true)
+                     }}
+                     className="gradient-primary text-white"
+                   >
+                     <Plus className="w-4 h-4 mr-2" />
+                     Ajouter Pénalité
+                   </Button>
+                 </div>
+               </div>
+
+               {/* Penalties List Card */}
+               <Card className="glass-card border border-white/20 hover-lift">
+                 <CardHeader>
+                   <div className="flex items-center gap-3">
+                     <div className="p-2 bg-red-500/10 rounded-lg">
+                       <AlertTriangle className="w-5 h-5 text-red-500" />
+                     </div>
+                     <div>
+                       <CardTitle className="text-xl font-bold">Liste des Pénalités</CardTitle>
+                       <CardDescription>
+                         {penalties.length} pénalités trouvées dans la base de données
+                       </CardDescription>
+                     </div>
+                   </div>
+                 </CardHeader>
+                 <CardContent>
+                   <div className="overflow-x-auto">
+                     <table className="w-full">
+                       <thead>
+                         <tr className="border-b border-white/10">
+                           <th className="text-left p-3 font-medium">Employé</th>
+                           <th className="text-left p-3 font-medium">Type</th>
+                           <th className="text-left p-3 font-medium">Motif</th>
+                           <th className="text-left p-3 font-medium">Montant</th>
+                           <th className="text-left p-3 font-medium">Statut</th>
+                           <th className="text-left p-3 font-medium">Actions</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {penalties.map((penalty) => {
+                           const employee = employees.find(emp => emp.id === penalty.employee_id)
+                           return (
+                             <tr key={penalty.id} className="border-b border-white/5 hover:bg-white/5">
+                               <td className="p-3">
+                                 <div className="flex items-center gap-3">
+                                   <div className="w-8 h-8 bg-red-500/20 rounded-full flex items-center justify-center">
+                                     <span className="text-sm font-medium text-red-500">
+                                       {employee ? `${employee.prenom[0]}${employee.nom[0]}` : 'N/A'}
+                                     </span>
+                                   </div>
+                                   <div>
+                                     <div className="font-medium">
+                                       {employee ? `${employee.prenom} ${employee.nom}` : 'Employé supprimé'}
+                                     </div>
+                                     <div className="text-sm text-muted-foreground">
+                                       PEN-{new Date().getFullYear()}-{penalty.id.toString().padStart(4, '0')}
+                                     </div>
+                                   </div>
+                                 </div>
+                               </td>
+                               <td className="p-3">
+                                 <Badge variant="outline" className="glass-card border border-white/20">
+                                   {penalty.type || 'absence'}
+                                 </Badge>
+                               </td>
+                               <td className="p-3">{penalty.raison || '--'}</td>
+                               <td className="p-3 font-medium text-red-500">
+                                 {penalty.montant ? `${penalty.montant} €` : 'N/A'}
+                               </td>
+                               <td className="p-3">
+                                 <div className="flex items-center gap-2">
+                                   <div className={`w-2 h-2 rounded-full ${
+                                     penalty.statut === 'active' ? 'bg-green-500' : 
+                                     penalty.statut === 'soumis' ? 'bg-yellow-500' : 'bg-gray-500'
+                                   }`} />
+                                   <span className="text-sm">
+                                     {penalty.statut === 'active' ? 'Active' : 
+                                      penalty.statut === 'soumis' ? 'Soumis' : 'Inactive'}
+                                   </span>
+                                 </div>
+                               </td>
+                               <td className="p-3">
+                                 <div className="flex gap-2">
+                                   <Button
+                                     variant="ghost"
+                                     size="sm"
+                                     onClick={() => {
+                                       setEditingItem(penalty)
+                                       setShowPenaltyModal(true)
+                                     }}
+                                     className="glass-card border border-white/20 hover:bg-white/10"
+                                   >
+                                     <Edit className="w-4 h-4" />
+                                   </Button>
+                                   <Button
+                                     variant="ghost"
+                                     size="sm"
+                                     onClick={() => deletePenalty(penalty.id)}
+                                     className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
+                                   >
+                                     <Trash2 className="w-4 h-4" />
+                                   </Button>
+                                 </div>
+                               </td>
+                             </tr>
+                           )
+                         })}
+                       </tbody>
+                     </table>
+                   </div>
+                 </CardContent>
+               </Card>
+             </div>
+           )}
+
+           {/* Claims Section */}
+           {activeTab === "claims" && (
+             <div className="space-y-6">
+               <div className="flex items-center justify-between">
+                 <div>
+                   <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                     Gestion des Réclamations
+                   </h2>
+                   <p className="text-muted-foreground">
+                     Gérez les réclamations et plaintes des clients
+                   </p>
+                 </div>
+                 <div className="flex gap-2">
+                   <Button 
+                     variant="outline" 
+                     onClick={() => loadClaimsFromDatabase()}
+                     className="glass-card border border-white/20 hover:bg-white/10"
+                   >
+                     <RefreshCw className="w-4 h-4 mr-2" />
+                     Actualiser
+                   </Button>
+                   <Button 
+                     onClick={() => {
+                       setEditingItem(null)
+                       setShowClaimModal(true)
+                     }}
+                     className="gradient-primary text-white"
+                   >
+                     <Plus className="w-4 h-4 mr-2" />
+                     Ajouter Réclamation
+                   </Button>
+                 </div>
+               </div>
+
+               {/* Claims List Card */}
+               <Card className="glass-card border border-white/20 hover-lift">
+                 <CardHeader>
+                   <div className="flex items-center gap-3">
+                     <div className="p-2 bg-primary/10 rounded-lg">
+                       <FileText className="w-5 h-5 text-primary" />
+                     </div>
+                     <div>
+                       <CardTitle className="text-xl font-bold">Liste des Réclamations</CardTitle>
+                       <CardDescription>
+                         {claims.length} réclamations trouvées dans la base de données
+                       </CardDescription>
+                     </div>
+                   </div>
+                 </CardHeader>
+                 <CardContent>
+                   <div className="overflow-x-auto">
+                     <table className="w-full">
+                       <thead>
+                         <tr className="border-b border-white/10">
+                           <th className="text-left p-3 font-medium">Client</th>
+                           <th className="text-left p-3 font-medium">Type</th>
+                           <th className="text-left p-3 font-medium">Priorité</th>
+                           <th className="text-left p-3 font-medium">Statut</th>
+                           <th className="text-left p-3 font-medium">Employé Assigné</th>
+                           <th className="text-left p-3 font-medium">Actions</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {claims.map((claim) => {
+                           const employee = employees.find(emp => emp.id === claim.employee_id)
+                           return (
+                             <tr key={claim.id} className="border-b border-white/5 hover:bg-white/5">
+                               <td className="p-3">
+                                 <div className="flex items-center gap-3">
+                                   <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center">
+                                     <span className="text-sm font-medium text-green-500">
+                                       {claim.client_nom ? claim.client_nom[0] : 'C'}
+                                     </span>
+                                   </div>
+                                   <div>
+                                     <div className="font-medium">{claim.client_nom || 'Client anonyme'}</div>
+                                     <div className="text-sm text-muted-foreground">
+                                       REC-{new Date().getFullYear()}-{claim.id.toString().padStart(4, '0')}
+                                     </div>
+                                   </div>
+                                 </div>
+                               </td>
+                               <td className="p-3">
+                                 <Badge variant="outline" className="glass-card border border-white/20">
+                                   {claim.type || 'technique'}
+                                 </Badge>
+                               </td>
+                               <td className="p-3">
+                                 <Badge 
+                                   variant={claim.priorite === 'haute' ? 'destructive' : 'secondary'}
+                                   className="glass-card border border-white/20"
+                                 >
+                                   {claim.priorite || 'normale'}
+                                 </Badge>
+                               </td>
+                               <td className="p-3">
+                                 <Badge 
+                                   variant={claim.statut === 'ouverte' ? 'default' : 'secondary'}
+                                   className="glass-card border border-white/20"
+                                 >
+                                   {claim.statut || 'ouverte'}
+                                 </Badge>
+                               </td>
+                               <td className="p-3">
+                                 {employee ? `${employee.prenom} ${employee.nom}` : 'Non assigné'}
+                               </td>
+                               <td className="p-3">
+                                 <div className="flex gap-2">
+                                   <Button
+                                     variant="ghost"
+                                     size="sm"
+                                     onClick={() => {
+                                       setEditingItem(claim)
+                                       setShowClaimModal(true)
+                                     }}
+                                     className="glass-card border border-white/20 hover:bg-white/10"
+                                   >
+                                     <Edit className="w-4 h-4" />
+                                   </Button>
+                                   <Button
+                                     variant="ghost"
+                                     size="sm"
+                                     onClick={() => deleteClaim(claim.id)}
+                                     className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
+                                   >
+                                     <Trash2 className="w-4 h-4" />
+                                   </Button>
+                                 </div>
+                               </td>
+                             </tr>
+                           )
+                         })}
+                       </tbody>
+                     </table>
+                   </div>
+                 </CardContent>
+               </Card>
+             </div>
+           )}
         </main>
-                    </div>
+      </div>
 
       {/* Employee Modal */}
       <Dialog open={showEmployeeModal} onOpenChange={setShowEmployeeModal}>
@@ -2774,7 +3120,7 @@ export default function EmployeeTracker() {
 
       {/* Card Assignment Modal */}
       <Dialog open={showCardAssignmentModal} onOpenChange={setShowCardAssignmentModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-md">
+        <DialogContent className="glass-card border border-white/20 max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
               Assigner une carte carburant
@@ -2783,29 +3129,204 @@ export default function EmployeeTracker() {
               Assignez une carte carburant à {selectedEmployee?.prenom} {selectedEmployee?.nom}
             </DialogDescription>
           </DialogHeader>
-                    <div className="space-y-4">
+          <div className="space-y-4">
             <div>
-              <Label className="text-sm font-medium">Sélectionner une carte</Label>
-              <Select onValueChange={(value) => assignCardToEmployee(value)}>
+              <Label className="text-sm font-medium">Employé</Label>
+              <div className="p-3 bg-primary/10 rounded-lg border border-white/20">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
+                    <span className="text-sm font-medium text-primary">
+                      {selectedEmployee?.prenom?.[0]}{selectedEmployee?.nom?.[0]}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-medium">{selectedEmployee?.prenom} {selectedEmployee?.nom}</div>
+                    <div className="text-sm text-muted-foreground">Matricule: {selectedEmployee?.matricule}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div>
+              <Label className="text-sm font-medium">Sélectionner une carte carburant</Label>
+              <Select onValueChange={(value) => {
+                console.log("Carte sélectionnée:", value)
+                setAssignationData({...assignationData, numero_carte: value})
+              }}>
                 <SelectTrigger className="glass-card border border-white/20">
                   <SelectValue placeholder="Choisir une carte carburant" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableCards.map((card) => (
-                    <SelectItem key={card.numero_carte} value={card.numero_carte}>
-                      {card.label}
+                  {availableCards.length > 0 ? (
+                    availableCards.map((card) => (
+                      <SelectItem key={card.numero_carte} value={card.numero_carte}>
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex flex-col">
+                            <span className="font-medium">{card.label}</span>
+                            <div className="flex gap-2 text-xs text-muted-foreground">
+                              {card.montant && (
+                                <span>Montant: {card.montant} DA</span>
+                              )}
+                              {card.fournisseur && (
+                                <span>• {card.fournisseur}</span>
+                              )}
+                              {card.date_livraison && (
+                                <span>• Livrée: {new Date(card.date_livraison).toLocaleDateString()}</span>
+                              )}
+                              {card.immat_vehicule && (
+                                <span>• Véhicule: {card.immat_vehicule}</span>
+                              )}
+                            </div>
+                          </div>
+                          <Badge 
+                            variant={card.statut === 'disponible' ? 'default' : 'secondary'}
+                            className="ml-2"
+                          >
+                            {card.statut}
+                          </Badge>
+                        </div>
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="no-cards" disabled>
+                      Aucune carte disponible
                     </SelectItem>
-                  ))}
+                  )}
                 </SelectContent>
               </Select>
-                        </div>
-                          </div>
+              
+              {/* Debug info */}
+              <div className="mt-2 text-xs text-muted-foreground">
+                {availableCards.length} carte(s) disponible(s)
+              </div>
+            </div>
+
+            {assignationData.numero_carte && (
+              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  <span className="text-sm text-green-800">
+                    Carte {assignationData.numero_carte} sélectionnée
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          
           <DialogFooter>
             <Button
-              onClick={() => setShowCardAssignmentModal(false)}
-              className="glass-card border border-white/20 hover:bg-white/10 text-gray-900"
+              variant="outline"
+              onClick={() => {
+                setShowCardAssignmentModal(false)
+                setAssignationData({numero_carte: '', employe_id: ''})
+              }}
+              className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10"
             >
               Annuler
+            </Button>
+            <Button
+              onClick={() => {
+                if (assignationData.numero_carte && selectedEmployee) {
+                  assignCardToEmployee(assignationData.numero_carte)
+                }
+              }}
+              disabled={!assignationData.numero_carte || !selectedEmployee}
+              className="gradient-primary text-white"
+            >
+              Assigner la carte
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Card History Modal */}
+      <Dialog open={showCardHistoryModal} onOpenChange={setShowCardHistoryModal}>
+        <DialogContent className="glass-card border border-white/20 max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">
+              Historique des cartes carburant
+            </DialogTitle>
+            <DialogDescription>
+              Historique complet des cartes assignées à {selectedEmployeeHistory?.prenom} {selectedEmployeeHistory?.nom}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* Résumé de consommation */}
+            {cardHistory.length > 0 && (
+              <div className="p-4 bg-primary/10 rounded-lg border border-white/20">
+                <h3 className="font-semibold mb-2">Résumé de consommation</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Consommation totale</div>
+                    <div className="text-2xl font-bold text-primary">
+                      {cardHistory[0]?.total_consomme_toutes_cartes || 0} DA
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Nombre de cartes utilisées</div>
+                    <div className="text-2xl font-bold text-primary">
+                      {cardHistory[0]?.nombre_cartes_utilisees || 0}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Historique détaillé */}
+            <div>
+              <h3 className="font-semibold mb-3">Historique détaillé des cartes</h3>
+              {cardHistory.length > 0 ? (
+                <div className="space-y-3">
+                  {cardHistory[0]?.historique_cartes?.map((carte: any, index: number) => (
+                    <div key={index} className="p-4 bg-white/5 rounded-lg border border-white/10">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
+                            <CreditCard className="w-4 h-4 text-primary" />
+                          </div>
+                          <div>
+                            <div className="font-medium">Carte {carte.numero_carte}</div>
+                            <div className="text-sm text-muted-foreground">
+                              Assignée le {new Date(carte.date_assignation).toLocaleDateString()}
+                              {carte.date_fin && ` - Finie le ${new Date(carte.date_fin).toLocaleDateString()}`}
+                            </div>
+                          </div>
+                        </div>
+                        <Badge 
+                          variant={carte.statut === 'active' ? 'default' : 'secondary'}
+                        >
+                          {carte.statut === 'active' ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Consommation:</span>
+                          <span className="ml-2 font-medium">{carte.consommation_carte} DA</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Transactions:</span>
+                          <span className="ml-2 font-medium">{carte.nombre_transactions}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Aucun historique de cartes trouvé pour cet employé</p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              onClick={() => setShowCardHistoryModal(false)}
+              className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10"
+            >
+              Fermer
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2816,15 +3337,14 @@ export default function EmployeeTracker() {
         <DialogContent className="glass-card border border-white/20 max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
-              {editingItem ? "Modifier le Matériel" : "Ajouter du Matériel"}
+              {editingItem ? "Modifier le Matériel" : "Ajouter un Matériel"}
             </DialogTitle>
             <DialogDescription>
-              {editingItem ? "Modifiez les informations du matériel" : "Ajoutez un nouvel équipement à votre inventaire"}
+              {editingItem ? "Modifiez les informations du matériel" : "Ajoutez un nouveau matériel à votre inventaire"}
             </DialogDescription>
           </DialogHeader>
           <MaterialForm 
             material={editingItem} 
-            employees={employees}
             onSave={saveMaterial} 
             onCancel={() => {
               setShowMaterialModal(false)
@@ -2847,18 +3367,18 @@ export default function EmployeeTracker() {
           </DialogHeader>
           <AffectationForm 
             affectation={editingItem} 
-            materials={materials}
-            employees={employees}
             onSave={saveAffectation} 
             onCancel={() => {
               setShowAffectationModal(false)
               setEditingItem(null)
             }}
+            employees={employees}
+            materials={materials}
           />
         </DialogContent>
       </Dialog>
 
-      {/* Multi Affectation Modal */}
+      {/* Multi-Affectation Modal */}
       <Dialog open={showMultiAffectationModal} onOpenChange={setShowMultiAffectationModal}>
         <DialogContent className="glass-card border border-white/20 max-w-4xl">
           <DialogHeader>
@@ -2866,17 +3386,16 @@ export default function EmployeeTracker() {
               Affectation Multiple
             </DialogTitle>
             <DialogDescription>
-              Assignez plusieurs matériels à un employé en une seule fois
+              Assignez plusieurs matériaux à plusieurs employés en une seule fois
             </DialogDescription>
           </DialogHeader>
           <MultiAffectationForm 
-            materials={materials}
-            employees={employees}
             onSave={saveMultiAffectation} 
             onCancel={() => {
               setShowMultiAffectationModal(false)
-              setEditingItem(null)
             }}
+            employees={employees}
+            materials={materials}
           />
         </DialogContent>
       </Dialog>
@@ -2894,15 +3413,12 @@ export default function EmployeeTracker() {
           </DialogHeader>
           <PenaltyForm 
             penalty={editingItem} 
-            employees={employees}
-            interventions={interventions}
-            materials={materials}
-            claims={claims}
             onSave={savePenalty} 
             onCancel={() => {
               setShowPenaltyModal(false)
               setEditingItem(null)
             }}
+            employees={employees}
           />
         </DialogContent>
       </Dialog>
@@ -2920,17 +3436,159 @@ export default function EmployeeTracker() {
           </DialogHeader>
           <ClaimForm 
             claim={editingItem} 
-            employees={employees}
-            interventions={interventions}
             onSave={saveClaim} 
             onCancel={() => {
               setShowClaimModal(false)
               setEditingItem(null)
             }}
+            employees={employees}
+            interventions={interventions}
           />
         </DialogContent>
       </Dialog>
-                        </div>
+    </div>
+  )
+}
+
+// Multi-Affectation Form Component
+function MultiAffectationForm({ onSave, onCancel, employees, materials }: { 
+  onSave: (data: any) => void, 
+  onCancel: () => void,
+  employees: any[],
+  materials: any[]
+}) {
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
+  const [selectedMaterials, setSelectedMaterials] = useState<{[key: string]: number}>({})
+  const [formData, setFormData] = useState({
+    date_affectation: new Date().toISOString().split('T')[0],
+    commentaires: ''
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    const assignments = selectedEmployees.flatMap(employeeId => 
+      Object.entries(selectedMaterials).map(([materialId, quantity]) => ({
+        employee_id: employeeId,
+        material_id: materialId,
+        quantite_affectee: quantity,
+        date_affectation: formData.date_affectation,
+        statut: 'en_cours',
+        commentaires: formData.commentaires
+      }))
+    )
+
+    onSave(assignments)
+  }
+
+  const toggleEmployee = (employeeId: string) => {
+    setSelectedEmployees(prev => 
+      prev.includes(employeeId) 
+        ? prev.filter(id => id !== employeeId)
+        : [...prev, employeeId]
+    )
+  }
+
+  const updateMaterialQuantity = (materialId: string, quantity: number) => {
+    setSelectedMaterials(prev => ({
+      ...prev,
+      [materialId]: quantity
+    }))
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-2 gap-6">
+        {/* Employee Selection */}
+        <div>
+          <Label className="text-sm font-medium mb-3 block">Sélectionner les Employés</Label>
+          <div className="space-y-2 max-h-60 overflow-y-auto border border-white/20 rounded-lg p-3">
+            {employees.map((employee) => (
+              <div key={employee.id} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`employee-${employee.id}`}
+                  checked={selectedEmployees.includes(employee.id)}
+                  onCheckedChange={() => toggleEmployee(employee.id)}
+                />
+                <Label htmlFor={`employee-${employee.id}`} className="text-sm">
+                  {employee.prenom} {employee.nom}
+                </Label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Material Selection */}
+        <div>
+          <Label className="text-sm font-medium mb-3 block">Sélectionner les Matériaux</Label>
+          <div className="space-y-2 max-h-60 overflow-y-auto border border-white/20 rounded-lg p-3">
+            {materials.map((material) => (
+              <div key={material.id} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`material-${material.id}`}
+                  checked={selectedMaterials[material.id] > 0}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      updateMaterialQuantity(material.id, 1)
+                    } else {
+                      const newMaterials = { ...selectedMaterials }
+                      delete newMaterials[material.id]
+                      setSelectedMaterials(newMaterials)
+                    }
+                  }}
+                />
+                <Label htmlFor={`material-${material.id}`} className="text-sm flex-1">
+                  {material.nom}
+                </Label>
+                {selectedMaterials[material.id] > 0 && (
+                  <Input
+                    type="number"
+                    min="1"
+                    value={selectedMaterials[material.id]}
+                    onChange={(e) => updateMaterialQuantity(material.id, parseInt(e.target.value) || 1)}
+                    className="w-20 h-8 text-xs"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="date_affectation">Date d'Affectation</Label>
+          <Input
+            id="date_affectation"
+            type="date"
+            value={formData.date_affectation}
+            onChange={(e) => setFormData({...formData, date_affectation: e.target.value})}
+            className="glass-card border border-white/20"
+            required
+          />
+        </div>
+      </div>
+      
+      <div>
+        <Label htmlFor="commentaires">Commentaires</Label>
+        <Textarea
+          id="commentaires"
+          value={formData.commentaires}
+          onChange={(e) => setFormData({...formData, commentaires: e.target.value})}
+          className="glass-card border border-white/20"
+          rows={3}
+        />
+      </div>
+      
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
+          Annuler
+        </Button>
+        <Button type="submit" className="gradient-primary text-white">
+          Créer les Affectations
+        </Button>
+      </DialogFooter>
+    </form>
   )
 }
 
@@ -2970,7 +3628,7 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
             onChange={(e) => setFormData({...formData, matricule: e.target.value})}
             className="glass-card border border-white/20"
           />
-                          </div>
+        </div>
         <div>
           <Label htmlFor="nom">Nom</Label>
           <Input
@@ -3053,8 +3711,8 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
               <SelectItem value="superadmin">Super Admin</SelectItem>
             </SelectContent>
           </Select>
-                        </div>
-                      </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-4">
         <div>
@@ -3068,7 +3726,7 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
             className="glass-card border border-white/20"
             placeholder="0.00"
           />
-                                    </div>
+        </div>
       </div>
       
       <div>
@@ -3094,21 +3752,20 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
 }
 
 // Material Form Component
-function MaterialForm({ material, employees, onSave, onCancel }: { material: any, employees: any[], onSave: (data: any) => void, onCancel: () => void }) {
+function MaterialForm({ material, onSave, onCancel }: { material: any, onSave: (data: any) => void, onCancel: () => void }) {
   const [formData, setFormData] = useState({
+    nom: material?.nom || '',
+    description: material?.description || '',
+    quantite: material?.quantite || '',
+    unite: material?.unite || '',
+    prix_unitaire: material?.prix_unitaire || '',
+    categorie: material?.categorie || '',
+    fournisseur: material?.fournisseur || '',
     numero_serie: material?.numero_serie || '',
-    nom_equipement: material?.nom_equipement || '',
-    type_materiel: material?.type_materiel || '',
-    marque: material?.marque || '',
-    modele: material?.modele || '',
+    date_acquisition: material?.date_acquisition || '',
     statut: material?.statut || 'disponible',
     localisation: material?.localisation || '',
-    quantite: material?.quantite || '',
-    prix_unitaire: material?.prix_unitaire || '',
-    date_acquisition: material?.date_acquisition || '',
-    cout_acquisition: material?.cout_acquisition || '',
-    etat_general: material?.etat_general || 'bon',
-    notes_maintenance: material?.notes_maintenance || ''
+    commentaires: material?.commentaires || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -3120,55 +3777,77 @@ function MaterialForm({ material, employees, onSave, onCancel }: { material: any
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label htmlFor="numero_serie">Numéro de Série</Label>
+          <Label htmlFor="nom">Nom du Matériel</Label>
           <Input
-            id="numero_serie"
-            value={formData.numero_serie}
-            onChange={(e) => setFormData({...formData, numero_serie: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="nom_equipement">Nom de l'Équipement</Label>
-          <Input
-            id="nom_equipement"
-            value={formData.nom_equipement}
-            onChange={(e) => setFormData({...formData, nom_equipement: e.target.value})}
+            id="nom"
+            value={formData.nom}
+            onChange={(e) => setFormData({...formData, nom: e.target.value})}
             className="glass-card border border-white/20"
             required
           />
         </div>
         <div>
-          <Label htmlFor="type_materiel">Type de Matériel</Label>
-          <Select value={formData.type_materiel} onValueChange={(value) => setFormData({...formData, type_materiel: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
-              <SelectValue placeholder="Sélectionner un type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="routeur">Routeur</SelectItem>
-              <SelectItem value="modem">Modem</SelectItem>
-              <SelectItem value="cable">Câble</SelectItem>
-              <SelectItem value="outil">Outil</SelectItem>
-              <SelectItem value="vehicule">Véhicule</SelectItem>
-              <SelectItem value="autre">Autre</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="marque">Marque</Label>
+          <Label htmlFor="categorie">Catégorie</Label>
           <Input
-            id="marque"
-            value={formData.marque}
-            onChange={(e) => setFormData({...formData, marque: e.target.value})}
+            id="categorie"
+            value={formData.categorie}
+            onChange={(e) => setFormData({...formData, categorie: e.target.value})}
             className="glass-card border border-white/20"
           />
         </div>
         <div>
-          <Label htmlFor="modele">Modèle</Label>
+          <Label htmlFor="quantite">Quantité</Label>
           <Input
-            id="modele"
-            value={formData.modele}
-            onChange={(e) => setFormData({...formData, modele: e.target.value})}
+            id="quantite"
+            type="number"
+            value={formData.quantite}
+            onChange={(e) => setFormData({...formData, quantite: e.target.value})}
+            className="glass-card border border-white/20"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="unite">Unité</Label>
+          <Select value={formData.unite} onValueChange={(value) => setFormData({...formData, unite: value})}>
+            <SelectTrigger className="glass-card border border-white/20">
+              <SelectValue placeholder="Sélectionner une unité" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="piece">Pièce</SelectItem>
+              <SelectItem value="metre">Mètre</SelectItem>
+              <SelectItem value="kg">Kilogramme</SelectItem>
+              <SelectItem value="litre">Litre</SelectItem>
+              <SelectItem value="boite">Boîte</SelectItem>
+              <SelectItem value="rouleau">Rouleau</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="prix_unitaire">Prix Unitaire (€)</Label>
+          <Input
+            id="prix_unitaire"
+            type="number"
+            step="0.01"
+            value={formData.prix_unitaire}
+            onChange={(e) => setFormData({...formData, prix_unitaire: e.target.value})}
+            className="glass-card border border-white/20"
+          />
+        </div>
+        <div>
+          <Label htmlFor="fournisseur">Fournisseur</Label>
+          <Input
+            id="fournisseur"
+            value={formData.fournisseur}
+            onChange={(e) => setFormData({...formData, fournisseur: e.target.value})}
+            className="glass-card border border-white/20"
+          />
+        </div>
+        <div>
+          <Label htmlFor="numero_serie">Numéro de Série</Label>
+          <Input
+            id="numero_serie"
+            value={formData.numero_serie}
+            onChange={(e) => setFormData({...formData, numero_serie: e.target.value})}
             className="glass-card border border-white/20"
           />
         </div>
@@ -3181,10 +3860,8 @@ function MaterialForm({ material, employees, onSave, onCancel }: { material: any
             <SelectContent>
               <SelectItem value="disponible">Disponible</SelectItem>
               <SelectItem value="utilise">Utilisé</SelectItem>
-              <SelectItem value="en_maintenance">En Maintenance</SelectItem>
-              <SelectItem value="defectueux">Défectueux</SelectItem>
-              <SelectItem value="perdu">Perdu</SelectItem>
-              <SelectItem value="vole">Volé</SelectItem>
+              <SelectItem value="maintenance">En Maintenance</SelectItem>
+              <SelectItem value="hors_service">Hors Service</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -3198,46 +3875,34 @@ function MaterialForm({ material, employees, onSave, onCancel }: { material: any
           />
         </div>
         <div>
-          <Label htmlFor="quantite">Quantité</Label>
+          <Label htmlFor="date_acquisition">Date d'Acquisition</Label>
           <Input
-            id="quantite"
-            type="number"
-            min="1"
-            value={formData.quantite}
-            onChange={(e) => setFormData({...formData, quantite: e.target.value})}
-            className="glass-card border border-white/20"
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="prix_unitaire">Prix Unitaire (€)</Label>
-          <Input
-            id="prix_unitaire"
-            type="number"
-            step="0.01"
-            min="0"
-            value={formData.prix_unitaire}
-            onChange={(e) => setFormData({...formData, prix_unitaire: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="cout_acquisition">Coût d'Acquisition (€)</Label>
-          <Input
-            id="cout_acquisition"
-            type="number"
-            value={formData.cout_acquisition}
-            onChange={(e) => setFormData({...formData, cout_acquisition: e.target.value})}
+            id="date_acquisition"
+            type="date"
+            value={formData.date_acquisition}
+            onChange={(e) => setFormData({...formData, date_acquisition: e.target.value})}
             className="glass-card border border-white/20"
           />
         </div>
       </div>
+      
       <div>
-        <Label htmlFor="notes_maintenance">Notes de Maintenance</Label>
+        <Label htmlFor="description">Description</Label>
         <Textarea
-          id="notes_maintenance"
-          value={formData.notes_maintenance}
-          onChange={(e) => setFormData({...formData, notes_maintenance: e.target.value})}
+          id="description"
+          value={formData.description}
+          onChange={(e) => setFormData({...formData, description: e.target.value})}
+          className="glass-card border border-white/20"
+          rows={3}
+        />
+      </div>
+      
+      <div>
+        <Label htmlFor="commentaires">Commentaires</Label>
+        <Textarea
+          id="commentaires"
+          value={formData.commentaires}
+          onChange={(e) => setFormData({...formData, commentaires: e.target.value})}
           className="glass-card border border-white/20"
           rows={3}
         />
@@ -3255,18 +3920,20 @@ function MaterialForm({ material, employees, onSave, onCancel }: { material: any
 }
 
 // Affectation Form Component
-function AffectationForm({ affectation, materials, employees, onSave, onCancel }: { 
+function AffectationForm({ affectation, onSave, onCancel, employees, materials }: { 
   affectation: any, 
-  materials: any[], 
-  employees: any[], 
   onSave: (data: any) => void, 
-  onCancel: () => void 
+  onCancel: () => void,
+  employees: any[],
+  materials: any[]
 }) {
   const [formData, setFormData] = useState({
-    materiel_id: affectation?.materiel_id || '',
-    employe_id: affectation?.employe_id || '',
-    quantite_assignee: affectation?.quantite_assignee || '',
-    statut: affectation?.statut || 'active',
+    employee_id: affectation?.employee_id || '',
+    material_id: affectation?.material_id || '',
+    quantite_affectee: affectation?.quantite_affectee || '',
+    date_affectation: affectation?.date_affectation || '',
+    date_retour: affectation?.date_retour || '',
+    statut: affectation?.statut || 'en_cours',
     commentaires: affectation?.commentaires || ''
   })
 
@@ -3275,52 +3942,46 @@ function AffectationForm({ affectation, materials, employees, onSave, onCancel }
     onSave(formData)
   }
 
-  // Filtrer les matériels disponibles (avec stock > 0)
-  const availableMaterials = materials.filter(material => 
-    material.quantite > 0 || affectation?.materiel_id === material.id
-  )
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label htmlFor="materiel_id">Matériel</Label>
-          <Select value={formData.materiel_id} onValueChange={(value) => setFormData({...formData, materiel_id: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
-              <SelectValue placeholder="Sélectionner un matériel" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableMaterials.map((material) => (
-                <SelectItem key={material.id} value={material.id.toString()}>
-                  {material.nom_equipement} - Stock: {material.quantite}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-                                          </div>
-        <div>
-          <Label htmlFor="employe_id">Employé</Label>
-          <Select value={formData.employe_id} onValueChange={(value) => setFormData({...formData, employe_id: value})}>
+          <Label htmlFor="employee_id">Employé</Label>
+          <Select value={formData.employee_id} onValueChange={(value) => setFormData({...formData, employee_id: value})}>
             <SelectTrigger className="glass-card border border-white/20">
               <SelectValue placeholder="Sélectionner un employé" />
             </SelectTrigger>
             <SelectContent>
               {employees.map((emp) => (
-                <SelectItem key={emp.id} value={emp.id.toString()}>
+                <SelectItem key={emp.id} value={emp.id}>
                   {emp.prenom} {emp.nom}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-                                        </div>
+        </div>
         <div>
-          <Label htmlFor="quantite_assignee">Quantité à Assigner</Label>
+          <Label htmlFor="material_id">Matériel</Label>
+          <Select value={formData.material_id} onValueChange={(value) => setFormData({...formData, material_id: value})}>
+            <SelectTrigger className="glass-card border border-white/20">
+              <SelectValue placeholder="Sélectionner un matériel" />
+            </SelectTrigger>
+            <SelectContent>
+              {materials.map((mat) => (
+                <SelectItem key={mat.id} value={mat.id}>
+                  {mat.nom}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="quantite_affectee">Quantité Affectée</Label>
           <Input
-            id="quantite_assignee"
+            id="quantite_affectee"
             type="number"
-            min="1"
-            value={formData.quantite_assignee}
-            onChange={(e) => setFormData({...formData, quantite_assignee: e.target.value})}
+            value={formData.quantite_affectee}
+            onChange={(e) => setFormData({...formData, quantite_affectee: e.target.value})}
             className="glass-card border border-white/20"
             required
           />
@@ -3332,13 +3993,36 @@ function AffectationForm({ affectation, materials, employees, onSave, onCancel }
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="en_cours">En Cours</SelectItem>
               <SelectItem value="retourne">Retourné</SelectItem>
               <SelectItem value="perdu">Perdu</SelectItem>
+              <SelectItem value="casse">Cassé</SelectItem>
             </SelectContent>
           </Select>
         </div>
+        <div>
+          <Label htmlFor="date_affectation">Date d'Affectation</Label>
+          <Input
+            id="date_affectation"
+            type="date"
+            value={formData.date_affectation}
+            onChange={(e) => setFormData({...formData, date_affectation: e.target.value})}
+            className="glass-card border border-white/20"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="date_retour">Date de Retour</Label>
+          <Input
+            id="date_retour"
+            type="date"
+            value={formData.date_retour}
+            onChange={(e) => setFormData({...formData, date_retour: e.target.value})}
+            className="glass-card border border-white/20"
+          />
+        </div>
       </div>
+      
       <div>
         <Label htmlFor="commentaires">Commentaires</Label>
         <Textarea
@@ -3354,173 +4038,7 @@ function AffectationForm({ affectation, materials, employees, onSave, onCancel }
           Annuler
         </Button>
         <Button type="submit" className="gradient-primary text-white">
-          {affectation ? "Modifier" : "Assigner"}
-        </Button>
-      </DialogFooter>
-    </form>
-  )
-}
-
-// Multi Affectation Form Component
-function MultiAffectationForm({ materials, employees, onSave, onCancel }: { 
-  materials: any[], 
-  employees: any[], 
-  onSave: (data: any) => void, 
-  onCancel: () => void 
-}) {
-  const [formData, setFormData] = useState({
-    employe_id: '',
-    affectations: [{ materiel_id: '', quantite_assignee: '', commentaires: '' }]
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    // Filtrer les affectations valides
-    const validAffectations = formData.affectations.filter(a => 
-      a.materiel_id && a.quantite_assignee && parseInt(a.quantite_assignee) > 0
-    )
-    
-    if (validAffectations.length === 0) {
-      alert("Veuillez ajouter au moins une affectation valide")
-      return
-    }
-    
-    onSave({
-      employe_id: formData.employe_id,
-      affectations: validAffectations.map(a => ({
-        materiel_id: parseInt(a.materiel_id),
-        quantite_assignee: parseInt(a.quantite_assignee),
-        commentaires: a.commentaires
-      }))
-    })
-  }
-
-  const addAffectation = () => {
-    setFormData({
-      ...formData,
-      affectations: [...formData.affectations, { materiel_id: '', quantite_assignee: '', commentaires: '' }]
-    })
-  }
-
-  const removeAffectation = (index: number) => {
-    if (formData.affectations.length > 1) {
-      setFormData({
-        ...formData,
-        affectations: formData.affectations.filter((_, i) => i !== index)
-      })
-    }
-  }
-
-  const updateAffectation = (index: number, field: string, value: string) => {
-    const newAffectations = [...formData.affectations]
-    newAffectations[index] = { ...newAffectations[index], [field]: value }
-    setFormData({ ...formData, affectations: newAffectations })
-  }
-
-  // Filtrer les matériels disponibles (avec stock > 0)
-  const availableMaterials = materials.filter(material => material.quantite > 0)
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div>
-        <Label htmlFor="employe_id">Employé</Label>
-        <Select value={formData.employe_id} onValueChange={(value) => setFormData({...formData, employe_id: value})}>
-          <SelectTrigger className="glass-card border border-white/20">
-            <SelectValue placeholder="Sélectionner un employé" />
-          </SelectTrigger>
-          <SelectContent>
-            {employees.map((emp) => (
-              <SelectItem key={emp.id} value={emp.id.toString()}>
-                {emp.prenom} {emp.nom}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div>
-        <div className="flex justify-between items-center mb-4">
-          <Label>Matériels à Assigner</Label>
-          <Button
-            type="button"
-            onClick={addAffectation}
-            className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Ajouter Matériel
-          </Button>
-        </div>
-
-        <div className="space-y-4">
-          {formData.affectations.map((affectation, index) => (
-            <div key={index} className="glass-card p-4 rounded-lg border border-white/20">
-              <div className="flex justify-between items-center mb-3">
-                <h4 className="font-medium">Matériel {index + 1}</h4>
-                {formData.affectations.length > 1 && (
-                  <Button
-                    type="button"
-                    onClick={() => removeAffectation(index)}
-                    className="bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 text-red-600"
-                    size="sm"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                                      )}
-                                    </div>
-              
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label>Matériel</Label>
-                  <Select 
-                    value={affectation.materiel_id} 
-                    onValueChange={(value) => updateAffectation(index, 'materiel_id', value)}
-                  >
-                    <SelectTrigger className="glass-card border border-white/20">
-                      <SelectValue placeholder="Sélectionner" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableMaterials.map((material) => (
-                        <SelectItem key={material.id} value={material.id.toString()}>
-                          {material.nom_equipement} - Stock: {material.quantite}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label>Quantité</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={affectation.quantite_assignee}
-                    onChange={(e) => updateAffectation(index, 'quantite_assignee', e.target.value)}
-                    className="glass-card border border-white/20"
-                  />
-                </div>
-                
-                <div>
-                  <Label>Commentaires</Label>
-                  <Input
-                    value={affectation.commentaires}
-                    onChange={(e) => updateAffectation(index, 'commentaires', e.target.value)}
-                    className="glass-card border border-white/20"
-                    placeholder="Optionnel"
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-                      </div>
-
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
-          Annuler
-                          </Button>
-        <Button type="submit" className="gradient-primary text-white">
-          Assigner Matériels
+          {affectation ? "Modifier" : "Ajouter"}
         </Button>
       </DialogFooter>
     </form>
@@ -3528,26 +4046,20 @@ function MultiAffectationForm({ materials, employees, onSave, onCancel }: {
 }
 
 // Penalty Form Component
-function PenaltyForm({ penalty, employees, interventions, materials, claims, onSave, onCancel }: { 
+function PenaltyForm({ penalty, onSave, onCancel, employees }: { 
   penalty: any, 
-  employees: any[], 
-  interventions: any[], 
-  materials: any[], 
-  claims: any[], 
   onSave: (data: any) => void, 
-  onCancel: () => void 
+  onCancel: () => void,
+  employees: any[]
 }) {
   const [formData, setFormData] = useState({
-    employe_id: penalty?.employe_id || '',
-    type_penalite: penalty?.type_penalite || '',
+    employee_id: penalty?.employee_id || '',
+    type: penalty?.type || '',
     motif: penalty?.motif || '',
     montant: penalty?.montant || '',
     statut: penalty?.statut || 'active',
     date_echeance: penalty?.date_echeance || '',
-    commentaires: penalty?.commentaires || '',
-    intervention_concernee: penalty?.intervention_concernee || '',
-    reclamation_concernee: penalty?.reclamation_concernee || '',
-    materiel_concerne: penalty?.materiel_concerne || ''
+    commentaires: penalty?.commentaires || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -3559,36 +4071,36 @@ function PenaltyForm({ penalty, employees, interventions, materials, claims, onS
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label htmlFor="employe_id">Employé *</Label>
-          <Select value={formData.employe_id} onValueChange={(value) => setFormData({...formData, employe_id: value})}>
+          <Label htmlFor="employee_id">Employé *</Label>
+          <Select value={formData.employee_id} onValueChange={(value) => setFormData({...formData, employee_id: value})}>
             <SelectTrigger className="glass-card border border-white/20">
               <SelectValue placeholder="Sélectionner un employé" />
             </SelectTrigger>
             <SelectContent>
               {employees.map((emp) => (
-                <SelectItem key={emp.id} value={emp.id.toString()}>
+                <SelectItem key={emp.id} value={emp.id}>
                   {emp.prenom} {emp.nom}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-                        </div>
+        </div>
         <div>
-          <Label htmlFor="type_penalite">Type de Pénalité *</Label>
-          <Select value={formData.type_penalite} onValueChange={(value) => setFormData({...formData, type_penalite: value})}>
+          <Label htmlFor="type">Type de Pénalité *</Label>
+          <Select value={formData.type} onValueChange={(value) => setFormData({...formData, type: value})}>
             <SelectTrigger className="glass-card border border-white/20">
               <SelectValue placeholder="Sélectionner un type" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="retard">Retard</SelectItem>
               <SelectItem value="absence">Absence</SelectItem>
-              <SelectItem value="erreur_technique">Erreur Technique</SelectItem>
+              <SelectItem value="retard">Retard</SelectItem>
               <SelectItem value="comportement">Comportement</SelectItem>
+              <SelectItem value="performance">Performance</SelectItem>
               <SelectItem value="autre">Autre</SelectItem>
             </SelectContent>
           </Select>
-                    </div>
-        <div className="col-span-2">
+        </div>
+        <div>
           <Label htmlFor="motif">Motif *</Label>
           <Input
             id="motif"
@@ -3597,7 +4109,7 @@ function PenaltyForm({ penalty, employees, interventions, materials, claims, onS
             className="glass-card border border-white/20"
             required
           />
-            </div>
+        </div>
         <div>
           <Label htmlFor="montant">Montant (€) *</Label>
           <Input
@@ -3609,31 +4121,33 @@ function PenaltyForm({ penalty, employees, interventions, materials, claims, onS
             className="glass-card border border-white/20"
             required
           />
-      </div>
+        </div>
         <div>
-          <Label htmlFor="statut">Statut</Label>
+          <Label htmlFor="statut">Statut *</Label>
           <Select value={formData.statut} onValueChange={(value) => setFormData({...formData, statut: value})}>
             <SelectTrigger className="glass-card border border-white/20">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="soumis">Soumis</SelectItem>
               <SelectItem value="annulee">Annulée</SelectItem>
-              <SelectItem value="remboursee">Remboursée</SelectItem>
             </SelectContent>
           </Select>
-    </div>
+        </div>
         <div>
-          <Label htmlFor="date_echeance">Date d'Échéance</Label>
+          <Label htmlFor="date_echeance">Date d'Échéance *</Label>
           <Input
             id="date_echeance"
             type="date"
             value={formData.date_echeance}
             onChange={(e) => setFormData({...formData, date_echeance: e.target.value})}
             className="glass-card border border-white/20"
+            required
           />
         </div>
       </div>
+      
       <div>
         <Label htmlFor="commentaires">Commentaires</Label>
         <Textarea
@@ -3657,30 +4171,25 @@ function PenaltyForm({ penalty, employees, interventions, materials, claims, onS
 }
 
 // Claim Form Component
-function ClaimForm({ claim, employees, interventions, onSave, onCancel }: { 
+function ClaimForm({ claim, onSave, onCancel, employees, interventions }: { 
   claim: any, 
-  employees: any[], 
-  interventions: any[], 
   onSave: (data: any) => void, 
-  onCancel: () => void 
+  onCancel: () => void,
+  employees: any[],
+  interventions: any[]
 }) {
   const [formData, setFormData] = useState({
-    type_reclamation: claim?.type_reclamation || '',
+    type: claim?.type || '',
     priorite: claim?.priorite || 'normale',
     statut: claim?.statut || 'ouverte',
-    nom_client: claim?.nom_client || '',
-    telephone_client: claim?.telephone_client || '',
-    email_client: claim?.email_client || '',
-    adresse_client: claim?.adresse_client || '',
-    employe_id: claim?.employe_id || '',
+    client_nom: claim?.client_nom || '',
+    client_telephone: claim?.client_telephone || '',
+    client_email: claim?.client_email || '',
+    employee_id: claim?.employee_id || '',
     intervention_id: claim?.intervention_id || '',
     description_probleme: claim?.description_probleme || '',
     description_solution: claim?.description_solution || '',
-    satisfaction_client: claim?.satisfaction_client || '',
-    commentaires_client: claim?.commentaires_client || '',
-    commentaires_internes: claim?.commentaires_internes || '',
-    cout_reclamation: claim?.cout_reclamation || '',
-    indemnisation: claim?.indemnisation || ''
+    commentaires_internes: claim?.commentaires_internes || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -3692,15 +4201,16 @@ function ClaimForm({ claim, employees, interventions, onSave, onCancel }: {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label htmlFor="type_reclamation">Type de Réclamation</Label>
-          <Select value={formData.type_reclamation} onValueChange={(value) => setFormData({...formData, type_reclamation: value})}>
+          <Label htmlFor="type">Type de Réclamation</Label>
+          <Select value={formData.type} onValueChange={(value) => setFormData({...formData, type: value})}>
             <SelectTrigger className="glass-card border border-white/20">
               <SelectValue placeholder="Sélectionner un type" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="technique">Technique</SelectItem>
-              <SelectItem value="service">Service</SelectItem>
+              <SelectItem value="commercial">Commercial</SelectItem>
               <SelectItem value="facturation">Facturation</SelectItem>
+              <SelectItem value="service">Service Client</SelectItem>
               <SelectItem value="autre">Autre</SelectItem>
             </SelectContent>
           </Select>
@@ -3712,7 +4222,6 @@ function ClaimForm({ claim, employees, interventions, onSave, onCancel }: {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="basse">Basse</SelectItem>
               <SelectItem value="normale">Normale</SelectItem>
               <SelectItem value="haute">Haute</SelectItem>
               <SelectItem value="critique">Critique</SelectItem>
@@ -3730,47 +4239,46 @@ function ClaimForm({ claim, employees, interventions, onSave, onCancel }: {
               <SelectItem value="en_cours">En Cours</SelectItem>
               <SelectItem value="resolue">Résolue</SelectItem>
               <SelectItem value="fermee">Fermée</SelectItem>
-              <SelectItem value="annulee">Annulée</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div>
-          <Label htmlFor="nom_client">Nom du Client</Label>
+          <Label htmlFor="client_nom">Nom du Client</Label>
           <Input
-            id="nom_client"
-            value={formData.nom_client}
-            onChange={(e) => setFormData({...formData, nom_client: e.target.value})}
+            id="client_nom"
+            value={formData.client_nom}
+            onChange={(e) => setFormData({...formData, client_nom: e.target.value})}
             className="glass-card border border-white/20"
           />
         </div>
         <div>
-          <Label htmlFor="telephone_client">Téléphone Client</Label>
+          <Label htmlFor="client_telephone">Téléphone Client</Label>
           <Input
-            id="telephone_client"
-            value={formData.telephone_client}
-            onChange={(e) => setFormData({...formData, telephone_client: e.target.value})}
+            id="client_telephone"
+            value={formData.client_telephone}
+            onChange={(e) => setFormData({...formData, client_telephone: e.target.value})}
             className="glass-card border border-white/20"
           />
         </div>
         <div>
-          <Label htmlFor="email_client">Email Client</Label>
+          <Label htmlFor="client_email">Email Client</Label>
           <Input
-            id="email_client"
+            id="client_email"
             type="email"
-            value={formData.email_client}
-            onChange={(e) => setFormData({...formData, email_client: e.target.value})}
+            value={formData.client_email}
+            onChange={(e) => setFormData({...formData, client_email: e.target.value})}
             className="glass-card border border-white/20"
           />
         </div>
         <div>
-          <Label htmlFor="employe_id">Employé Assigné</Label>
-          <Select value={formData.employe_id} onValueChange={(value) => setFormData({...formData, employe_id: value})}>
+          <Label htmlFor="employee_id">Employé Assigné</Label>
+          <Select value={formData.employee_id} onValueChange={(value) => setFormData({...formData, employee_id: value})}>
             <SelectTrigger className="glass-card border border-white/20">
               <SelectValue placeholder="Sélectionner un employé" />
             </SelectTrigger>
             <SelectContent>
               {employees.map((emp) => (
-                <SelectItem key={emp.id} value={emp.id.toString()}>
+                <SelectItem key={emp.id} value={emp.id}>
                   {emp.prenom} {emp.nom}
                 </SelectItem>
               ))}
@@ -3784,15 +4292,16 @@ function ClaimForm({ claim, employees, interventions, onSave, onCancel }: {
               <SelectValue placeholder="Sélectionner une intervention" />
             </SelectTrigger>
             <SelectContent>
-              {interventions.map((inter) => (
-                <SelectItem key={inter.id} value={inter.id.toString()}>
-                  {inter.num_inter} - {inter.client}
+              {interventions.map((intervention) => (
+                <SelectItem key={intervention.id} value={intervention.id}>
+                  {intervention.numero_intervention || `Intervention ${intervention.id}`}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
       </div>
+      
       <div>
         <Label htmlFor="description_probleme">Description du Problème *</Label>
         <Textarea
@@ -3800,10 +4309,11 @@ function ClaimForm({ claim, employees, interventions, onSave, onCancel }: {
           value={formData.description_probleme}
           onChange={(e) => setFormData({...formData, description_probleme: e.target.value})}
           className="glass-card border border-white/20"
-          rows={3}
+          rows={4}
           required
         />
       </div>
+      
       <div>
         <Label htmlFor="description_solution">Description de la Solution</Label>
         <Textarea
@@ -3811,9 +4321,10 @@ function ClaimForm({ claim, employees, interventions, onSave, onCancel }: {
           value={formData.description_solution}
           onChange={(e) => setFormData({...formData, description_solution: e.target.value})}
           className="glass-card border border-white/20"
-          rows={3}
+          rows={4}
         />
       </div>
+      
       <div>
         <Label htmlFor="commentaires_internes">Commentaires Internes</Label>
         <Textarea
@@ -3824,6 +4335,7 @@ function ClaimForm({ claim, employees, interventions, onSave, onCancel }: {
           rows={3}
         />
       </div>
+      
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
           Annuler
@@ -3835,3 +4347,4 @@ function ClaimForm({ claim, employees, interventions, onSave, onCancel }: {
     </form>
   )
 }
+

@@ -178,13 +178,13 @@
                           <div className="text-center">
                             <div className="text-muted-foreground">Consommation</div>
                             <div className="font-bold text-primary text-lg">
-                              {employe.consommation_totale.toFixed(2)} DA
+                              {employe.consommation_totale.toFixed(2)} € 
                             </div>
                           </div>
                           <div className="text-center">
                             <div className="text-muted-foreground">Moyenne</div>
                             <div className="font-medium">
-                              {employe.consommation_moyenne.toFixed(2)} DA
+                              {employe.consommation_moyenne.toFixed(2)} € 
                             </div>
                           </div>
                         </div>

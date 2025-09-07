@@ -1,33 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/database'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     console.log('✅ Connexion PostgreSQL établie avec succès')
     
-    // Récupérer l'historique complet des assignations
-    const query = `
-      SELECT 
-        ca.*,
-        e.nom as employe_nom,
-        e.prenom as employe_prenom,
-        e.matricule as employe_matricule,
-        c.montant as carte_montant,
-        c.date_livraison as carte_date_livraison
-      FROM carburant_assignations ca
-      LEFT JOIN employes e ON ca.employe_id = e.id
-      LEFT JOIN carburant c ON ca.numero_carte = c.numero_carte
-      ORDER BY ca.date_assignation DESC, ca.created_at DESC
-    `
+    const { searchParams } = new URL(request.url)
+    const employeId = searchParams.get('employe_id')
+    
+    let query: string
+    let params: any[] = []
+    
+    if (employeId) {
+      // Récupérer l'assignation actuelle d'un employé spécifique
+      query = `
+        SELECT 
+          ca.*,
+          e.nom as employe_nom,
+          e.prenom as employe_prenom,
+          e.matricule as employe_matricule
+        FROM carburant_assignations ca
+        LEFT JOIN employes e ON ca.employe_id = e.id
+        WHERE ca.employe_id = $1 AND ca.statut = 'active'
+        ORDER BY ca.date_assignation DESC
+        LIMIT 1
+      `
+      params = [employeId]
+    } else {
+      // Récupérer l'historique complet des assignations
+      query = `
+        SELECT 
+          ca.*,
+          e.nom as employe_nom,
+          e.prenom as employe_prenom,
+          e.matricule as employe_matricule
+        FROM carburant_assignations ca
+        LEFT JOIN employes e ON ca.employe_id = e.id
+        ORDER BY ca.date_assignation DESC, ca.created_at DESC
+      `
+    }
     
     const startTime = Date.now()
     const pool = getPool()
-    const result = await pool.query(query)
+    const result = await pool.query(query, params)
     const duration = Date.now() - startTime
     
     console.log(`📊 Query executed in ${duration}ms: ${query.substring(0, 100)}...`)
     
-    return NextResponse.json(result.rows)
+    if (employeId) {
+      // Retourner l'assignation actuelle pour un employé spécifique
+      return NextResponse.json({
+        assignation: result.rows[0] || null
+      })
+    } else {
+      // Retourner l'historique complet
+      return NextResponse.json(result.rows)
+    }
   } catch (error) {
     console.error('❌ Erreur lors de la récupération des assignations:', error)
     return NextResponse.json(

@@ -60,6 +60,8 @@ import {
   CreditCard,
   BarChart3,
   CheckCircle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 
 // User authentication data
@@ -188,15 +190,25 @@ export default function EmployeeTracker() {
   // Fuel consumption grouped data
   const [fuelGroupedData, setFuelGroupedData] = useState<any[]>([])
   const [fuelGroupedSummary, setFuelGroupedSummary] = useState<any>({})
-  const [fuelViewMode, setFuelViewMode] = useState<'table' | 'grouped'>('grouped')
+  const [fuelViewMode, setFuelViewMode] = useState<'table' | 'grouped' | 'employees'>('grouped')
   const [fuelPeriod, setFuelPeriod] = useState<'month' | 'week' | 'year'>('month')
   const [fuelDateRange, setFuelDateRange] = useState({ start: '', end: '' })
+
+  // Fuel consumption by employee
+  const [fuelEmployeesData, setFuelEmployeesData] = useState<any[]>([])
+  const [fuelEmployeesSummary, setFuelEmployeesSummary] = useState<any>({})
+  const [showEmployeeFuelModal, setShowEmployeeFuelModal] = useState(false)
+  const [selectedEmployeeFuel, setSelectedEmployeeFuel] = useState<any>(null)
 
   // Assignation data
   const [assignationData, setAssignationData] = useState({
     numero_carte: '',
     employe_id: ''
   })
+
+  // Pagination for fuel transactions
+  const [fuelCurrentPage, setFuelCurrentPage] = useState(1)
+  const [fuelItemsPerPage, setFuelItemsPerPage] = useState(25)
 
   // Load data from database on component mount
   useEffect(() => {
@@ -205,6 +217,7 @@ export default function EmployeeTracker() {
       loadAllCRUDData()
       loadAvailableCards()
       loadFuelGroupedData()
+      loadFuelEmployeesData()
     }
   }, [isLoggedIn])
 
@@ -214,6 +227,26 @@ export default function EmployeeTracker() {
       loadFuelGroupedData()
     }
   }, [fuelPeriod, fuelDateRange])
+
+  // Pagination functions for fuel transactions
+  const getFuelPaginatedData = () => {
+    const startIndex = (fuelCurrentPage - 1) * fuelItemsPerPage
+    const endIndex = startIndex + fuelItemsPerPage
+    return fuelData.slice(startIndex, endIndex)
+  }
+
+  const getFuelTotalPages = () => {
+    return Math.ceil(fuelData.length / fuelItemsPerPage)
+  }
+
+  const handleFuelPageChange = (page: number) => {
+    setFuelCurrentPage(page)
+  }
+
+  const handleFuelItemsPerPageChange = (itemsPerPage: number) => {
+    setFuelItemsPerPage(itemsPerPage)
+    setFuelCurrentPage(1) // Reset to first page
+  }
 
   // Load card history for an employee
   const loadCardHistory = async (employeId: number) => {
@@ -230,6 +263,23 @@ export default function EmployeeTracker() {
     } catch (error) {
       console.error("Erreur chargement historique:", error)
       setCardHistory([])
+    }
+  }
+
+  // Load fuel consumption by employee
+  const loadFuelEmployeesData = async () => {
+    try {
+      const response = await fetch('/api/carburant-employes')
+      if (response.ok) {
+        const data = await response.json()
+        setFuelEmployeesData(data.employees_consumption || [])
+        setFuelEmployeesSummary(data.summary || {})
+        console.log("Consommation par employé chargée:", data)
+      } else {
+        console.error("Erreur lors du chargement de la consommation par employé")
+      }
+    } catch (error) {
+      console.error("Erreur chargement consommation par employé:", error)
     }
   }
 
@@ -325,7 +375,31 @@ export default function EmployeeTracker() {
       const response = await fetch("/api/employes")
       if (!response.ok) throw new Error("Erreur lors du chargement des employés")
       const data = await response.json()
-      return data.employes || []
+      const employeesData = data.employes || []
+      
+      // Charger les informations de carte carburant pour chaque employé
+      const employeesWithCards = await Promise.all(
+        employeesData.map(async (employee: any) => {
+          try {
+            // Récupérer la carte carburant actuelle de l'employé
+            const cardResponse = await fetch(`/api/carburant-assignation?employe_id=${employee.id}`)
+            if (cardResponse.ok) {
+              const cardData = await cardResponse.json()
+              return {
+                ...employee,
+                numero_carte_actuelle: cardData.assignation?.numero_carte || null
+              }
+            }
+            return employee
+          } catch (error) {
+            console.error(`Erreur lors du chargement de la carte pour l'employé ${employee.id}:`, error)
+            return employee
+          }
+        })
+      )
+      
+      setEmployees(employeesWithCards)
+      return employeesWithCards
     } catch (error) {
       console.error("[v0] Erreur chargement employés:", error)
       return []
@@ -336,9 +410,9 @@ export default function EmployeeTracker() {
     try {
       const response = await fetch("/api/materiel")
       if (!response.ok) throw new Error("Erreur lors du chargement du matériel")
-      const data = await response.json()
+    const data = await response.json()
       return data.materiel || []
-    } catch (error) {
+  } catch (error) {
       console.error("[v0] Erreur chargement matériel:", error)
       return []
     }
@@ -360,9 +434,9 @@ export default function EmployeeTracker() {
     try {
       const response = await fetch("/api/reclamations")
       if (!response.ok) throw new Error("Erreur lors du chargement des réclamations")
-      const data = await response.json()
+    const data = await response.json()
       return data.reclamations || []
-    } catch (error) {
+  } catch (error) {
       console.error("[v0] Erreur chargement réclamations:", error)
       return []
     }
@@ -498,6 +572,86 @@ export default function EmployeeTracker() {
     }
   }
 
+  // Generic delete function for all entities
+  const handleDelete = async (entityType: string, id: number) => {
+    let confirmMessage = ''
+    let entityName = ''
+
+    switch (entityType) {
+      case 'material':
+        entityName = 'matériel'
+        confirmMessage = 'Êtes-vous sûr de vouloir supprimer ce matériel ?\n\n⚠️ Attention : Toutes les affectations liées à ce matériel seront également supprimées.'
+        break
+      case 'affectation':
+        entityName = 'affectation'
+        confirmMessage = 'Êtes-vous sûr de vouloir supprimer cette affectation ?\n\nLe stock du matériel sera automatiquement restauré.'
+        break
+      case 'penalty':
+        entityName = 'pénalité'
+        confirmMessage = 'Êtes-vous sûr de vouloir supprimer cette pénalité ?'
+        break
+      case 'claim':
+        entityName = 'réclamation'
+        confirmMessage = 'Êtes-vous sûr de vouloir supprimer cette réclamation ?'
+        break
+      case 'employee':
+        entityName = 'employé'
+        confirmMessage = 'Êtes-vous sûr de vouloir supprimer cet employé ?\n\n⚠️ Attention : Toutes les affectations et données liées à cet employé seront également supprimées.'
+        break
+      default:
+        confirmMessage = 'Êtes-vous sûr de vouloir supprimer cet élément ?'
+    }
+
+    if (!confirm(confirmMessage)) {
+      return
+    }
+
+    try {
+      let apiEndpoint = ''
+      let successMessage = ''
+
+      switch (entityType) {
+        case 'material':
+          apiEndpoint = `/api/materiel?id=${id}`
+          successMessage = 'Matériel supprimé avec succès'
+          break
+        case 'affectation':
+          apiEndpoint = `/api/affectations-materiel?id=${id}`
+          successMessage = 'Affectation supprimée avec succès'
+          break
+        case 'penalty':
+          apiEndpoint = `/api/penalites?id=${id}`
+          successMessage = 'Pénalité supprimée avec succès'
+          break
+        case 'claim':
+          apiEndpoint = `/api/reclamations?id=${id}`
+          successMessage = 'Réclamation supprimée avec succès'
+          break
+        case 'employee':
+          apiEndpoint = `/api/employes?id=${id}`
+          successMessage = 'Employé supprimé avec succès'
+          break
+        default:
+          throw new Error('Type d\'entité non supporté')
+      }
+
+      const response = await fetch(apiEndpoint, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors de la suppression')
+      }
+
+      await loadAllCRUDData()
+      alert(successMessage)
+    } catch (error) {
+      console.error(`Erreur suppression ${entityType}:`, error)
+      alert(error instanceof Error ? error.message : 'Erreur lors de la suppression')
+    }
+  }
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
     const foundUser = Object.values(users).find((u) => u.email === email && u.password === password)
@@ -543,10 +697,10 @@ export default function EmployeeTracker() {
           console.error("[v0] Erreur import interventions:", error)
           alert(`Erreur lors de l'import: ${error}`)
         }
-      } catch (error) {
-        console.error("[v0] Erreur import interventions:", error)
-        alert("Erreur lors de l'import des interventions")
-      }
+        } catch (error) {
+          console.error("[v0] Erreur import interventions:", error)
+          alert("Erreur lors de l'import des interventions")
+        }
     }
   }
 
@@ -686,7 +840,7 @@ export default function EmployeeTracker() {
       setShowMaterialModal(false)
       setEditingItem(null)
       alert(editingItem ? "Matériel modifié avec succès" : "Matériel ajouté avec succès")
-    } catch (error) {
+            } catch (error) {
       console.error("Erreur sauvegarde matériel:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
     }
@@ -738,7 +892,7 @@ export default function EmployeeTracker() {
       setShowAffectationModal(false)
       setEditingItem(null)
       alert(editingItem ? "Affectation modifiée avec succès" : "Affectation créée avec succès")
-    } catch (error) {
+      } catch (error) {
       console.error("Erreur sauvegarde affectation:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
     }
@@ -760,6 +914,46 @@ export default function EmployeeTracker() {
     } catch (error) {
       console.error("Erreur suppression affectation:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
+    }
+  }
+
+  // CRUD Functions for Reclamations
+  const saveReclamation = async (reclamationData: any) => {
+    try {
+      const url = editingItem ? "/api/reclamations" : "/api/reclamations"
+      const method = editingItem ? "PUT" : "POST"
+      
+      // Mapper le champ deadline vers date_resolution pour l'API
+      const apiData = {
+        ...reclamationData,
+        date_resolution: reclamationData.deadline
+      }
+      delete apiData.deadline // Supprimer le champ deadline car l'API attend date_resolution
+      
+      const body = editingItem 
+        ? { id: editingItem.id, ...apiData }
+        : apiData
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+
+      await loadAllCRUDData()
+      setShowClaimModal(false)
+      setEditingItem(null)
+      alert(editingItem ? "Réclamation modifiée avec succès" : "Réclamation ajoutée avec succès")
+    } catch (error) {
+      console.error("Erreur sauvegarde réclamation:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
     }
   }
 
@@ -1002,7 +1196,7 @@ export default function EmployeeTracker() {
             <div className="flex justify-center mb-4">
               <div className="p-4 rounded-2xl bg-gradient-to-br from-primary to-chart-2 shadow-lg">
                 <Building2 className="w-12 h-12 text-gray-900" />
-              </div>
+            </div>
             </div>
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
               FinalFibre
@@ -1122,46 +1316,46 @@ export default function EmployeeTracker() {
               <h2 className="text-lg font-semibold text-muted-foreground mb-4">Navigation</h2>
             </div>
 
-            <Button
+              <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "dashboard"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
-              onClick={() => setActiveTab("dashboard")}
-            >
+                  activeTab === "dashboard"
+                    ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                    : "glass-card border border-white/20 hover:bg-primary/5"
+                }`}
+                onClick={() => setActiveTab("dashboard")}
+              >
               <BarChart3 className="w-5 h-5" />
               Tableau de Bord
-            </Button>
+              </Button>
 
-            <Button
+              <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "employees"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
-              onClick={() => setActiveTab("employees")}
-            >
-              <Users className="w-5 h-5" />
+                  activeTab === "employees"
+                    ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                    : "glass-card border border-white/20 hover:bg-primary/5"
+                }`}
+                onClick={() => setActiveTab("employees")}
+              >
+                <Users className="w-5 h-5" />
               Employés
-            </Button>
+              </Button>
 
-            <Button
+                <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "interventions"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
               onClick={() => setActiveTab("interventions")}
-            >
-              <FileText className="w-5 h-5" />
+                >
+                  <FileText className="w-5 h-5" />
               Interventions
-            </Button>
+                </Button>
 
-            <Button
+                <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "fuel"
@@ -1177,67 +1371,67 @@ export default function EmployeeTracker() {
             <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "materials"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
-              onClick={() => setActiveTab("materials")}
-            >
-              <Package className="w-5 h-5" />
+                    activeTab === "materials"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+                  onClick={() => setActiveTab("materials")}
+                >
+                  <Package className="w-5 h-5" />
               Matériel
-            </Button>
+                </Button>
 
-            <Button
+                <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "penalties"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
               onClick={() => setActiveTab("penalties")}
-            >
+                >
               <AlertTriangle className="w-5 h-5" />
               Pénalités
-            </Button>
+                </Button>
 
-            <Button
+                <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "claims"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
               onClick={() => setActiveTab("claims")}
-            >
+                >
               <FileText className="w-5 h-5" />
               Réclamations
-            </Button>
+                </Button>
 
-            <Button
+                <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "fuel-consumption"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
               onClick={() => setActiveTab("fuel-consumption")}
-            >
+                >
               <Fuel className="w-5 h-5" />
               Consommation Carburant
-            </Button>
+                </Button>
 
-            <Button
+                <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "reports"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
               onClick={() => setActiveTab("reports")}
-            >
+                >
               <TrendingUp className="w-5 h-5" />
               Rapports
-            </Button>
+                </Button>
           </nav>
         </aside>
 
@@ -1245,24 +1439,24 @@ export default function EmployeeTracker() {
           {/* Dashboard Tab */}
           {activeTab === "dashboard" && (
             <div className="space-y-8">
-              <div className="flex items-center justify-between">
-                <div>
+                <div className="flex items-center justify-between">
+                  <div>
                   <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
-                    Tableau de Bord
-                  </h1>
+                      Tableau de Bord
+                    </h1>
                   <p className="text-muted-foreground mt-2">
-                    Vue d'ensemble de votre activité FinalFibre
-                  </p>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Dernière mise à jour</p>
-                    <p className="text-sm font-medium">{new Date().toLocaleDateString('fr-FR')}</p>
+                      Vue d'ensemble de votre activité FinalFibre
+                    </p>
                   </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Dernière mise à jour</p>
+                    <p className="text-sm font-medium">{new Date().toLocaleDateString('fr-FR')}</p>
+                    </div>
                   <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-                    <Activity className="w-4 h-4 mr-2" />
-                    Actualiser
-                  </Button>
+                      <Activity className="w-4 h-4 mr-2" />
+                      Actualiser
+                    </Button>
                 </div>
               </div>
 
@@ -1337,28 +1531,28 @@ export default function EmployeeTracker() {
                   <CardTitle className="flex items-center gap-2">
                     <FileText className="w-5 h-5" />
                     Interventions Récentes
-                  </CardTitle>
+                    </CardTitle>
                   <CardDescription>
                     Dernières interventions enregistrées dans la base de données
                   </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
                     {interventions.slice(0, 3).map((intervention, index) => (
                       <div key={index} className="flex items-center justify-between p-4 glass-card border border-white/10 rounded-xl">
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-white font-semibold">
                             {intervention.prenom_technicien?.charAt(0) || 'A'}
-                          </div>
-                          <div>
+                      </div>
+                            <div>
                             <p className="font-medium">
-                              {intervention.prenom_technicien} {intervention.nom_technicien}
-                            </p>
+                                {intervention.prenom_technicien} {intervention.nom_technicien}
+                              </p>
                             <p className="text-sm text-muted-foreground">
                               {intervention.client} - {intervention.ville}
                             </p>
+                            </div>
                           </div>
-                        </div>
                         <div className="text-right">
                           <p className="text-sm font-medium">{intervention.date_intervention}</p>
                           <Badge variant="default" className="mt-1">
@@ -1424,6 +1618,7 @@ export default function EmployeeTracker() {
                           <th className="text-left p-4 font-medium">Email</th>
                           <th className="text-left p-4 font-medium">Poste</th>
                           <th className="text-left p-4 font-medium">Taxe %</th>
+                          <th className="text-left p-4 font-medium">Carte Carburant</th>
                           <th className="text-left p-4 font-medium">Statut</th>
                           <th className="text-left p-4 font-medium">Actions</th>
                         </tr>
@@ -1461,22 +1656,27 @@ export default function EmployeeTracker() {
                               </div>
                             </td>
                             <td className="p-4">
-                              <Badge 
+                              <div className="flex items-center gap-2">
+                                <CreditCard className="w-4 h-4 text-primary" />
+                                <span className="text-sm font-mono">
+                                  {employee.numero_carte_actuelle || 'Non assignée'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                          <Badge 
                                 variant={employee.statut === 'actif' ? 'default' : 'secondary'}
-                                className="glass-card border border-white/20"
-                              >
+                            className="glass-card border border-white/20"
+                          >
                                 {employee.statut || 'actif'}
-                              </Badge>
+                          </Badge>
                             </td>
                             <td className="p-4">
                               <div className="flex gap-1">
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    setSelectedEmployee(employee)
-                                    setShowEmployeeDetailsModal(true)
-                                  }}
+                                  onClick={() => showEmployeeDetails(employee)}
                                   className="glass-card border border-white/20 hover:bg-white/10"
                                   title="Voir les détails"
                                 >
@@ -1485,10 +1685,7 @@ export default function EmployeeTracker() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    setSelectedEmployee(employee)
-                                    setShowCardAssignmentModal(true)
-                                  }}
+                                  onClick={() => showCardAssignment(employee)}
                                   className="glass-card border border-white/20 hover:bg-white/10"
                                   title="Affecter carte carburant"
                                 >
@@ -1528,17 +1725,17 @@ export default function EmployeeTracker() {
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
-                              </div>
+                        </div>
                             </td>
                           </tr>
-                        ))}
+                      ))}
                       </tbody>
                     </table>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+                    </div>
+                  )}
 
           {/* Fuel Consumption Tab */}
           {activeTab === "fuel-consumption" && (
@@ -1585,343 +1782,900 @@ export default function EmployeeTracker() {
                       </div>
                     ))}
                   </div>
+                  </CardContent>
+                </Card>
+            </div>
+          )}
+
+          {/* Interventions Tab */}
+          {activeTab === "interventions" && (
+             <div className="space-y-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
+                      Gestion des Interventions
+                    </h1>
+                    <p className="text-lg text-muted-foreground mt-2">
+                      Importez et gérez vos interventions techniques
+                    </p>
+                      </div>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                     <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
+                        <Upload className="h-4 w-4 mr-2" />
+                        Importer Interventions
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="glass-card border border-white/20">
+                      <DialogHeader>
+                        <DialogTitle>Importer des Interventions</DialogTitle>
+                        <DialogDescription>
+                          Sélectionnez un fichier CSV contenant les données d'interventions
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="import-inter">Fichier CSV Interventions</Label>
+                          <Input
+                            id="import-inter"
+                            type="file"
+                            accept=".csv"
+                            onChange={handleImportInterventions}
+                            className="mt-2 glass-card border border-white/20"
+                          />
+                        </div>
+                        <Button
+                          onClick={async () => {
+                            await loadDataFromDatabase()
+                          }}
+                         className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
+                        >
+                          Actualiser les Données
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+              </div>
+
+               <Card className="glass-card border border-white/20 hover-lift">
+                 <CardHeader>
+                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
+                    <FileText className="w-6 h-6 text-primary" />
+                    Toutes les Interventions
+                  </CardTitle>
+                  <CardDescription>
+                    {interventions.length} interventions trouvées dans la base de données PostgreSQL
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingInterventions ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                      <p className="mt-2 text-muted-foreground">Chargement des interventions...</p>
+                    </div>
+                  ) : interventions.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">Aucune intervention trouvée</h3>
+                      <p>Importez des données pour commencer à voir vos interventions ici.</p>
+                    </div>
+                  ) : (
+                  <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                      <thead>
+                          <tr className="border-b border-white/10">
+                            <th className="text-left p-4 font-semibold">Technicien</th>
+                            <th className="text-left p-4 font-semibold">Client</th>
+                            <th className="text-left p-4 font-semibold">Date RDV</th>
+                            <th className="text-left p-4 font-semibold">Type</th>
+                            <th className="text-left p-4 font-semibold">Articles</th>
+                            <th className="text-left p-4 font-semibold">Statut</th>
+                            <th className="text-left p-4 font-semibold">Ville</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                          {interventions.slice(0, 100).map((intervention, index) => (
+                            <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                            <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
+                                    {intervention.prenom_technicien?.charAt(0) || 'T'}
+                                  </div>
+                                  <span className="font-medium">
+                                    {intervention.prenom_technicien} {intervention.nom_technicien}
+                                  </span>
+                                </div>
+                            </td>
+                              <td className="p-4">{intervention.client}</td>
+                              <td className="p-4">{intervention.date_rdv}</td>
+                              <td className="p-4">{intervention.type_intervention}</td>
+                            <td className="p-4">
+                                <div className="max-w-xs">
+                                  <span className="text-sm text-gray-600">
+                                    {intervention.articles || 'N/A'}
+                                  </span>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <Badge
+                                  variant={intervention.statut === 'Terminé' ? 'default' : 'secondary'}
+                                  className="glass-card border border-white/20"
+                                >
+                                  {intervention.statut || 'En cours'}
+                              </Badge>
+                            </td>
+                              <td className="p-4">{intervention.ville}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
           )}
 
-                     {/* Interventions Tab */}
-           {activeTab === "interventions" && (
+           {/* Fuel Tab */}
+          {activeTab === "fuel" && (
              <div className="space-y-8">
-               <div className="flex items-center justify-between">
-                 <div>
-                   <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
-                     Gestion des Interventions
-                   </h1>
-                   <p className="text-lg text-muted-foreground mt-2">
-                     Importez et gérez vos interventions techniques
-                   </p>
-                 </div>
-                 <Dialog>
-                   <DialogTrigger asChild>
-                     <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
-                       <Upload className="h-4 w-4 mr-2" />
-                       Importer Interventions
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent">
+                      Consommation Carburant
+                    </h1>
+                    <p className="text-lg text-muted-foreground mt-2">
+                      Gérez les transactions de carburant de vos véhicules
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                   {/* Boutons de vue */}
+                   <div className="flex gap-2">
+                     <Button
+                       variant={fuelViewMode === 'grouped' ? 'default' : 'outline'}
+                       onClick={() => setFuelViewMode('grouped')}
+                       className={fuelViewMode === 'grouped' ? 'gradient-primary text-white' : 'glass-card border border-white/20'}
+                     >
+                       <BarChart3 className="w-4 h-4 mr-2" />
+                       Vue Groupée
                      </Button>
-                   </DialogTrigger>
-                   <DialogContent className="glass-card border border-white/20">
+                     <Button
+                       variant={fuelViewMode === 'table' ? 'default' : 'outline'}
+                       onClick={() => setFuelViewMode('table')}
+                       className={fuelViewMode === 'table' ? 'gradient-primary text-white' : 'glass-card border border-white/20'}
+                     >
+                       <Eye className="w-4 h-4 mr-2" />
+                       Vue Tableau
+                     </Button>
+                     <Button
+                       variant={fuelViewMode === 'employees' ? 'default' : 'outline'}
+                       onClick={() => setFuelViewMode('employees')}
+                       className={fuelViewMode === 'employees' ? 'gradient-primary text-white' : 'glass-card border border-white/20'}
+                     >
+                       <Users className="w-4 h-4 mr-2" />
+                       Par Employé
+                     </Button>
+                   </div>
+                   
+                   {/* Filtres de période */}
+                   <Select value={fuelPeriod} onValueChange={(value: 'month' | 'week' | 'year') => setFuelPeriod(value)}>
+                     <SelectTrigger className="glass-card border border-white/20 w-32">
+                       <SelectValue />
+                     </SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="week">Semaine</SelectItem>
+                       <SelectItem value="month">Mois</SelectItem>
+                       <SelectItem value="year">Année</SelectItem>
+                     </SelectContent>
+                   </Select>
+                   
+                   <Button
+                     onClick={loadFuelGroupedData}
+                     className="glass-card border border-white/20 hover:bg-white/10"
+                   >
+                     <RefreshCw className="w-4 h-4 mr-2" />
+                     Actualiser
+                   </Button>
+                   
+                    <Dialog>
+                      <DialogTrigger asChild>
+                       <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
+                          <Upload className="h-4 w-4 mr-2" />
+                          Importer Carburant
+                        </Button>
+                      </DialogTrigger>
+                    <DialogContent className="glass-card border border-white/20">
+                      <DialogHeader>
+                        <DialogTitle>Importer des Données Carburant</DialogTitle>
+                        <DialogDescription>
+                          Sélectionnez un fichier CSV ou XLSX contenant les données de consommation carburant
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="import-fuel">Fichier Carburant (CSV/XLSX)</Label>
+                          <Input
+                            id="import-fuel"
+                            type="file"
+                            accept=".csv,.xlsx"
+                            onChange={handleImportFuelConsumption}
+                            className="mt-2 glass-card border border-white/20"
+                          />
+                        </div>
+                        <Button
+                          onClick={async () => {
+                            await loadDataFromDatabase()
+                          }}
+                           className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
+                        >
+                          Actualiser les Données
+                        </Button>
+                      </div>
+                    </DialogContent>
+                    </Dialog>
+                    
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
+                          <Users className="h-4 w-4 mr-2" />
+                          Assigner Employé
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="glass-card border border-white/20">
+                        <DialogHeader>
+                          <DialogTitle>Assigner un Employé à une Carte Carburant</DialogTitle>
+                          <DialogDescription>
+                            Sélectionnez un employé et un numéro de carte pour l'assignation
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="numero-carte">Numéro de Carte</Label>
+                            <Input
+                              id="numero-carte"
+                              placeholder="Ex: 17, 0, etc."
+                              value={assignationData.numero_carte}
+                              onChange={(e) => setAssignationData({...assignationData, numero_carte: e.target.value})}
+                              className="mt-1 bg-white/90 border border-white/30 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:border-white"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="employe-assignation">Employé</Label>
+                            <Select value={assignationData.employe_id} onValueChange={(value) => setAssignationData({...assignationData, employe_id: value})}>
+                              <SelectTrigger className="mt-1 bg-white/90 border border-white/30 text-gray-900">
+                                <SelectValue placeholder="Sélectionner un employé" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {employees.map((emp) => (
+                                  <SelectItem key={emp.id} value={emp.id.toString()}>
+                                    {emp.prenom} {emp.nom} - {emp.telephone}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <DialogFooter>
+                            <Button
+                              onClick={handleAssignation}
+                              className="gradient-primary text-white"
+                            >
+                              Assigner
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => setAssignationData({numero_carte: '', employe_id: ''})}
+                              className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
+                            >
+                              Annuler
+                            </Button>
+                          </DialogFooter>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+
+               {/* Résumé global */}
+               {fuelGroupedSummary && Object.keys(fuelGroupedSummary).length > 0 && (
+                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                   <Card className="glass-card border border-white/20">
+                     <CardContent className="p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm text-muted-foreground">Consommation Totale</p>
+                           <p className="text-2xl font-bold text-primary">
+                             {fuelGroupedSummary.total_consommation?.toFixed(2) || 0} €
+                           </p>
+              </div>
+                         <DollarSign className="w-8 h-8 text-primary/50" />
+                       </div>
+                     </CardContent>
+                   </Card>
+                   
+                   <Card className="glass-card border border-white/20">
+                     <CardContent className="p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm text-muted-foreground">Transactions</p>
+                           <p className="text-2xl font-bold text-chart-1">
+                             {fuelGroupedSummary.total_transactions || 0}
+                           </p>
+                         </div>
+                         <Fuel className="w-8 h-8 text-chart-1/50" />
+                       </div>
+                     </CardContent>
+                   </Card>
+                   
+                   <Card className="glass-card border border-white/20">
+                     <CardContent className="p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm text-muted-foreground">Périodes</p>
+                           <p className="text-2xl font-bold text-chart-2">
+                             {fuelGroupedSummary.nombre_periodes || 0}
+                           </p>
+                         </div>
+                         <Calendar className="w-8 h-8 text-chart-2/50" />
+                       </div>
+                     </CardContent>
+                   </Card>
+                   
+                   <Card className="glass-card border border-white/20">
+                     <CardContent className="p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm text-muted-foreground">Employés Actifs</p>
+                           <p className="text-2xl font-bold text-chart-3">
+                             {fuelGroupedSummary.nombre_employes || 0}
+                           </p>
+                         </div>
+                         <Users className="w-8 h-8 text-chart-3/50" />
+                       </div>
+                     </CardContent>
+                   </Card>
+                 </div>
+               )}
+
+               {/* Contenu principal */}
+               {fuelViewMode === 'employees' ? (
+                 <Card className="glass-card border border-white/20">
+                   <CardHeader>
+                  <CardTitle className="flex items-center gap-3 text-xl font-bold">
+                       <Users className="w-6 h-6 text-primary" />
+                       Consommation Carburant par Employé
+                  </CardTitle>
+                  <CardDescription>
+                       Vue détaillée de la consommation carburant TTC pour chaque employé
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                     {/* Résumé de la consommation par employé */}
+                     {fuelEmployeesSummary && Object.keys(fuelEmployeesSummary).length > 0 && (
+                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                         <Card className="glass-card border border-white/20">
+                           <CardContent className="p-4">
+                             <div className="flex items-center justify-between">
+                      <div>
+                                 <p className="text-sm text-muted-foreground">Total TTC</p>
+                                 <p className="text-xl font-bold text-primary">
+                                   {fuelEmployeesSummary.total_consommation_ttc?.toFixed(2) || 0} €
+                                 </p>
+                          </div>
+                               <DollarSign className="w-6 h-6 text-primary/50" />
+                             </div>
+                           </CardContent>
+                         </Card>
+                         
+                         <Card className="glass-card border border-white/20">
+                           <CardContent className="p-4">
+                             <div className="flex items-center justify-between">
+                          <div>
+                                 <p className="text-sm text-muted-foreground">Transactions</p>
+                                 <p className="text-xl font-bold text-chart-1">
+                                   {fuelEmployeesSummary.total_transactions || 0}
+                                 </p>
+                          </div>
+                               <Fuel className="w-6 h-6 text-chart-1/50" />
+                             </div>
+                           </CardContent>
+                         </Card>
+                         
+                         <Card className="glass-card border border-white/20">
+                           <CardContent className="p-4">
+                             <div className="flex items-center justify-between">
+                      <div>
+                                 <p className="text-sm text-muted-foreground">Employés Actifs</p>
+                                 <p className="text-xl font-bold text-chart-2">
+                                   {fuelEmployeesSummary.nombre_employes || 0}
+                                 </p>
+                        </div>
+                               <Users className="w-6 h-6 text-chart-2/50" />
+                    </div>
+                           </CardContent>
+                         </Card>
+                         
+                         <Card className="glass-card border border-white/20">
+                           <CardContent className="p-4">
+                             <div className="flex items-center justify-between">
+                               <div>
+                                 <p className="text-sm text-muted-foreground">Moyenne/Employé</p>
+                                 <p className="text-xl font-bold text-chart-3">
+                                   {fuelEmployeesSummary.consommation_moyenne_par_employe?.toFixed(2) || 0} €
+                                 </p>
+                               </div>
+                               <BarChart3 className="w-6 h-6 text-chart-3/50" />
+                             </div>
+                           </CardContent>
+                         </Card>
+                       </div>
+                     )}
+
+                     {/* Liste des employés avec leur consommation */}
+                     {fuelEmployeesData.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucune consommation trouvée</h3>
+                         <p>Les consommations carburant par employé apparaîtront ici une fois que vous aurez assigné des cartes.</p>
+                       </div>
+                     ) : (
+                       <div className="space-y-4">
+                         {fuelEmployeesData.map((employe, index) => (
+                           <Card key={index} className="glass-card border border-white/10 hover:border-white/20 transition-all">
+                             <CardContent className="p-6">
+                               <div className="flex items-center justify-between">
+                                 {/* Informations employé */}
+                                 <div className="flex items-center gap-4">
+                                   <div className="w-12 h-12 bg-gradient-to-br from-primary to-chart-3 rounded-full flex items-center justify-center">
+                                     <span className="text-white font-bold text-lg">
+                                       {employe.employe_prenom?.[0]}{employe.employe_nom?.[0]}
+                                     </span>
+                                   </div>
+                                   <div>
+                                     <h3 className="text-lg font-semibold">
+                                       {employe.employe_prenom} {employe.employe_nom}
+                                     </h3>
+                                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                       <span>Matricule: {employe.employe_matricule || 'N/A'}</span>
+                                       <span>Tél: {employe.employe_telephone || 'N/A'}</span>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Statistiques de consommation */}
+                                 <div className="flex items-center gap-8">
+                                   <div className="text-center">
+                                     <div className="text-sm text-muted-foreground">Cartes Utilisées</div>
+                                     <div className="text-lg font-semibold text-chart-1">
+                                       {employe.nombre_cartes_utilisees}
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="text-center">
+                                     <div className="text-sm text-muted-foreground">Transactions</div>
+                                     <div className="text-lg font-semibold text-chart-2">
+                                       {employe.nombre_transactions}
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="text-center">
+                                     <div className="text-sm text-muted-foreground">Consommation TTC</div>
+                                     <div className="text-2xl font-bold text-primary">
+                                       {employe.consommation_totale_ttc.toFixed(2)} €
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="text-center">
+                                     <div className="text-sm text-muted-foreground">Moyenne/Transaction</div>
+                                     <div className="text-lg font-semibold text-chart-3">
+                                       {employe.consommation_moyenne_ttc.toFixed(2)} €
+                                     </div>
+                                   </div>
+                                 </div>
+                               </div>
+                               
+                               {/* Détails supplémentaires */}
+                               <div className="mt-4 pt-4 border-t border-white/10">
+                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                   <div>
+                                     <span className="text-muted-foreground">Cartes: </span>
+                                     <span className="font-medium">
+                                       {employe.cartes_utilisees.join(', ') || 'Aucune'}
+                                     </span>
+                                   </div>
+                                   <div>
+                                     <span className="text-muted-foreground">Véhicules: </span>
+                                     <span className="font-medium">
+                                       {employe.vehicules_utilises.slice(0, 2).join(', ')}
+                                       {employe.vehicules_utilises.length > 2 && ` (+${employe.vehicules_utilises.length - 2})`}
+                                     </span>
+                                   </div>
+                                   <div>
+                                     <span className="text-muted-foreground">Période: </span>
+                                     <span className="font-medium">
+                                       {employe.premiere_transaction ? new Date(employe.premiere_transaction).toLocaleDateString() : 'N/A'} - 
+                                       {employe.derniere_transaction ? new Date(employe.derniere_transaction).toLocaleDateString() : 'N/A'}
+                                     </span>
+                                   </div>
+                                 </div>
+                               </div>
+
+                               {/* Bouton pour voir les détails */}
+                               <div className="mt-4 flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                                     setSelectedEmployeeFuel(employe)
+                                     setShowEmployeeFuelModal(true)
+                          }}
+                                   className="glass-card border border-white/20 hover:bg-white/10"
+                        >
+                                   <Eye className="w-4 h-4 mr-2" />
+                                   Voir Détails
+                        </Button>
+                               </div>
+                             </CardContent>
+                           </Card>
+                         ))}
+            </div>
+          )}
+                   </CardContent>
+                 </Card>
+               ) : fuelViewMode === 'grouped' ? (
+                 <Card className="glass-card border border-white/20">
+                   <CardHeader>
+                     <CardTitle className="flex items-center gap-3 text-xl font-bold">
+                       <BarChart3 className="w-6 h-6 text-primary" />
+                       Consommation Groupée par Période et Employé
+                     </CardTitle>
+                     <CardDescription>
+                       Vue détaillée de la consommation carburant groupée par {fuelPeriod === 'week' ? 'semaine' : fuelPeriod === 'month' ? 'mois' : 'année'}
+                     </CardDescription>
+                   </CardHeader>
+                   <CardContent>
+                     {fuelGroupedData.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucune donnée groupée trouvée</h3>
+                         <p>Les données apparaîtront ici une fois que vous aurez des transactions carburant assignées.</p>
+                </div>
+                     ) : (
+                       <div className="space-y-6">
+                         {fuelGroupedData.map((periode, index) => (
+                           <div key={index} className="border border-white/10 rounded-lg p-4">
+                             <div className="flex items-center justify-between mb-4">
+                               <h3 className="text-lg font-semibold text-primary">
+                                 Période: {periode.periode}
+                               </h3>
+                               <Badge variant="outline" className="glass-card border border-white/20">
+                                 {periode.employes.length} employé{periode.employes.length > 1 ? 's' : ''}
+                               </Badge>
+                             </div>
+                             
+                             <div className="space-y-3">
+                               {periode.employes.map((employe: any, empIndex: number) => (
+                                 <div key={empIndex} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                                   <div className="flex items-center gap-3">
+                                     <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
+                                       <span className="text-sm font-medium text-primary">
+                                         {employe.employe_prenom?.[0]}{employe.employe_nom?.[0]}
+                                       </span>
+                                     </div>
+                                     <div>
+                                       <div className="font-medium">
+                                         {employe.employe_prenom} {employe.employe_nom}
+                                       </div>
+                                       <div className="text-sm text-muted-foreground">
+                                         Matricule: {employe.employe_matricule || 'N/A'}
+                                       </div>
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="flex items-center gap-6 text-sm">
+                                     <div className="text-center">
+                                       <div className="text-muted-foreground">Cartes</div>
+                                       <div className="font-medium">{employe.nombre_cartes}</div>
+                                     </div>
+                                     <div className="text-center">
+                                       <div className="text-muted-foreground">Transactions</div>
+                                       <div className="font-medium">{employe.nombre_transactions}</div>
+                                     </div>
+                                     <div className="text-center">
+                                       <div className="text-muted-foreground">Consommation</div>
+                                       <div className="font-bold text-primary text-lg">
+                                         {employe.consommation_totale.toFixed(2)} €
+                                       </div>
+                                     </div>
+                                     <div className="text-center">
+                                       <div className="text-muted-foreground">Moyenne</div>
+                                       <div className="font-medium">
+                                         {employe.consommation_moyenne.toFixed(2)} €
+                                       </div>
+                                     </div>
+                                   </div>
+                                 </div>
+                               ))}
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </CardContent>
+                 </Card>
+               ) : (
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                     <CardTitle className="flex items-center gap-3 text-xl font-bold">
+                       <Fuel className="w-6 h-6 text-primary" />
+                       Transactions Carburant Détaillées
+                     </CardTitle>
+                     <CardDescription>
+                       Vue détaillée de toutes les transactions carburant
+                     </CardDescription>
+                   </CardHeader>
+                   <CardContent>
+                  {loadingFuel ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                      <p className="mt-2 text-muted-foreground">Chargement des données carburant...</p>
+              </div>
+                  ) : fuelData.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Fuel className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">Aucune transaction carburant trouvée</h3>
+                      <p>Importez des données pour commencer à voir vos transactions ici.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/10">
+                            <th className="text-left p-4 font-semibold">Date Livraison</th>
+                            <th className="text-left p-4 font-semibold">Véhicule</th>
+                            <th className="text-left p-4 font-semibold">N° Carte</th>
+                            <th className="text-left p-4 font-semibold">Employé Assigné</th>
+                            <th className="text-left p-4 font-semibold">Station</th>
+                            <th className="text-left p-4 font-semibold">Montant TTC</th>
+                      </tr>
+                    </thead>
+                           <tbody>
+                             {getFuelPaginatedData().map((transaction, index) => (
+                               <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                 <td className="p-4">{transaction.date_livraison}</td>
+                                 <td className="p-4">
+                                   <div className="flex items-center gap-2">
+                                     <Fuel className="w-4 h-4 text-chart-3" />
+                                     {transaction.immat_vehicule}
+                                   </div>
+                                 </td>
+                                 <td className="p-4">{transaction.numero_carte}</td>
+                                 <td className="p-4">
+                                   {transaction.employe_assigné ? (
+                                     <div className="flex items-center gap-2">
+                                       <User className="w-4 h-4 text-primary" />
+                                       <span>{transaction.employe_assigné.prenom} {transaction.employe_assigné.nom}</span>
+                                     </div>
+                                   ) : (
+                                     <span className="text-muted-foreground">Non assigné</span>
+                                   )}
+                                 </td>
+                                 <td className="p-4">{transaction.numero_station}</td>
+                                 <td className="p-4 font-medium text-primary">
+                                   {transaction.ca_ttc} €
+                                 </td>
+                               </tr>
+                             ))}
+                           </tbody>
+                  </table>
+                </div>
+                
+                <div className="mt-6 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="itemsPerPage" className="text-sm">Lignes par page:</Label>
+                      <Select value={fuelItemsPerPage.toString()} onValueChange={(value) => handleFuelItemsPerPageChange(parseInt(value))}>
+                        <SelectTrigger className="w-20">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Affichage de {(fuelCurrentPage - 1) * fuelItemsPerPage + 1} à {Math.min(fuelCurrentPage * fuelItemsPerPage, fuelData.length)} sur {fuelData.length} transactions
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleFuelPageChange(fuelCurrentPage - 1)}
+                      disabled={fuelCurrentPage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, getFuelTotalPages()) }, (_, i) => {
+                        const pageNumber = Math.max(1, Math.min(getFuelTotalPages() - 4, fuelCurrentPage - 2)) + i
+                        if (pageNumber > getFuelTotalPages()) return null
+                        
+                        return (
+                          <Button
+                            key={pageNumber}
+                            variant={pageNumber === fuelCurrentPage ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => handleFuelPageChange(pageNumber)}
+                            className="w-8 h-8 p-0"
+                          >
+                            {pageNumber}
+                          </Button>
+                        )
+                      })}
+                    </div>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleFuelPageChange(fuelCurrentPage + 1)}
+                      disabled={fuelCurrentPage === getFuelTotalPages()}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+               )}
+
+               {/* Modal pour les détails de consommation d'un employé */}
+               {showEmployeeFuelModal && selectedEmployeeFuel && (
+                 <Dialog open={showEmployeeFuelModal} onOpenChange={setShowEmployeeFuelModal}>
+                   <DialogContent className="glass-card border border-white/20 max-w-2xl">
                      <DialogHeader>
-                       <DialogTitle>Importer des Interventions</DialogTitle>
+                       <DialogTitle className="flex items-center gap-3">
+                         <Users className="w-6 h-6 text-primary" />
+                         Détails Consommation - {selectedEmployeeFuel.employe_prenom} {selectedEmployeeFuel.employe_nom}
+                       </DialogTitle>
                        <DialogDescription>
-                         Sélectionnez un fichier CSV contenant les données d'interventions
+                         Détails complets de la consommation carburant TTC pour cet employé
                        </DialogDescription>
                      </DialogHeader>
-                     <div className="space-y-4">
-                       <div>
-                         <Label htmlFor="import-inter">Fichier CSV Interventions</Label>
-                         <Input
-                           id="import-inter"
-                           type="file"
-                           accept=".csv"
-                           onChange={handleImportInterventions}
-                           className="mt-2 glass-card border border-white/20"
-                         />
+                     
+                     <div className="space-y-6">
+                       {/* Statistiques détaillées */}
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                         <div className="text-center p-3 bg-white/5 rounded-lg">
+                           <div className="text-2xl font-bold text-primary">
+                             {selectedEmployeeFuel.consommation_totale_ttc.toFixed(2)}
+                           </div>
+                           <div className="text-sm text-muted-foreground">€ TTC Total</div>
+                         </div>
+                         <div className="text-center p-3 bg-white/5 rounded-lg">
+                           <div className="text-2xl font-bold text-chart-1">
+                             {selectedEmployeeFuel.nombre_transactions}
+                           </div>
+                           <div className="text-sm text-muted-foreground">Transactions</div>
+                         </div>
+                         <div className="text-center p-3 bg-white/5 rounded-lg">
+                           <div className="text-2xl font-bold text-chart-2">
+                             {selectedEmployeeFuel.nombre_cartes_utilisees}
+                           </div>
+                           <div className="text-sm text-muted-foreground">Cartes</div>
+                         </div>
+                         <div className="text-center p-3 bg-white/5 rounded-lg">
+                           <div className="text-2xl font-bold text-chart-3">
+                             {selectedEmployeeFuel.consommation_moyenne_ttc.toFixed(2)}
+                           </div>
+                           <div className="text-sm text-muted-foreground">€ Moyenne</div>
+                         </div>
                        </div>
-                       <Button
-                         onClick={async () => {
-                           await loadDataFromDatabase()
-                         }}
-                         className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                       >
-                         Actualiser les Données
-                       </Button>
+
+                       {/* Informations détaillées */}
+                       <div className="space-y-4">
+                <div>
+                           <h4 className="font-semibold mb-2">Informations Employé</h4>
+                           <div className="bg-white/5 rounded-lg p-4 space-y-2">
+                             <div><span className="text-muted-foreground">Nom complet:</span> {selectedEmployeeFuel.employe_prenom} {selectedEmployeeFuel.employe_nom}</div>
+                             <div><span className="text-muted-foreground">Matricule:</span> {selectedEmployeeFuel.employe_matricule || 'N/A'}</div>
+                             <div><span className="text-muted-foreground">Téléphone:</span> {selectedEmployeeFuel.employe_telephone || 'N/A'}</div>
+                             <div><span className="text-muted-foreground">Email:</span> {selectedEmployeeFuel.employe_email || 'N/A'}</div>
+                  </div>
+                         </div>
+
+                         <div>
+                           <h4 className="font-semibold mb-2">Cartes Utilisées</h4>
+                           <div className="bg-white/5 rounded-lg p-4">
+                             <div className="flex flex-wrap gap-2">
+                               {selectedEmployeeFuel.cartes_utilisees.map((carte: string, index: number) => (
+                                 <Badge key={index} variant="outline" className="glass-card border border-white/20">
+                                   Carte {carte}
+                                 </Badge>
+                               ))}
+                  </div>
+                </div>
+              </div>
+
+                         <div>
+                           <h4 className="font-semibold mb-2">Véhicules Utilisés</h4>
+                           <div className="bg-white/5 rounded-lg p-4">
+                             <div className="flex flex-wrap gap-2">
+                               {selectedEmployeeFuel.vehicules_utilises.map((vehicule: string, index: number) => (
+                                 <Badge key={index} variant="outline" className="glass-card border border-white/20">
+                                   {vehicule}
+                                 </Badge>
+                               ))}
+                    </div>
+                    </div>
+                                  </div>
+
+                                  <div>
+                           <h4 className="font-semibold mb-2">Stations Utilisées</h4>
+                           <div className="bg-white/5 rounded-lg p-4">
+                             <div className="flex flex-wrap gap-2">
+                               {selectedEmployeeFuel.stations_utilisees.map((station: string, index: number) => (
+                                 <Badge key={index} variant="outline" className="glass-card border border-white/20">
+                                   Station {station}
+                                 </Badge>
+                               ))}
+                                  </div>
+                                </div>
+                         </div>
+
+                         <div>
+                           <h4 className="font-semibold mb-2">Période d'Activité</h4>
+                           <div className="bg-white/5 rounded-lg p-4">
+                             <div className="flex items-center gap-4">
+                               <div>
+                                 <span className="text-muted-foreground">Première transaction:</span>
+                                 <div className="font-medium">
+                                   {selectedEmployeeFuel.premiere_transaction ? 
+                                     new Date(selectedEmployeeFuel.premiere_transaction).toLocaleString() : 'N/A'}
+                                 </div>
+                               </div>
+                               <div>
+                                 <span className="text-muted-foreground">Dernière transaction:</span>
+                                 <div className="font-medium">
+                                   {selectedEmployeeFuel.derniere_transaction ? 
+                                     new Date(selectedEmployeeFuel.derniere_transaction).toLocaleString() : 'N/A'}
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         </div>
+                       </div>
                      </div>
+
+                     <DialogFooter>
+                       <Button 
+                         variant="outline" 
+                         onClick={() => setShowEmployeeFuelModal(false)}
+                                  className="glass-card border border-white/20"
+                                >
+                         Fermer
+                                  </Button>
+                     </DialogFooter>
                    </DialogContent>
                  </Dialog>
-               </div>
+               )}
+            </div>
+          )}
 
-               <Card className="glass-card border border-white/20 hover-lift">
-                 <CardHeader>
-                   <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                     <FileText className="w-6 h-6 text-primary" />
-                     Toutes les Interventions
-                   </CardTitle>
-                   <CardDescription>
-                     {interventions.length} interventions trouvées dans la base de données PostgreSQL
-                   </CardDescription>
-                 </CardHeader>
-                 <CardContent>
-                   {loadingInterventions ? (
-                     <div className="text-center py-8">
-                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                       <p className="mt-2 text-muted-foreground">Chargement des interventions...</p>
-                     </div>
-                   ) : interventions.length === 0 ? (
-                     <div className="text-center py-8 text-muted-foreground">
-                       <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                       <h3 className="text-lg font-semibold mb-2">Aucune intervention trouvée</h3>
-                       <p>Importez des données pour commencer à voir vos interventions ici.</p>
-                     </div>
-                   ) : (
-                     <div className="overflow-x-auto">
-                       <table className="w-full border-collapse">
-                         <thead>
-                           <tr className="border-b border-white/10">
-                             <th className="text-left p-4 font-semibold">Technicien</th>
-                             <th className="text-left p-4 font-semibold">Client</th>
-                             <th className="text-left p-4 font-semibold">Date RDV</th>
-                             <th className="text-left p-4 font-semibold">Type</th>
-                             <th className="text-left p-4 font-semibold">Articles</th>
-                             <th className="text-left p-4 font-semibold">Statut</th>
-                             <th className="text-left p-4 font-semibold">Ville</th>
-                           </tr>
-                         </thead>
-                         <tbody>
-                           {interventions.slice(0, 100).map((intervention, index) => (
-                             <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                               <td className="p-4">
-                                 <div className="flex items-center gap-3">
-                                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
-                                     {intervention.prenom_technicien?.charAt(0) || 'T'}
-                                   </div>
-                                   <span className="font-medium">
-                                     {intervention.prenom_technicien} {intervention.nom_technicien}
-                                   </span>
-                                 </div>
-                               </td>
-                               <td className="p-4">{intervention.client}</td>
-                               <td className="p-4">{intervention.date_rdv}</td>
-                               <td className="p-4">{intervention.type_intervention}</td>
-                               <td className="p-4">
-                                 <div className="max-w-xs">
-                                   <span className="text-sm text-gray-600">
-                                     {intervention.articles || 'N/A'}
-                                   </span>
-                                 </div>
-                               </td>
-                               <td className="p-4">
-                                 <Badge
-                                   variant={intervention.statut === 'Terminé' ? 'default' : 'secondary'}
-                                   className="glass-card border border-white/20"
-                                 >
-                                   {intervention.statut || 'En cours'}
-                                 </Badge>
-                               </td>
-                               <td className="p-4">{intervention.ville}</td>
-                             </tr>
-                           ))}
-                         </tbody>
-                       </table>
-                     </div>
-                   )}
-                 </CardContent>
-               </Card>
-             </div>
-           )}
-
-           {/* Fuel Tab */}
-           {activeTab === "fuel" && (
-             <div className="space-y-8">
-               <div className="flex items-center justify-between">
-                 <div>
-                   <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent">
-                     Consommation Carburant
-                   </h1>
-                   <p className="text-lg text-muted-foreground mt-2">
-                     Gérez les transactions de carburant de vos véhicules
-                   </p>
-                 </div>
-                 <div className="flex gap-3">
-                   <Dialog>
-                     <DialogTrigger asChild>
-                       <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
-                         <Upload className="h-4 w-4 mr-2" />
-                         Importer Carburant
-                       </Button>
-                     </DialogTrigger>
-                     <DialogContent className="glass-card border border-white/20">
-                       <DialogHeader>
-                         <DialogTitle>Importer des Données Carburant</DialogTitle>
-                         <DialogDescription>
-                           Sélectionnez un fichier CSV ou XLSX contenant les données de consommation carburant
-                         </DialogDescription>
-                       </DialogHeader>
-                       <div className="space-y-4">
-                         <div>
-                           <Label htmlFor="import-fuel">Fichier Carburant (CSV/XLSX)</Label>
-                           <Input
-                             id="import-fuel"
-                             type="file"
-                             accept=".csv,.xlsx"
-                             onChange={handleImportFuelConsumption}
-                             className="mt-2 glass-card border border-white/20"
-                           />
-                         </div>
-                         <Button
-                           onClick={async () => {
-                             await loadDataFromDatabase()
-                           }}
-                           className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                         >
-                           Actualiser les Données
-                         </Button>
-                       </div>
-                     </DialogContent>
-                   </Dialog>
-                   
-                   <Dialog>
-                     <DialogTrigger asChild>
-                       <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
-                         <Users className="h-4 w-4 mr-2" />
-                         Assigner Employé
-                       </Button>
-                     </DialogTrigger>
-                     <DialogContent className="glass-card border border-white/20">
-                       <DialogHeader>
-                         <DialogTitle>Assigner un Employé à une Carte Carburant</DialogTitle>
-                         <DialogDescription>
-                           Sélectionnez un employé et un numéro de carte pour l'assignation
-                         </DialogDescription>
-                       </DialogHeader>
-                       <div className="space-y-4">
-                         <div>
-                           <Label htmlFor="numero-carte">Numéro de Carte</Label>
-                           <Input
-                             id="numero-carte"
-                             placeholder="Ex: 17, 0, etc."
-                             value={assignationData.numero_carte}
-                             onChange={(e) => setAssignationData({...assignationData, numero_carte: e.target.value})}
-                             className="mt-1 bg-white/90 border border-white/30 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:border-white"
-                           />
-                         </div>
-                         <div>
-                           <Label htmlFor="employe-assignation">Employé</Label>
-                           <Select value={assignationData.employe_id} onValueChange={(value) => setAssignationData({...assignationData, employe_id: value})}>
-                             <SelectTrigger className="mt-1 bg-white/90 border border-white/30 text-gray-900">
-                               <SelectValue placeholder="Sélectionner un employé" />
-                             </SelectTrigger>
-                             <SelectContent>
-                               {employees.map((emp) => (
-                                 <SelectItem key={emp.id} value={emp.id.toString()}>
-                                   {emp.prenom} {emp.nom} - {emp.telephone}
-                                 </SelectItem>
-                               ))}
-                             </SelectContent>
-                           </Select>
-                         </div>
-                         <DialogFooter>
-                           <Button
-                             onClick={handleAssignation}
-                             className="gradient-primary text-white"
-                           >
-                             Assigner
-                           </Button>
-                           <Button
-                             variant="outline"
-                             onClick={() => setAssignationData({numero_carte: '', employe_id: ''})}
-                             className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
-                           >
-                             Annuler
-                           </Button>
-                         </DialogFooter>
-                       </div>
-                     </DialogContent>
-                   </Dialog>
-                 </div>
-               </div>
-
-               <Card className="glass-card border border-white/20 hover-lift">
-                 <CardHeader>
-                   <CardTitle className="flex items-center gap-3 text-xl font-bold">
-                     <Fuel className="w-6 h-6 text-primary" />
-                     Transactions Carburant
-                   </CardTitle>
-                   <CardDescription>
-                     {fuelData.length} transactions trouvées dans la base de données PostgreSQL
-                   </CardDescription>
-                 </CardHeader>
-                 <CardContent>
-                   {loadingFuel ? (
-                     <div className="text-center py-8">
-                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                       <p className="mt-2 text-muted-foreground">Chargement des données carburant...</p>
-                     </div>
-                   ) : fuelData.length === 0 ? (
-                     <div className="text-center py-8 text-muted-foreground">
-                       <Fuel className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                       <h3 className="text-lg font-semibold mb-2">Aucune transaction carburant trouvée</h3>
-                       <p>Importez des données pour commencer à voir vos transactions ici.</p>
-                     </div>
-                   ) : (
-                     <div className="overflow-x-auto">
-                       <table className="w-full border-collapse">
-                         <thead>
-                           <tr className="border-b border-white/10">
-                             <th className="text-left p-4 font-semibold">Date Livraison</th>
-                             <th className="text-left p-4 font-semibold">Date Fact</th>
-                             <th className="text-left p-4 font-semibold">Véhicule</th>
-                             <th className="text-left p-4 font-semibold">N° Carte</th>
-                             <th className="text-left p-4 font-semibold">Employé Assigné</th>
-                             <th className="text-left p-4 font-semibold">Station</th>
-                             <th className="text-left p-4 font-semibold">Quantité</th>
-                             <th className="text-left p-4 font-semibold">Montant TTC</th>
-                             <th className="text-left p-4 font-semibold">Justificatif</th>
-                           </tr>
-                         </thead>
-                         <tbody>
-                           {fuelData.slice(0, 100).map((transaction, index) => (
-                             <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                               <td className="p-4">{transaction.date_livraison}</td>
-                               <td className="p-4">{transaction.date_fact}</td>
-                               <td className="p-4">
-                                 <div className="flex items-center gap-2">
-                                   <Fuel className="w-4 h-4 text-chart-3" />
-                                   {transaction.immat_vehicule}
-                                 </div>
-                               </td>
-                               <td className="p-4">{transaction.numero_carte}</td>
-                               <td className="p-4">
-                                 {transaction.employe_assigné ? (
-                                   <div className="flex items-center gap-2">
-                                     <Users className="w-4 h-4 text-primary" />
-                                     <span className="text-sm">{transaction.employe_assigné.nom} {transaction.employe_assigné.prenom}</span>
-                                   </div>
-                                 ) : (
-                                   <span className="text-xs text-muted-foreground">Non assigné</span>
-                                 )}
-                               </td>
-                               <td className="p-4">{transaction.numero_station}</td>
-                               <td className="p-4">{transaction.quantite || 'N/A'} L</td>
-                               <td className="p-4 font-semibold">{transaction.ca_ttc || 'N/A'} €</td>
-                               <td className="p-4 text-sm text-muted-foreground">{transaction.numero_justificatif}</td>
-                             </tr>
-                           ))}
-                         </tbody>
-                       </table>
-                     </div>
-                   )}
-                 </CardContent>
-               </Card>
-             </div>
-           )}
-
-           {/* Other tabs placeholder */}
-           {activeTab !== "dashboard" && activeTab !== "employees" && activeTab !== "fuel-consumption" && activeTab !== "interventions" && activeTab !== "fuel" && (
+           {/* Materials Section */}
+          {activeTab === "materials" && (
              <div className="space-y-6">
                <div className="flex justify-between items-center">
                  <div>
-                   <h2 className="text-3xl font-bold">
-                     {activeTab === "materials" && "Matériel"}
-                     {activeTab === "penalties" && "Pénalités"}
-                     {activeTab === "claims" && "Réclamations"}
-                     {activeTab === "reports" && "Rapports"}
-                   </h2>
-                   <p className="text-muted-foreground">
-                     {activeTab === "materials" && "Gestion du matériel"}
-                     {activeTab === "penalties" && "Gestion des pénalités"}
-                     {activeTab === "claims" && "Gestion des réclamations"}
-                     {activeTab === "reports" && "Génération de rapports"}
-                   </p>
+                   <h2 className="text-3xl font-bold">Matériel</h2>
+                   <p className="text-muted-foreground">Gestion du matériel</p>
                  </div>
                  <Button variant="outline">
                    <Plus className="w-4 h-4 mr-2" />
@@ -1934,121 +2688,104 @@ export default function EmployeeTracker() {
                  {/* Material Inventory Card */}
                  <Card className="glass-card border border-white/20 hover-lift">
                    <CardHeader>
-                     <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
                        <div className="flex items-center gap-3">
                          <div className="p-2 bg-primary/10 rounded-lg">
                            <Package className="w-5 h-5 text-primary" />
                          </div>
-                         <div>
+                <div>
                            <CardTitle className="text-xl font-bold">Inventaire du Matériel</CardTitle>
                            <CardDescription>
                              {materials.length} équipements trouvés dans la base de données
                            </CardDescription>
-                         </div>
+                </div>
                        </div>
-                       <div className="flex gap-2">
-                         <Button 
-                           variant="outline" 
-                           onClick={() => loadMaterialsFromDatabase()}
-                           className="glass-card border border-white/20 hover:bg-white/10"
-                         >
-                           <RefreshCw className="w-4 h-4 mr-2" />
-                           Actualiser
-                         </Button>
-                         <Button 
-                           onClick={() => {
-                             setEditingItem(null)
-                             setShowMaterialModal(true)
-                           }}
-                           className="gradient-primary text-white"
-                         >
-                           <Plus className="w-4 h-4 mr-2" />
-                           Ajouter Matériel
-                         </Button>
-                       </div>
-                     </div>
-                   </CardHeader>
-                   <CardContent>
-                     <div className="overflow-x-auto">
-                       <table className="w-full">
-                         <thead>
-                           <tr className="border-b border-white/10">
-                             <th className="text-left p-3 font-medium">Équipement</th>
-                             <th className="text-left p-3 font-medium">Type</th>
-                             <th className="text-left p-3 font-medium">Marque/Modèle</th>
-                             <th className="text-left p-3 font-medium">Statut</th>
-                             <th className="text-left p-3 font-medium">Quantité</th>
-                             <th className="text-left p-3 font-medium">Prix Unitaire</th>
-                             <th className="text-left p-3 font-medium">Prix Total</th>
-                             <th className="text-left p-3 font-medium">Actions</th>
-                           </tr>
-                         </thead>
-                         <tbody>
-                           {materials.map((material) => (
-                             <tr key={material.id} className="border-b border-white/5 hover:bg-white/5">
-                               <td className="p-3">
-                                 <div className="flex items-center gap-3">
-                                   <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
-                                     <Package className="w-4 h-4 text-primary" />
-                                   </div>
-                                   <div>
-                                     <div className="font-medium">{material.nom}</div>
-                                     <div className="text-sm text-muted-foreground">{material.numero_serie || 'N/A'}</div>
-                                   </div>
-                                 </div>
-                               </td>
-                               <td className="p-3">
-                                 <Badge variant="outline" className="glass-card border border-white/20">
-                                   {material.categorie || 'N/A'}
-                                 </Badge>
-                               </td>
-                               <td className="p-3">{material.fournisseur || 'N/A'}</td>
-                               <td className="p-3">
-                                 <Badge 
-                                   variant={material.statut === 'disponible' ? 'default' : 'secondary'}
-                                   className="glass-card border border-white/20"
-                                 >
-                                   {material.statut || 'disponible'}
-                                 </Badge>
-                               </td>
-                               <td className="p-3">{material.quantite || 0}</td>
-                               <td className="p-3">{material.prix_unitaire ? `${material.prix_unitaire} €` : 'N/A'}</td>
-                               <td className="p-3 font-medium text-primary">
-                                 {material.prix_unitaire && material.quantite 
-                                   ? `${(parseFloat(material.prix_unitaire) * parseInt(material.quantite)).toFixed(2)} €`
-                                   : 'N/A'
-                                 }
-                               </td>
-                               <td className="p-3">
-                                 <div className="flex gap-2">
-                                   <Button
-                                     variant="ghost"
-                                     size="sm"
-                                     onClick={() => {
-                                       setEditingItem(material)
-                                       setShowMaterialModal(true)
-                                     }}
-                                     className="glass-card border border-white/20 hover:bg-white/10"
-                                   >
-                                     <Edit className="w-4 h-4" />
-                                   </Button>
-                                   <Button
-                                     variant="ghost"
-                                     size="sm"
-                                     onClick={() => deleteMaterial(material.id)}
-                                     className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
-                                   >
-                                     <Trash2 className="w-4 h-4" />
-                                   </Button>
-                                 </div>
-                               </td>
-                             </tr>
-                           ))}
-                         </tbody>
-                       </table>
-                     </div>
-                   </CardContent>
-                 </Card>
+                <Button
+                         variant="outline"
+                      onClick={() => {
+                        setEditingItem(null)
+                        setShowMaterialModal(true)
+                      }}
+                         className="glass-card border border-white/20"
+                    >
+                         <Plus className="w-4 h-4 mr-2" />
+                      Ajouter Matériel
+                </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {loadingMaterials ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                         <p className="mt-2 text-muted-foreground">Chargement des données matériel...</p>
+                    </div>
+                  ) : materials.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">Aucun matériel trouvé</h3>
+                      <p>Ajoutez du matériel pour commencer à gérer votre inventaire.</p>
+                    </div>
+                  ) : (
+                  <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Nom Équipement</th>
+                          <th className="text-left p-4 font-semibold">Type</th>
+                               <th className="text-left p-4 font-semibold">Marque</th>
+                               <th className="text-left p-4 font-semibold">Modèle</th>
+                               <th className="text-left p-4 font-semibold">Numéro Série</th>
+                            <th className="text-left p-4 font-semibold">Statut</th>
+                            <th className="text-left p-4 font-semibold">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                             {materials.slice(0, 50).map((material, index) => (
+                               <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                 <td className="p-4 font-medium">{material.nom_equipement}</td>
+                                 <td className="p-4">{material.type_equipement}</td>
+                                 <td className="p-4">{material.marque}</td>
+                                 <td className="p-4">{material.modele}</td>
+                                 <td className="p-4">{material.numero_serie}</td>
+                              <td className="p-4">
+                                <Badge 
+                                  variant={material.statut === 'disponible' ? 'default' : 'secondary'}
+                                     className={material.statut === 'disponible' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}
+                                >
+                                  {material.statut}
+                                </Badge>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex gap-2">
+                                  <Button
+                                       variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingItem(material)
+                                      setShowMaterialModal(true)
+                                    }}
+                                       className="glass-card border border-white/20"
+                                  >
+                                       <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                       variant="outline"
+                                    size="sm"
+                                       onClick={() => handleDelete('material', material.id)}
+                                       className="glass-card border border-white/20 text-red-400 hover:text-red-300"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                                  </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  )}
+                </CardContent>
+              </Card>
 
                  {/* Material Assignments Card */}
                  <Card className="glass-card border border-white/20 hover-lift">
@@ -2060,438 +2797,519 @@ export default function EmployeeTracker() {
                          </div>
                          <div>
                            <CardTitle className="text-xl font-bold">Affectations de Matériel</CardTitle>
-                           <CardDescription>
-                             Gérez les assignations de matériel aux employés
-                           </CardDescription>
+                  <CardDescription>
+                    Gérez les assignations de matériel aux employés
+                  </CardDescription>
                          </div>
                        </div>
-                       <div className="flex gap-2">
-                         <Button 
-                           onClick={() => {
-                             setEditingItem(null)
-                             setShowAffectationModal(true)
-                           }}
-                           className="gradient-primary text-white"
-                         >
-                           <Plus className="w-4 h-4 mr-2" />
-                           Nouvelle Affectation
-                         </Button>
-                         <Button 
-                           onClick={() => {
-                             setEditingItem(null)
-                             setShowMultiAffectationModal(true)
-                           }}
-                           variant="outline"
-                           className="glass-card border border-white/20 hover:bg-white/10"
-                         >
-                           <Users className="w-4 h-4 mr-2" />
-                           Affectation Multiple
-                         </Button>
-                       </div>
-                     </div>
+                      <Button
+                         variant="outline"
+                         onClick={() => setShowAffectationModal(true)}
+                         className="glass-card border border-white/20"
+                       >
+                         <Plus className="w-4 h-4 mr-2" />
+                        Nouvelle Affectation
+                      </Button>
+                      </div>
                    </CardHeader>
                    <CardContent>
-                     <div className="space-y-4">
-                       {/* Date Filters */}
-                       <div className="flex gap-4 items-center">
-                         <div className="flex gap-2">
-                           <Input
-                             type="date"
-                             placeholder="Date début"
-                             className="glass-card border border-white/20"
-                           />
-                           <Input
-                             type="date"
-                             placeholder="Date fin"
-                             className="glass-card border border-white/20"
-                           />
-                           <Button variant="outline" className="glass-card border border-white/20 hover:bg-white/10">
-                             Effacer Filtres
-                           </Button>
-                         </div>
-                       </div>
-
-                       {/* Employee Assignments */}
-                       <div className="space-y-3">
-                         {employees.map((employee) => {
-                           const employeeAssignments = affectations.filter(aff => aff.employee_id === employee.id)
-                           const totalCost = employeeAssignments.reduce((sum, aff) => {
-                             const material = materials.find(mat => mat.id === aff.material_id)
-                             return sum + (material?.prix_unitaire ? parseFloat(material.prix_unitaire) * parseInt(aff.quantite_affectee) : 0)
-                           }, 0)
-
-                           if (employeeAssignments.length === 0) return null
-
-                           return (
-                             <div key={employee.id} className="border border-white/10 rounded-lg p-4">
-                               <div className="flex items-center gap-3 mb-3">
-                                 <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
-                                   <User className="w-4 h-4 text-primary" />
-                                 </div>
-                                 <div>
-                                   <div className="font-medium">{employee.prenom} {employee.nom}</div>
-                                   <div className="text-sm text-muted-foreground">
-                                     {employeeAssignments.length} affectation(s) - Coût total: {totalCost.toFixed(2)} €
-                                   </div>
-                                 </div>
-                               </div>
-                               
-                               <div className="overflow-x-auto">
-                                 <table className="w-full">
-                                   <thead>
-                                     <tr className="border-b border-white/10">
-                                       <th className="text-left p-2 font-medium">Matériel</th>
-                                       <th className="text-left p-2 font-medium">Quantité</th>
-                                       <th className="text-left p-2 font-medium">Prix Unitaire</th>
-                                       <th className="text-left p-2 font-medium">Prix Total</th>
-                                       <th className="text-left p-2 font-medium">Date Affectation</th>
-                                       <th className="text-left p-2 font-medium">Statut</th>
-                                       <th className="text-left p-2 font-medium">Actions</th>
-                                     </tr>
-                                   </thead>
-                                   <tbody>
-                                     {employeeAssignments.map((affectation) => {
-                                       const material = materials.find(mat => mat.id === affectation.material_id)
-                                       return (
-                                         <tr key={affectation.id} className="border-b border-white/5">
-                                           <td className="p-2">{material?.nom || 'N/A'}</td>
-                                           <td className="p-2">{affectation.quantite_affectee}</td>
-                                           <td className="p-2">{material?.prix_unitaire ? `${material.prix_unitaire} €` : 'N/A'}</td>
-                                           <td className="p-2 font-medium text-primary">
-                                             {material?.prix_unitaire 
-                                               ? `${(parseFloat(material.prix_unitaire) * parseInt(affectation.quantite_affectee)).toFixed(2)} €`
-                                               : 'N/A'
-                                             }
-                                           </td>
-                                           <td className="p-2">{affectation.date_affectation || 'N/A'}</td>
-                                           <td className="p-2">
-                                             <Badge 
-                                               variant={affectation.statut === 'en_cours' ? 'default' : 'secondary'}
-                                               className="glass-card border border-white/20"
-                                             >
-                                               {affectation.statut || 'en_cours'}
-                                             </Badge>
-                                           </td>
-                                           <td className="p-2">
-                                             <div className="flex gap-1">
-                                               <Button
-                                                 variant="ghost"
-                                                 size="sm"
-                                                 onClick={() => {
-                                                   setEditingItem(affectation)
-                                                   setShowAffectationModal(true)
-                                                 }}
-                                                 className="glass-card border border-white/20 hover:bg-white/10"
-                                               >
-                                                 <Edit className="w-3 h-3" />
-                                               </Button>
-                                               <Button
-                                                 variant="ghost"
-                                                 size="sm"
-                                                 onClick={() => deleteAffectation(affectation.id)}
-                                                 className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
-                                               >
-                                                 <Trash2 className="w-3 h-3" />
-                                               </Button>
-                                             </div>
-                                           </td>
-                                         </tr>
-                                       )
-                                     })}
-                                   </tbody>
-                                 </table>
-                               </div>
-                             </div>
-                           )
-                         })}
-                       </div>
-                     </div>
-                   </CardContent>
-                 </Card>
+                  {loadingAffectations ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                      <p className="mt-2 text-muted-foreground">Chargement des affectations...</p>
+                    </div>
+                  ) : affectations.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucune affectation trouvée</h3>
+                         <p>Créez des affectations pour assigner du matériel aux employés.</p>
+                    </div>
+                  ) : (
+                            <div className="overflow-x-auto">
+                         <table className="w-full border-collapse">
+                                <thead>
+                                  <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Employé</th>
+                               <th className="text-left p-4 font-semibold">Matériel</th>
+                               <th className="text-left p-4 font-semibold">Date Affectation</th>
+                               <th className="text-left p-4 font-semibold">Statut</th>
+                               <th className="text-left p-4 font-semibold">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                             {affectations.slice(0, 50).map((affectation, index) => (
+                               <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                 <td className="p-4">
+                                   <div className="flex items-center gap-2">
+                                     <User className="w-4 h-4 text-primary" />
+                                     <span>{affectation.nom_employe}</span>
+                      </div>
+                                 </td>
+                                 <td className="p-4">
+                                   <div className="flex items-center gap-2">
+                                     <Package className="w-4 h-4 text-chart-3" />
+                                     <span>{affectation.nom_equipement}</span>
+                                        </div>
+                                      </td>
+                                 <td className="p-4">{affectation.date_affectation}</td>
+                                 <td className="p-4">
+                                        <Badge
+                                          variant={affectation.statut === 'active' ? 'default' : 'secondary'}
+                                     className={affectation.statut === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}
+                                        >
+                                          {affectation.statut}
+                                        </Badge>
+                                      </td>
+                                 <td className="p-4">
+                                        <div className="flex gap-2">
+                        <Button
+                                       variant="outline"
+                                            size="sm"
+                          onClick={() => {
+                                              setEditingItem(affectation)
+                                              setShowAffectationModal(true)
+                                            }}
+                                       className="glass-card border border-white/20"
+                                          >
+                                       <Edit className="w-4 h-4" />
+                                          </Button>
+                                          <Button
+                                       variant="outline"
+                                            size="sm"
+                                       onClick={() => handleDelete('affectation', affectation.id)}
+                                       className="glass-card border border-white/20 text-red-400 hover:text-red-300"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                    </div>
+                  )}
+                    </CardContent>
+                  </Card>
                </div>
-             </div>
-           )}
+            </div>
+          )}
 
            {/* Penalties Section */}
-           {activeTab === "penalties" && (
+          {activeTab === "penalties" && (
              <div className="space-y-6">
-               <div className="flex items-center justify-between">
-                 <div>
-                   <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-red-600 bg-clip-text text-transparent">
-                     Gestion des Pénalités
-                   </h2>
-                   <p className="text-muted-foreground">
-                     Gérez les pénalités et sanctions des employés
-                   </p>
-                 </div>
-                 <div className="flex gap-2">
-                   <Button 
-                     variant="outline" 
-                     onClick={() => loadPenaltiesFromDatabase()}
-                     className="glass-card border border-white/20 hover:bg-white/10"
-                   >
-                     <RefreshCw className="w-4 h-4 mr-2" />
-                     Actualiser
-                   </Button>
-                   <Button 
-                     onClick={() => {
-                       setEditingItem(null)
-                       setShowPenaltyModal(true)
-                     }}
-                     className="gradient-primary text-white"
-                   >
-                     <Plus className="w-4 h-4 mr-2" />
-                     Ajouter Pénalité
-                   </Button>
-                 </div>
-               </div>
+               <div className="flex justify-between items-center">
+                  <div>
+                   <h2 className="text-3xl font-bold">Pénalités</h2>
+                   <p className="text-muted-foreground">Gestion des pénalités</p>
+                  </div>
+                    <Button
+                   variant="outline"
+                      onClick={() => {
+                        setEditingItem(null)
+                        setShowPenaltyModal(true)
+                      }}
+                    >
+                   <Plus className="w-4 h-4 mr-2" />
+                   Nouveau
+                    </Button>
+              </div>
 
-               {/* Penalties List Card */}
-               <Card className="glass-card border border-white/20 hover-lift">
-                 <CardHeader>
-                   <div className="flex items-center gap-3">
-                     <div className="p-2 bg-red-500/10 rounded-lg">
-                       <AlertTriangle className="w-5 h-5 text-red-500" />
+               {/* Penalties Management Section */}
+               <div className="space-y-6">
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                     <div className="flex items-center gap-3">
+                       <div className="p-2 bg-red-500/10 rounded-lg">
+                         <AlertTriangle className="w-5 h-5 text-red-500" />
+                       </div>
+                       <div>
+                         <CardTitle className="text-xl font-bold">Liste des Pénalités</CardTitle>
+                  <CardDescription>
+                    {penalties.length} pénalités trouvées dans la base de données
+                  </CardDescription>
+                       </div>
                      </div>
-                     <div>
-                       <CardTitle className="text-xl font-bold">Liste des Pénalités</CardTitle>
-                       <CardDescription>
-                         {penalties.length} pénalités trouvées dans la base de données
-                       </CardDescription>
-                     </div>
-                   </div>
-                 </CardHeader>
-                 <CardContent>
-                   <div className="overflow-x-auto">
-                     <table className="w-full">
-                       <thead>
-                         <tr className="border-b border-white/10">
-                           <th className="text-left p-3 font-medium">Employé</th>
-                           <th className="text-left p-3 font-medium">Type</th>
-                           <th className="text-left p-3 font-medium">Motif</th>
-                           <th className="text-left p-3 font-medium">Montant</th>
-                           <th className="text-left p-3 font-medium">Statut</th>
-                           <th className="text-left p-3 font-medium">Actions</th>
-                         </tr>
-                       </thead>
-                       <tbody>
-                         {penalties.map((penalty) => {
-                           const employee = employees.find(emp => emp.id === penalty.employee_id)
-                           return (
-                             <tr key={penalty.id} className="border-b border-white/5 hover:bg-white/5">
-                               <td className="p-3">
-                                 <div className="flex items-center gap-3">
-                                   <div className="w-8 h-8 bg-red-500/20 rounded-full flex items-center justify-center">
-                                     <span className="text-sm font-medium text-red-500">
-                                       {employee ? `${employee.prenom[0]}${employee.nom[0]}` : 'N/A'}
-                                     </span>
-                                   </div>
-                                   <div>
-                                     <div className="font-medium">
-                                       {employee ? `${employee.prenom} ${employee.nom}` : 'Employé supprimé'}
-                                     </div>
-                                     <div className="text-sm text-muted-foreground">
-                                       PEN-{new Date().getFullYear()}-{penalty.id.toString().padStart(4, '0')}
-                                     </div>
-                                   </div>
-                                 </div>
-                               </td>
-                               <td className="p-3">
-                                 <Badge variant="outline" className="glass-card border border-white/20">
-                                   {penalty.type || 'absence'}
-                                 </Badge>
-                               </td>
-                               <td className="p-3">{penalty.raison || '--'}</td>
-                               <td className="p-3 font-medium text-red-500">
-                                 {penalty.montant ? `${penalty.montant} €` : 'N/A'}
-                               </td>
-                               <td className="p-3">
-                                 <div className="flex items-center gap-2">
-                                   <div className={`w-2 h-2 rounded-full ${
-                                     penalty.statut === 'active' ? 'bg-green-500' : 
-                                     penalty.statut === 'soumis' ? 'bg-yellow-500' : 'bg-gray-500'
-                                   }`} />
-                                   <span className="text-sm">
-                                     {penalty.statut === 'active' ? 'Active' : 
-                                      penalty.statut === 'soumis' ? 'Soumis' : 'Inactive'}
-                                   </span>
-                                 </div>
-                               </td>
-                               <td className="p-3">
-                                 <div className="flex gap-2">
-                                   <Button
-                                     variant="ghost"
-                                     size="sm"
-                                     onClick={() => {
-                                       setEditingItem(penalty)
-                                       setShowPenaltyModal(true)
-                                     }}
-                                     className="glass-card border border-white/20 hover:bg-white/10"
-                                   >
-                                     <Edit className="w-4 h-4" />
-                                   </Button>
-                                   <Button
-                                     variant="ghost"
-                                     size="sm"
-                                     onClick={() => deletePenalty(penalty.id)}
-                                     className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
-                                   >
-                                     <Trash2 className="w-4 h-4" />
-                                   </Button>
-                                 </div>
-                               </td>
-                             </tr>
-                           )
-                         })}
-                       </tbody>
-                     </table>
-                   </div>
-                 </CardContent>
-               </Card>
-             </div>
-           )}
+                  </CardHeader>
+                <CardContent>
+                  {loadingPenalties ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                      <p className="mt-2 text-muted-foreground">Chargement des pénalités...</p>
+                    </div>
+                  ) : penalties.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">Aucune pénalité trouvée</h3>
+                         <p>Ajoutez des pénalités pour commencer à gérer les sanctions.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/10">
+                            <th className="text-left p-4 font-semibold">Employé</th>
+                            <th className="text-left p-4 font-semibold">Type</th>
+                            <th className="text-left p-4 font-semibold">Montant</th>
+                               <th className="text-left p-4 font-semibold">Date</th>
+                            <th className="text-left p-4 font-semibold">Statut</th>
+                            <th className="text-left p-4 font-semibold">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                             {penalties.slice(0, 50).map((penalty, index) => (
+                               <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                              <td className="p-4">
+                                   <div className="flex items-center gap-2">
+                                     <User className="w-4 h-4 text-primary" />
+                                     <span>{penalty.employe_nom}</span>
+                                </div>
+                              </td>
+                              <td className="p-4">{penalty.type_penalite}</td>
+                                 <td className="p-4 font-medium text-red-400">{penalty.montant} €</td>
+                                 <td className="p-4">{penalty.date_penalite}</td>
+                              <td className="p-4">
+                                <Badge 
+                                     variant={penalty.statut === 'active' ? 'default' : 'secondary'}
+                                     className={penalty.statut === 'active' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}
+                                >
+                                  {penalty.statut}
+                                </Badge>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex gap-2">
+                    <Button
+                                       variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingItem(penalty)
+                                      setShowPenaltyModal(true)
+                                    }}
+                                       className="glass-card border border-white/20"
+                                  >
+                                       <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                       variant="outline"
+                                    size="sm"
+                                       onClick={() => handleDelete('penalty', penalty.id)}
+                                       className="glass-card border border-white/20 text-red-400 hover:text-red-300"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                    </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  </CardContent>
+                </Card>
+               </div>
+            </div>
+          )}
 
            {/* Claims Section */}
-           {activeTab === "claims" && (
+          {activeTab === "claims" && (
              <div className="space-y-6">
-               <div className="flex items-center justify-between">
-                 <div>
-                   <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                     Gestion des Réclamations
-                   </h2>
-                   <p className="text-muted-foreground">
-                     Gérez les réclamations et plaintes des clients
-                   </p>
-                 </div>
-                 <div className="flex gap-2">
-                   <Button 
-                     variant="outline" 
-                     onClick={() => loadClaimsFromDatabase()}
-                     className="glass-card border border-white/20 hover:bg-white/10"
-                   >
-                     <RefreshCw className="w-4 h-4 mr-2" />
-                     Actualiser
-                   </Button>
-                   <Button 
-                     onClick={() => {
-                       setEditingItem(null)
-                       setShowClaimModal(true)
-                     }}
-                     className="gradient-primary text-white"
-                   >
-                     <Plus className="w-4 h-4 mr-2" />
-                     Ajouter Réclamation
-                   </Button>
-                 </div>
+               <div className="flex justify-between items-center">
+                  <div>
+                   <h2 className="text-3xl font-bold">Réclamations</h2>
+                   <p className="text-muted-foreground">Gestion des réclamations</p>
+                  </div>
+                    <Button
+                   variant="outline"
+                      onClick={() => {
+                        setEditingItem(null)
+                        setShowClaimModal(true)
+                      }}
+                    >
+                   <Plus className="w-4 h-4 mr-2" />
+                   Nouveau
+                    </Button>
+              </div>
+              
+               {/* Claims Management Section */}
+               <div className="space-y-6">
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                     <div className="flex items-center gap-3">
+                       <div className="p-2 bg-primary/10 rounded-lg">
+                         <FileText className="w-5 h-5 text-primary" />
+                       </div>
+                       <div>
+                         <CardTitle className="text-xl font-bold">Liste des Réclamations</CardTitle>
+                    <CardDescription>
+                    {claims.length} réclamations trouvées dans la base de données
+                    </CardDescription>
+                       </div>
+                     </div>
+                  </CardHeader>
+                <CardContent>
+                  {loadingClaims ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                      <p className="mt-2 text-muted-foreground">Chargement des réclamations...</p>
+                    </div>
+                  ) : claims.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">Aucune réclamation trouvée</h3>
+                         <p>Ajoutez des réclamations pour commencer à gérer les plaintes.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Deadline</th>
+                               <th className="text-left p-4 font-semibold">Intervention Associée</th>
+                               <th className="text-left p-4 font-semibold">Description Problème</th>
+                               <th className="text-left p-4 font-semibold">Nom du Client</th>
+                               <th className="text-left p-4 font-semibold">Email Client</th>
+                            <th className="text-left p-4 font-semibold">Priorité</th>
+                               <th className="text-left p-4 font-semibold">Type Réclamation</th>
+                               <th className="text-left p-4 font-semibold">Employé</th>
+                               <th className="text-left p-4 font-semibold">Date Création</th>
+                            <th className="text-left p-4 font-semibold">Statut</th>
+                            <th className="text-left p-4 font-semibold">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                             {claims.slice(0, 50).map((claim, index) => (
+                               <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                              <td className="p-4">
+                                   {claim.date_resolution ? (
+                                     <span className="text-sm">{new Date(claim.date_resolution).toLocaleDateString('fr-FR')}</span>
+                                   ) : (
+                                     <span className="text-muted-foreground text-sm">Non définie</span>
+                                   )}
+                                 </td>
+                                 <td className="p-4">
+                                   {claim.intervention_client ? (
+                                     <div className="flex items-center gap-2">
+                                       <span className="text-sm">{claim.intervention_client}</span>
+                                  </div>
+                                   ) : (
+                                     <span className="text-muted-foreground text-sm">Aucune</span>
+                                   )}
+                                 </td>
+                                 <td className="p-4 max-w-xs">
+                                   <div className="truncate" title={claim.description_probleme}>
+                                     {claim.description_probleme || 'Non spécifié'}
+                                </div>
+                              </td>
+                                 <td className="p-4">
+                                   <span className="text-sm font-medium">{claim.nom_client || 'Non spécifié'}</span>
+                                 </td>
+                                 <td className="p-4">
+                                   <span className="text-sm">{claim.email_client || 'Non spécifié'}</span>
+                                 </td>
+                              <td className="p-4">
+                                <Badge 
+                                     variant="outline"
+                                     className={
+                                       claim.priorite === 'critique' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                                       claim.priorite === 'haute' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
+                                       claim.priorite === 'normale' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                                       'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                                     }
+                                   >
+                                     {claim.priorite || 'normale'}
+                                </Badge>
+                              </td>
+                                 <td className="p-4">
+                                   <span className="text-sm">{claim.type_reclamation || 'Non spécifié'}</span>
+                                 </td>
+                                 <td className="p-4">
+                                   <div className="flex items-center gap-2">
+                                     <User className="w-4 h-4 text-primary" />
+                                     <span className="text-sm">{claim.employe_nom || 'Non assigné'}</span>
+                                   </div>
+                                 </td>
+                                 <td className="p-4">
+                                   <span className="text-sm">{claim.created_at ? new Date(claim.created_at).toLocaleDateString('fr-FR') : 'Non spécifié'}</span>
+                                 </td>
+                              <td className="p-4">
+                                <Badge 
+                                     variant={claim.statut === 'ouverte' ? 'default' : 'secondary'}
+                                     className={
+                                       claim.statut === 'ouverte' ? 'bg-orange-500/20 text-orange-400' : 
+                                       claim.statut === 'en_cours' ? 'bg-blue-500/20 text-blue-400' :
+                                       claim.statut === 'resolue' ? 'bg-green-500/20 text-green-400' :
+                                       'bg-gray-500/20 text-gray-400'
+                                     }
+                                   >
+                                     {claim.statut || 'ouverte'}
+                                </Badge>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex gap-2">
+                    <Button
+                                       variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingItem(claim)
+                                      setShowClaimModal(true)
+                                    }}
+                                       className="glass-card border border-white/20"
+                                  >
+                                       <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                       variant="outline"
+                                    size="sm"
+                                       onClick={() => handleDelete('claim', claim.id)}
+                                       className="glass-card border border-white/20 text-red-400 hover:text-red-300"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                    </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  </CardContent>
+                </Card>
                </div>
+              </div>
+          )}
 
-               {/* Claims List Card */}
-               <Card className="glass-card border border-white/20 hover-lift">
-                 <CardHeader>
-                   <div className="flex items-center gap-3">
-                     <div className="p-2 bg-primary/10 rounded-lg">
-                       <FileText className="w-5 h-5 text-primary" />
-                     </div>
-                     <div>
-                       <CardTitle className="text-xl font-bold">Liste des Réclamations</CardTitle>
-                       <CardDescription>
-                         {claims.length} réclamations trouvées dans la base de données
-                       </CardDescription>
-                     </div>
-                   </div>
-                 </CardHeader>
-                 <CardContent>
-                   <div className="overflow-x-auto">
-                     <table className="w-full">
-                       <thead>
-                         <tr className="border-b border-white/10">
-                           <th className="text-left p-3 font-medium">Client</th>
-                           <th className="text-left p-3 font-medium">Type</th>
-                           <th className="text-left p-3 font-medium">Priorité</th>
-                           <th className="text-left p-3 font-medium">Statut</th>
-                           <th className="text-left p-3 font-medium">Employé Assigné</th>
-                           <th className="text-left p-3 font-medium">Actions</th>
-                         </tr>
-                       </thead>
-                       <tbody>
-                         {claims.map((claim) => {
-                           const employee = employees.find(emp => emp.id === claim.employee_id)
-                           return (
-                             <tr key={claim.id} className="border-b border-white/5 hover:bg-white/5">
-                               <td className="p-3">
-                                 <div className="flex items-center gap-3">
-                                   <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center">
-                                     <span className="text-sm font-medium text-green-500">
-                                       {claim.client_nom ? claim.client_nom[0] : 'C'}
-                                     </span>
-                                   </div>
-                                   <div>
-                                     <div className="font-medium">{claim.client_nom || 'Client anonyme'}</div>
-                                     <div className="text-sm text-muted-foreground">
-                                       REC-{new Date().getFullYear()}-{claim.id.toString().padStart(4, '0')}
-                                     </div>
-                                   </div>
-                                 </div>
-                               </td>
-                               <td className="p-3">
-                                 <Badge variant="outline" className="glass-card border border-white/20">
-                                   {claim.type || 'technique'}
-                                 </Badge>
-                               </td>
-                               <td className="p-3">
-                                 <Badge 
-                                   variant={claim.priorite === 'haute' ? 'destructive' : 'secondary'}
-                                   className="glass-card border border-white/20"
-                                 >
-                                   {claim.priorite || 'normale'}
-                                 </Badge>
-                               </td>
-                               <td className="p-3">
-                                 <Badge 
-                                   variant={claim.statut === 'ouverte' ? 'default' : 'secondary'}
-                                   className="glass-card border border-white/20"
-                                 >
-                                   {claim.statut || 'ouverte'}
-                                 </Badge>
-                               </td>
-                               <td className="p-3">
-                                 {employee ? `${employee.prenom} ${employee.nom}` : 'Non assigné'}
-                               </td>
-                               <td className="p-3">
-                                 <div className="flex gap-2">
-                                   <Button
-                                     variant="ghost"
-                                     size="sm"
-                                     onClick={() => {
-                                       setEditingItem(claim)
-                                       setShowClaimModal(true)
-                                     }}
-                                     className="glass-card border border-white/20 hover:bg-white/10"
-                                   >
-                                     <Edit className="w-4 h-4" />
-                                   </Button>
-                                   <Button
-                                     variant="ghost"
-                                     size="sm"
-                                     onClick={() => deleteClaim(claim.id)}
-                                     className="glass-card border border-white/20 hover:bg-red-500/10 text-red-500"
-                                   >
-                                     <Trash2 className="w-4 h-4" />
-                                   </Button>
-                                 </div>
-                               </td>
-                             </tr>
-                           )
-                         })}
-                       </tbody>
-                     </table>
-                   </div>
-                 </CardContent>
-               </Card>
-             </div>
-           )}
+           {/* Reports Section */}
+           {activeTab === "reports" && (
+             <div className="space-y-6">
+               <div className="flex justify-between items-center">
+                  <div>
+                   <h2 className="text-3xl font-bold">Rapports</h2>
+                   <p className="text-muted-foreground">Génération de rapports</p>
+                  </div>
+                 <Button variant="outline">
+                   <Plus className="w-4 h-4 mr-2" />
+                   Nouveau
+                    </Button>
+              </div>
+              
+               {/* Reports Management Section */}
+                    <div className="space-y-6">
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                            <div className="flex items-center gap-3">
+                       <div className="p-2 bg-primary/10 rounded-lg">
+                         <TrendingUp className="w-5 h-5 text-primary" />
+                        </div>
+                              <div>
+                         <CardTitle className="text-xl font-bold">Rapports Disponibles</CardTitle>
+                         <CardDescription>
+                           Générez des rapports détaillés sur vos données
+                         </CardDescription>
+                          </div>
+                            </div>
+                   </CardHeader>
+                   <CardContent>
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                       <Card className="glass-card border border-white/10 hover:border-white/20 transition-all">
+                         <CardContent className="p-6">
+                           <div className="flex items-center gap-3 mb-4">
+                             <Users className="w-8 h-8 text-chart-1" />
+                             <div>
+                               <h3 className="font-semibold">Rapport Employés</h3>
+                               <p className="text-sm text-muted-foreground">Statistiques des employés</p>
+                              </div>
+                              </div>
+                           <Button variant="outline" className="w-full glass-card border border-white/20">
+                             Générer
+                           </Button>
+                         </CardContent>
+                       </Card>
+
+                       <Card className="glass-card border border-white/10 hover:border-white/20 transition-all">
+                         <CardContent className="p-6">
+                           <div className="flex items-center gap-3 mb-4">
+                             <Fuel className="w-8 h-8 text-chart-2" />
+                             <div>
+                               <h3 className="font-semibold">Rapport Carburant</h3>
+                               <p className="text-sm text-muted-foreground">Consommation carburant</p>
+                                    </div>
+                            </div>
+                           <Button variant="outline" className="w-full glass-card border border-white/20">
+                             Générer
+                           </Button>
+                         </CardContent>
+                       </Card>
+
+                       <Card className="glass-card border border-white/10 hover:border-white/20 transition-all">
+                         <CardContent className="p-6">
+                           <div className="flex items-center gap-3 mb-4">
+                             <FileText className="w-8 h-8 text-chart-3" />
+                             <div>
+                               <h3 className="font-semibold">Rapport Interventions</h3>
+                               <p className="text-sm text-muted-foreground">Activité des interventions</p>
+                                          </div>
+                                        </div>
+                           <Button variant="outline" className="w-full glass-card border border-white/20">
+                             Générer
+                           </Button>
+                         </CardContent>
+                       </Card>
+                                    </div>
+                </CardContent>
+              </Card>
+              </div>
+                        </div>
+                      )}
         </main>
-      </div>
+                    </div>
+
+       {/* Material Modal */}
+       <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
+         <DialogContent className="glass-card border border-white/20">
+           <DialogHeader>
+             <DialogTitle>
+               {editingItem ? 'Modifier le Matériel' : 'Ajouter un Nouveau Matériel'}
+             </DialogTitle>
+             <DialogDescription>
+               {editingItem ? 'Modifiez les informations du matériel' : 'Remplissez les informations du nouveau matériel'}
+             </DialogDescription>
+           </DialogHeader>
+           <MaterialForm 
+             material={editingItem} 
+             onSave={saveMaterial} 
+             onCancel={() => {
+               setShowMaterialModal(false)
+               setEditingItem(null)
+             }} 
+           />
+         </DialogContent>
+       </Dialog>
+
+       {/* Affectation Modal */}
+       <Dialog open={showAffectationModal} onOpenChange={setShowAffectationModal}>
+         <DialogContent className="glass-card border border-white/20">
+           <DialogHeader>
+             <DialogTitle>
+               {editingItem ? 'Modifier l\'Affectation' : 'Nouvelle Affectation'}
+             </DialogTitle>
+             <DialogDescription>
+               {editingItem ? 'Modifiez les détails de l\'affectation' : 'Assignez du matériel à un employé'}
+             </DialogDescription>
+           </DialogHeader>
+           <AffectationForm 
+             affectation={editingItem} 
+             employees={employees}
+             materials={materials}
+             onSave={saveAffectation} 
+             onCancel={() => {
+               setShowAffectationModal(false)
+               setEditingItem(null)
+             }} 
+           />
+         </DialogContent>
+       </Dialog>
 
       {/* Employee Modal */}
       <Dialog open={showEmployeeModal} onOpenChange={setShowEmployeeModal}>
@@ -2563,20 +3381,36 @@ export default function EmployeeTracker() {
                   <p className="text-sm text-gray-600">{selectedEmployee.poste || 'N/A'}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Pourcentage de taxe</Label>
-                  <p className="text-sm text-gray-600">
-                    {selectedEmployee.pourcentage_taxe ? `${selectedEmployee.pourcentage_taxe}%` : 'N/A'}
-                  </p>
+                   <Label className="text-sm font-medium">Date d'embauche</Label>
+                   <p className="text-sm text-gray-600">{selectedEmployee.date_embauche || 'N/A'}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Niveau d'accès</Label>
                   <p className="text-sm text-gray-600">{selectedEmployee.niveau_acces || 'N/A'}</p>
                 </div>
+                 <div>
+                   <Label className="text-sm font-medium">Région</Label>
+                   <p className="text-sm text-gray-600">{selectedEmployee.region || 'N/A'}</p>
               </div>
+                 <div>
+                   <Label className="text-sm font-medium">Plaque Véhicule</Label>
+                   <p className="text-sm text-gray-600">{selectedEmployee.plaque_vehicule || 'N/A'}</p>
+                 </div>
+                 <div>
+                   <Label className="text-sm font-medium">Numéro Carte Carburant</Label>
+                   <p className="text-sm text-gray-600">{selectedEmployee.numero_carte_carburant || 'N/A'}</p>
+                 </div>
+                 <div>
+                   <Label className="text-sm font-medium">Pourcentage Taxe</Label>
+                   <p className="text-sm text-gray-600">{selectedEmployee.pourcentage_taxe || 'N/A'}</p>
+                 </div>
+               </div>
+               {selectedEmployee.commentaires && (
               <div>
                 <Label className="text-sm font-medium">Commentaires</Label>
-                <p className="text-sm text-gray-600">{selectedEmployee.commentaires || 'Aucun commentaire'}</p>
+                   <p className="text-sm text-gray-600">{selectedEmployee.commentaires}</p>
               </div>
+               )}
             </div>
           )}
           <DialogFooter>
@@ -2592,7 +3426,7 @@ export default function EmployeeTracker() {
 
       {/* Card Assignment Modal */}
       <Dialog open={showCardAssignmentModal} onOpenChange={setShowCardAssignmentModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-lg">
+        <DialogContent className="glass-card border border-white/20 max-w-md">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
               Assigner une carte carburant
@@ -2601,463 +3435,258 @@ export default function EmployeeTracker() {
               Assignez une carte carburant à {selectedEmployee?.prenom} {selectedEmployee?.nom}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+                    <div className="space-y-4">
             <div>
-              <Label className="text-sm font-medium">Employé</Label>
-              <div className="p-3 bg-primary/10 rounded-lg border border-white/20">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
-                    <span className="text-sm font-medium text-primary">
-                      {selectedEmployee?.prenom?.[0]}{selectedEmployee?.nom?.[0]}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-medium">{selectedEmployee?.prenom} {selectedEmployee?.nom}</div>
-                    <div className="text-sm text-muted-foreground">Matricule: {selectedEmployee?.matricule}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div>
-              <Label className="text-sm font-medium">Sélectionner une carte carburant</Label>
-              <Select onValueChange={(value) => {
-                console.log("Carte sélectionnée:", value)
-                setAssignationData({...assignationData, numero_carte: value})
-              }}>
+              <Label className="text-sm font-medium">Sélectionner une carte</Label>
+              <Select onValueChange={(value) => assignCardToEmployee(value)}>
                 <SelectTrigger className="glass-card border border-white/20">
                   <SelectValue placeholder="Choisir une carte carburant" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableCards.length > 0 ? (
-                    availableCards.map((card) => (
-                      <SelectItem key={card.numero_carte} value={card.numero_carte}>
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex flex-col">
-                            <span className="font-medium">{card.label}</span>
-                            <div className="flex gap-2 text-xs text-muted-foreground">
-                              {card.montant && (
-                                <span>Montant: {card.montant} DA</span>
-                              )}
-                              {card.fournisseur && (
-                                <span>• {card.fournisseur}</span>
-                              )}
-                              {card.date_livraison && (
-                                <span>• Livrée: {new Date(card.date_livraison).toLocaleDateString()}</span>
-                              )}
-                              {card.immat_vehicule && (
-                                <span>• Véhicule: {card.immat_vehicule}</span>
-                              )}
-                            </div>
-                          </div>
-                          <Badge 
-                            variant={card.statut === 'disponible' ? 'default' : 'secondary'}
-                            className="ml-2"
-                          >
-                            {card.statut}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="no-cards" disabled>
-                      Aucune carte disponible
+                  {availableCards.map((card) => (
+                    <SelectItem key={card.numero_carte} value={card.numero_carte}>
+                      {card.label}
                     </SelectItem>
-                  )}
+                  ))}
                 </SelectContent>
               </Select>
-              
-              {/* Debug info */}
-              <div className="mt-2 text-xs text-muted-foreground">
-                {availableCards.length} carte(s) disponible(s)
-              </div>
-            </div>
-
-            {assignationData.numero_carte && (
-              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span className="text-sm text-green-800">
-                    Carte {assignationData.numero_carte} sélectionnée
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-          
+                        </div>
+                          </div>
           <DialogFooter>
             <Button
-              variant="outline"
-              onClick={() => {
-                setShowCardAssignmentModal(false)
-                setAssignationData({numero_carte: '', employe_id: ''})
-              }}
-              className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10"
+              onClick={() => setShowCardAssignmentModal(false)}
+              className="glass-card border border-white/20 hover:bg-white/10 text-gray-900"
             >
               Annuler
             </Button>
-            <Button
-              onClick={() => {
-                if (assignationData.numero_carte && selectedEmployee) {
-                  assignCardToEmployee(assignationData.numero_carte)
-                }
-              }}
-              disabled={!assignationData.numero_carte || !selectedEmployee}
-              className="gradient-primary text-white"
-            >
-              Assigner la carte
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Card History Modal */}
-      <Dialog open={showCardHistoryModal} onOpenChange={setShowCardHistoryModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-4xl max-h-[80vh] overflow-y-auto">
+       {/* Reclamation Modal */}
+       <Dialog open={showClaimModal} onOpenChange={setShowClaimModal}>
+         <DialogContent className="glass-card border border-white/20">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
-              Historique des cartes carburant
+             <DialogTitle>
+               {editingItem ? 'Modifier la Réclamation' : 'Nouvelle Réclamation'}
             </DialogTitle>
             <DialogDescription>
-              Historique complet des cartes assignées à {selectedEmployeeHistory?.prenom} {selectedEmployeeHistory?.nom}
+               {editingItem ? 'Modifiez les informations de la réclamation' : 'Ajoutez une nouvelle réclamation'}
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-6">
-            {/* Résumé de consommation */}
-            {cardHistory.length > 0 && (
-              <div className="p-4 bg-primary/10 rounded-lg border border-white/20">
-                <h3 className="font-semibold mb-2">Résumé de consommation</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-sm text-muted-foreground">Consommation totale</div>
-                    <div className="text-2xl font-bold text-primary">
-                      {cardHistory[0]?.total_consomme_toutes_cartes || 0} DA
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-muted-foreground">Nombre de cartes utilisées</div>
-                    <div className="text-2xl font-bold text-primary">
-                      {cardHistory[0]?.nombre_cartes_utilisees || 0}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Historique détaillé */}
-            <div>
-              <h3 className="font-semibold mb-3">Historique détaillé des cartes</h3>
-              {cardHistory.length > 0 ? (
-                <div className="space-y-3">
-                  {cardHistory[0]?.historique_cartes?.map((carte: any, index: number) => (
-                    <div key={index} className="p-4 bg-white/5 rounded-lg border border-white/10">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
-                            <CreditCard className="w-4 h-4 text-primary" />
-                          </div>
-                          <div>
-                            <div className="font-medium">Carte {carte.numero_carte}</div>
-                            <div className="text-sm text-muted-foreground">
-                              Assignée le {new Date(carte.date_assignation).toLocaleDateString()}
-                              {carte.date_fin && ` - Finie le ${new Date(carte.date_fin).toLocaleDateString()}`}
-                            </div>
-                          </div>
-                        </div>
-                        <Badge 
-                          variant={carte.statut === 'active' ? 'default' : 'secondary'}
-                        >
-                          {carte.statut === 'active' ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Consommation:</span>
-                          <span className="ml-2 font-medium">{carte.consommation_carte} DA</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Transactions:</span>
-                          <span className="ml-2 font-medium">{carte.nombre_transactions}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>Aucun historique de cartes trouvé pour cet employé</p>
-                </div>
-              )}
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button
-              onClick={() => setShowCardHistoryModal(false)}
-              className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10"
-            >
-              Fermer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Material Modal */}
-      <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
-              {editingItem ? "Modifier le Matériel" : "Ajouter un Matériel"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingItem ? "Modifiez les informations du matériel" : "Ajoutez un nouveau matériel à votre inventaire"}
-            </DialogDescription>
-          </DialogHeader>
-          <MaterialForm 
-            material={editingItem} 
-            onSave={saveMaterial} 
+           <ReclamationForm 
+             reclamation={editingItem} 
+            employees={employees}
+             interventions={interventions}
+             onSave={saveReclamation} 
             onCancel={() => {
-              setShowMaterialModal(false)
+               setShowClaimModal(false)
               setEditingItem(null)
             }}
-          />
-        </DialogContent>
-      </Dialog>
-
-      {/* Affectation Modal */}
-      <Dialog open={showAffectationModal} onOpenChange={setShowAffectationModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
-              {editingItem ? "Modifier l'Affectation" : "Nouvelle Affectation"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingItem ? "Modifiez l'affectation de matériel" : "Assignez du matériel à un employé"}
-            </DialogDescription>
-          </DialogHeader>
-          <AffectationForm 
-            affectation={editingItem} 
-            onSave={saveAffectation} 
-            onCancel={() => {
-              setShowAffectationModal(false)
-              setEditingItem(null)
-            }}
-            employees={employees}
-            materials={materials}
-          />
-        </DialogContent>
-      </Dialog>
-
-      {/* Multi-Affectation Modal */}
-      <Dialog open={showMultiAffectationModal} onOpenChange={setShowMultiAffectationModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
-              Affectation Multiple
-            </DialogTitle>
-            <DialogDescription>
-              Assignez plusieurs matériaux à plusieurs employés en une seule fois
-            </DialogDescription>
-          </DialogHeader>
-          <MultiAffectationForm 
-            onSave={saveMultiAffectation} 
-            onCancel={() => {
-              setShowMultiAffectationModal(false)
-            }}
-            employees={employees}
-            materials={materials}
           />
         </DialogContent>
       </Dialog>
 
       {/* Penalty Modal */}
       <Dialog open={showPenaltyModal} onOpenChange={setShowPenaltyModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-2xl">
+         <DialogContent className="glass-card border border-white/20">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
-              {editingItem ? "Modifier la Pénalité" : "Ajouter une Pénalité"}
+             <DialogTitle>
+               {editingItem ? 'Modifier la Pénalité' : 'Nouvelle Pénalité'}
             </DialogTitle>
             <DialogDescription>
-              {editingItem ? "Modifiez les informations de la pénalité" : "Ajoutez une nouvelle pénalité"}
+               {editingItem ? 'Modifiez les informations de la pénalité' : 'Ajoutez une nouvelle pénalité'}
             </DialogDescription>
           </DialogHeader>
           <PenaltyForm 
             penalty={editingItem} 
+            employees={employees}
             onSave={savePenalty} 
             onCancel={() => {
               setShowPenaltyModal(false)
               setEditingItem(null)
             }}
-            employees={employees}
           />
         </DialogContent>
       </Dialog>
+     </div>
+   )
+ }
 
-      {/* Claim Modal */}
-      <Dialog open={showClaimModal} onOpenChange={setShowClaimModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
-              {editingItem ? "Modifier la Réclamation" : "Ajouter une Réclamation"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingItem ? "Modifiez les informations de la réclamation" : "Ajoutez une nouvelle réclamation"}
-            </DialogDescription>
-          </DialogHeader>
-          <ClaimForm 
-            claim={editingItem} 
-            onSave={saveClaim} 
-            onCancel={() => {
-              setShowClaimModal(false)
-              setEditingItem(null)
-            }}
-            employees={employees}
-            interventions={interventions}
-          />
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
-
-// Multi-Affectation Form Component
-function MultiAffectationForm({ onSave, onCancel, employees, materials }: { 
+// Material Form Component
+function MaterialForm({ material, onSave, onCancel }: { 
+  material: any, 
   onSave: (data: any) => void, 
-  onCancel: () => void,
-  employees: any[],
-  materials: any[]
+  onCancel: () => void 
 }) {
-  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
-  const [selectedMaterials, setSelectedMaterials] = useState<{[key: string]: number}>({})
   const [formData, setFormData] = useState({
-    date_affectation: new Date().toISOString().split('T')[0],
-    commentaires: ''
+    numero_serie: material?.numero_serie || '',
+    nom_equipement: material?.nom_equipement || '',
+    type_materiel: material?.type_materiel || '',
+    marque: material?.marque || '',
+    modele: material?.modele || '',
+    statut: material?.statut || 'disponible',
+    localisation: material?.localisation || '',
+    quantite: material?.quantite || 1,
+    prix_unitaire: material?.prix_unitaire || 0,
+    date_acquisition: material?.date_acquisition || '',
+    cout_acquisition: material?.cout_acquisition || 0,
+    garantie_jusqu_a: material?.garantie_jusqu_a || '',
+    maintenance_derniere: material?.maintenance_derniere || '',
+    maintenance_prochaine: material?.maintenance_prochaine || '',
+    kilometrage_vehicule: material?.kilometrage_vehicule || 0,
+    consommation_carburant: material?.consommation_carburant || 0,
+    capacite_reservoir: material?.capacite_reservoir || 0,
+    niveau_carburant: material?.niveau_carburant || 0,
+    etat_general: material?.etat_general || 'bon',
+    notes_maintenance: material?.notes_maintenance || '',
+    accessoires_inclus: material?.accessoires_inclus || '',
+    certificats_conformite: material?.certificats_conformite || '',
+    photos: material?.photos || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    
-    const assignments = selectedEmployees.flatMap(employeeId => 
-      Object.entries(selectedMaterials).map(([materialId, quantity]) => ({
-        employee_id: employeeId,
-        material_id: materialId,
-        quantite_affectee: quantity,
-        date_affectation: formData.date_affectation,
-        statut: 'en_cours',
-        commentaires: formData.commentaires
-      }))
-    )
-
-    onSave(assignments)
+    onSave(formData)
   }
 
-  const toggleEmployee = (employeeId: string) => {
-    setSelectedEmployees(prev => 
-      prev.includes(employeeId) 
-        ? prev.filter(id => id !== employeeId)
-        : [...prev, employeeId]
-    )
-  }
-
-  const updateMaterialQuantity = (materialId: string, quantity: number) => {
-    setSelectedMaterials(prev => ({
-      ...prev,
-      [materialId]: quantity
-    }))
+  const handleChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid grid-cols-2 gap-6">
-        {/* Employee Selection */}
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <Label className="text-sm font-medium mb-3 block">Sélectionner les Employés</Label>
-          <div className="space-y-2 max-h-60 overflow-y-auto border border-white/20 rounded-lg p-3">
-            {employees.map((employee) => (
-              <div key={employee.id} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`employee-${employee.id}`}
-                  checked={selectedEmployees.includes(employee.id)}
-                  onCheckedChange={() => toggleEmployee(employee.id)}
-                />
-                <Label htmlFor={`employee-${employee.id}`} className="text-sm">
-                  {employee.prenom} {employee.nom}
-                </Label>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Material Selection */}
-        <div>
-          <Label className="text-sm font-medium mb-3 block">Sélectionner les Matériaux</Label>
-          <div className="space-y-2 max-h-60 overflow-y-auto border border-white/20 rounded-lg p-3">
-            {materials.map((material) => (
-              <div key={material.id} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`material-${material.id}`}
-                  checked={selectedMaterials[material.id] > 0}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      updateMaterialQuantity(material.id, 1)
-                    } else {
-                      const newMaterials = { ...selectedMaterials }
-                      delete newMaterials[material.id]
-                      setSelectedMaterials(newMaterials)
-                    }
-                  }}
-                />
-                <Label htmlFor={`material-${material.id}`} className="text-sm flex-1">
-                  {material.nom}
-                </Label>
-                {selectedMaterials[material.id] > 0 && (
-                  <Input
-                    type="number"
-                    min="1"
-                    value={selectedMaterials[material.id]}
-                    onChange={(e) => updateMaterialQuantity(material.id, parseInt(e.target.value) || 1)}
-                    className="w-20 h-8 text-xs"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="date_affectation">Date d'Affectation</Label>
+          <Label htmlFor="numero_serie">Numéro de Série</Label>
           <Input
-            id="date_affectation"
-            type="date"
-            value={formData.date_affectation}
-            onChange={(e) => setFormData({...formData, date_affectation: e.target.value})}
-            className="glass-card border border-white/20"
+            id="numero_serie"
+            value={formData.numero_serie}
+            onChange={(e) => handleChange('numero_serie', e.target.value)}
+            placeholder="Ex: SN123456"
+          />
+                        </div>
+        <div>
+          <Label htmlFor="nom_equipement">Nom de l'Équipement *</Label>
+          <Input
+            id="nom_equipement"
+            value={formData.nom_equipement}
+            onChange={(e) => handleChange('nom_equipement', e.target.value)}
+            placeholder="Ex: Ordinateur Portable"
             required
+          />
+        </div>
+        <div>
+          <Label htmlFor="type_materiel">Type de Matériel</Label>
+          <Input
+            id="type_materiel"
+            value={formData.type_materiel}
+            onChange={(e) => handleChange('type_materiel', e.target.value)}
+            placeholder="Ex: Informatique"
+          />
+        </div>
+        <div>
+          <Label htmlFor="marque">Marque</Label>
+          <Input
+            id="marque"
+            value={formData.marque}
+            onChange={(e) => handleChange('marque', e.target.value)}
+            placeholder="Ex: Dell"
+          />
+        </div>
+        <div>
+          <Label htmlFor="modele">Modèle</Label>
+          <Input
+            id="modele"
+            value={formData.modele}
+            onChange={(e) => handleChange('modele', e.target.value)}
+            placeholder="Ex: Latitude 5520"
+          />
+        </div>
+        <div>
+          <Label htmlFor="statut">Statut</Label>
+          <Select value={formData.statut} onValueChange={(value) => handleChange('statut', value)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="disponible">Disponible</SelectItem>
+              <SelectItem value="en_utilisation">En Utilisation</SelectItem>
+              <SelectItem value="en_maintenance">En Maintenance</SelectItem>
+              <SelectItem value="hors_service">Hors Service</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="localisation">Localisation</Label>
+          <Input
+            id="localisation"
+            value={formData.localisation}
+            onChange={(e) => handleChange('localisation', e.target.value)}
+            placeholder="Ex: Bureau Principal"
+          />
+        </div>
+        <div>
+          <Label htmlFor="quantite">Quantité *</Label>
+          <Input
+            id="quantite"
+            type="number"
+            min="1"
+            value={formData.quantite}
+            onChange={(e) => handleChange('quantite', parseInt(e.target.value) || 1)}
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="prix_unitaire">Prix Unitaire (€)</Label>
+          <Input
+            id="prix_unitaire"
+            type="number"
+            step="0.01"
+            min="0"
+            value={formData.prix_unitaire}
+            onChange={(e) => handleChange('prix_unitaire', parseFloat(e.target.value) || 0)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="date_acquisition">Date d'Acquisition</Label>
+          <Input
+            id="date_acquisition"
+            type="date"
+            value={formData.date_acquisition}
+            onChange={(e) => handleChange('date_acquisition', e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="cout_acquisition">Coût d'Acquisition (€)</Label>
+          <Input
+            id="cout_acquisition"
+            type="number"
+            step="0.01"
+            min="0"
+            value={formData.cout_acquisition}
+            onChange={(e) => handleChange('cout_acquisition', parseFloat(e.target.value) || 0)}
           />
         </div>
       </div>
       
       <div>
-        <Label htmlFor="commentaires">Commentaires</Label>
+        <Label htmlFor="notes_maintenance">Notes de Maintenance</Label>
         <Textarea
-          id="commentaires"
-          value={formData.commentaires}
-          onChange={(e) => setFormData({...formData, commentaires: e.target.value})}
-          className="glass-card border border-white/20"
+          id="notes_maintenance"
+          value={formData.notes_maintenance}
+          onChange={(e) => handleChange('notes_maintenance', e.target.value)}
+          placeholder="Notes sur la maintenance..."
           rows={3}
         />
       </div>
-      
+
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
+        <Button type="button" variant="outline" onClick={onCancel}>
           Annuler
         </Button>
-        <Button type="submit" className="gradient-primary text-white">
-          Créer les Affectations
+        <Button type="submit">
+          {material ? 'Modifier' : 'Ajouter'}
         </Button>
       </DialogFooter>
     </form>
@@ -3100,7 +3729,7 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
             onChange={(e) => setFormData({...formData, matricule: e.target.value})}
             className="glass-card border border-white/20"
           />
-        </div>
+                          </div>
         <div>
           <Label htmlFor="nom">Nom</Label>
           <Input
@@ -3150,11 +3779,12 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
           />
         </div>
         <div>
-          <Label htmlFor="region">Région</Label>
+          <Label htmlFor="date_embauche">Date d'embauche</Label>
           <Input
-            id="region"
-            value={formData.region}
-            onChange={(e) => setFormData({...formData, region: e.target.value})}
+            id="date_embauche"
+            type="date"
+            value={formData.date_embauche}
+            onChange={(e) => setFormData({...formData, date_embauche: e.target.value})}
             className="glass-card border border-white/20"
           />
         </div>
@@ -3172,23 +3802,48 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
           </Select>
         </div>
         <div>
-          <Label htmlFor="niveau_acces">Niveau d'Accès</Label>
+          <Label htmlFor="niveau_acces">Niveau d'accès</Label>
           <Select value={formData.niveau_acces} onValueChange={(value) => setFormData({...formData, niveau_acces: value})}>
             <SelectTrigger className="glass-card border border-white/20">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="admin">Admin</SelectItem>
+              <SelectItem value="manager">Manager</SelectItem>
               <SelectItem value="technicien">Technicien</SelectItem>
-              <SelectItem value="chef_equipe">Chef d'Équipe</SelectItem>
-              <SelectItem value="superadmin">Super Admin</SelectItem>
+              <SelectItem value="operateur">Opérateur</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4">
+                        </div>
         <div>
-          <Label htmlFor="pourcentage_taxe">Pourcentage Taxe (%)</Label>
+          <Label htmlFor="region">Région</Label>
+          <Input
+            id="region"
+            value={formData.region}
+            onChange={(e) => setFormData({...formData, region: e.target.value})}
+            className="glass-card border border-white/20"
+          />
+                                    </div>
+      <div>
+          <Label htmlFor="plaque_vehicule">Plaque Véhicule</Label>
+          <Input
+            id="plaque_vehicule"
+            value={formData.plaque_vehicule}
+            onChange={(e) => setFormData({...formData, plaque_vehicule: e.target.value})}
+            className="glass-card border border-white/20"
+          />
+        </div>
+        <div>
+          <Label htmlFor="numero_carte_carburant">Numéro Carte Carburant</Label>
+          <Input
+            id="numero_carte_carburant"
+            value={formData.numero_carte_carburant}
+            onChange={(e) => setFormData({...formData, numero_carte_carburant: e.target.value})}
+            className="glass-card border border-white/20"
+          />
+        </div>
+        <div>
+          <Label htmlFor="pourcentage_taxe">Pourcentage Taxe</Label>
           <Input
             id="pourcentage_taxe"
             type="number"
@@ -3196,10 +3851,9 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
             value={formData.pourcentage_taxe}
             onChange={(e) => setFormData({...formData, pourcentage_taxe: e.target.value})}
             className="glass-card border border-white/20"
-            placeholder="0.00"
           />
         </div>
-      </div>
+        </div>
       
       <div>
         <Label htmlFor="commentaires">Commentaires</Label>
@@ -3207,184 +3861,18 @@ function EmployeeForm({ employee, onSave, onCancel }: { employee: any, onSave: (
           id="commentaires"
           value={formData.commentaires}
           onChange={(e) => setFormData({...formData, commentaires: e.target.value})}
-          className="glass-card border border-white/20"
+          placeholder="Commentaires supplémentaires..."
           rows={3}
+          className="glass-card border border-white/20"
         />
       </div>
+
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
+        <Button type="button" variant="outline" onClick={onCancel}>
           Annuler
         </Button>
-        <Button type="submit" className="gradient-primary text-white">
-          {employee ? "Modifier" : "Ajouter"}
-        </Button>
-      </DialogFooter>
-    </form>
-  )
-}
-
-// Material Form Component
-function MaterialForm({ material, onSave, onCancel }: { material: any, onSave: (data: any) => void, onCancel: () => void }) {
-  const [formData, setFormData] = useState({
-    nom: material?.nom || '',
-    description: material?.description || '',
-    quantite: material?.quantite || '',
-    unite: material?.unite || '',
-    prix_unitaire: material?.prix_unitaire || '',
-    categorie: material?.categorie || '',
-    fournisseur: material?.fournisseur || '',
-    numero_serie: material?.numero_serie || '',
-    date_acquisition: material?.date_acquisition || '',
-    statut: material?.statut || 'disponible',
-    localisation: material?.localisation || '',
-    commentaires: material?.commentaires || ''
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSave(formData)
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="nom">Nom du Matériel</Label>
-          <Input
-            id="nom"
-            value={formData.nom}
-            onChange={(e) => setFormData({...formData, nom: e.target.value})}
-            className="glass-card border border-white/20"
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="categorie">Catégorie</Label>
-          <Input
-            id="categorie"
-            value={formData.categorie}
-            onChange={(e) => setFormData({...formData, categorie: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="quantite">Quantité</Label>
-          <Input
-            id="quantite"
-            type="number"
-            value={formData.quantite}
-            onChange={(e) => setFormData({...formData, quantite: e.target.value})}
-            className="glass-card border border-white/20"
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="unite">Unité</Label>
-          <Select value={formData.unite} onValueChange={(value) => setFormData({...formData, unite: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
-              <SelectValue placeholder="Sélectionner une unité" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="piece">Pièce</SelectItem>
-              <SelectItem value="metre">Mètre</SelectItem>
-              <SelectItem value="kg">Kilogramme</SelectItem>
-              <SelectItem value="litre">Litre</SelectItem>
-              <SelectItem value="boite">Boîte</SelectItem>
-              <SelectItem value="rouleau">Rouleau</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="prix_unitaire">Prix Unitaire (€)</Label>
-          <Input
-            id="prix_unitaire"
-            type="number"
-            step="0.01"
-            value={formData.prix_unitaire}
-            onChange={(e) => setFormData({...formData, prix_unitaire: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="fournisseur">Fournisseur</Label>
-          <Input
-            id="fournisseur"
-            value={formData.fournisseur}
-            onChange={(e) => setFormData({...formData, fournisseur: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="numero_serie">Numéro de Série</Label>
-          <Input
-            id="numero_serie"
-            value={formData.numero_serie}
-            onChange={(e) => setFormData({...formData, numero_serie: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="statut">Statut</Label>
-          <Select value={formData.statut} onValueChange={(value) => setFormData({...formData, statut: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="disponible">Disponible</SelectItem>
-              <SelectItem value="utilise">Utilisé</SelectItem>
-              <SelectItem value="maintenance">En Maintenance</SelectItem>
-              <SelectItem value="hors_service">Hors Service</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="localisation">Localisation</Label>
-          <Input
-            id="localisation"
-            value={formData.localisation}
-            onChange={(e) => setFormData({...formData, localisation: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="date_acquisition">Date d'Acquisition</Label>
-          <Input
-            id="date_acquisition"
-            type="date"
-            value={formData.date_acquisition}
-            onChange={(e) => setFormData({...formData, date_acquisition: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-      </div>
-      
-      <div>
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          value={formData.description}
-          onChange={(e) => setFormData({...formData, description: e.target.value})}
-          className="glass-card border border-white/20"
-          rows={3}
-        />
-      </div>
-      
-      <div>
-        <Label htmlFor="commentaires">Commentaires</Label>
-        <Textarea
-          id="commentaires"
-          value={formData.commentaires}
-          onChange={(e) => setFormData({...formData, commentaires: e.target.value})}
-          className="glass-card border border-white/20"
-          rows={3}
-        />
-      </div>
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
-          Annuler
-        </Button>
-        <Button type="submit" className="gradient-primary text-white">
-          {material ? "Modifier" : "Ajouter"}
+        <Button type="submit">
+          {employee ? 'Modifier' : 'Ajouter'}
         </Button>
       </DialogFooter>
     </form>
@@ -3392,386 +3880,260 @@ function MaterialForm({ material, onSave, onCancel }: { material: any, onSave: (
 }
 
 // Affectation Form Component
-function AffectationForm({ affectation, onSave, onCancel, employees, materials }: { 
+function AffectationForm({ affectation, employees, materials, onSave, onCancel }: { 
   affectation: any, 
+  employees: any[], 
+  materials: any[], 
   onSave: (data: any) => void, 
-  onCancel: () => void,
-  employees: any[],
-  materials: any[]
+  onCancel: () => void 
 }) {
   const [formData, setFormData] = useState({
-    employee_id: affectation?.employee_id || '',
-    material_id: affectation?.material_id || '',
-    quantite_affectee: affectation?.quantite_affectee || '',
-    date_affectation: affectation?.date_affectation || '',
-    date_retour: affectation?.date_retour || '',
-    statut: affectation?.statut || 'en_cours',
+    materiel_id: affectation?.materiel_id || '',
+    employe_id: affectation?.employe_id || '',
+    quantite_assignee: affectation?.quantite_assignee || 1,
     commentaires: affectation?.commentaires || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!formData.materiel_id || !formData.employe_id || !formData.quantite_assignee) {
+      alert('Veuillez remplir tous les champs obligatoires')
+      return
+    }
     onSave(formData)
   }
 
+  const handleChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  // Filtrer les matériels disponibles (avec stock > 0)
+  const availableMaterials = materials.filter(m => m.quantite > 0)
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-4">
         <div>
-          <Label htmlFor="employee_id">Employé</Label>
-          <Select value={formData.employee_id} onValueChange={(value) => setFormData({...formData, employee_id: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
+          <Label htmlFor="employe_id">Employé *</Label>
+          <Select value={formData.employe_id} onValueChange={(value) => handleChange('employe_id', value)}>
+            <SelectTrigger>
               <SelectValue placeholder="Sélectionner un employé" />
             </SelectTrigger>
             <SelectContent>
               {employees.map((emp) => (
-                <SelectItem key={emp.id} value={emp.id}>
-                  {emp.prenom} {emp.nom}
+                <SelectItem key={emp.id} value={emp.id.toString()}>
+                  {emp.prenom} {emp.nom} ({emp.matricule})
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
+                                          </div>
+        
         <div>
-          <Label htmlFor="material_id">Matériel</Label>
-          <Select value={formData.material_id} onValueChange={(value) => setFormData({...formData, material_id: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
+          <Label htmlFor="materiel_id">Matériel *</Label>
+          <Select value={formData.materiel_id} onValueChange={(value) => handleChange('materiel_id', value)}>
+            <SelectTrigger>
               <SelectValue placeholder="Sélectionner un matériel" />
             </SelectTrigger>
             <SelectContent>
-              {materials.map((mat) => (
-                <SelectItem key={mat.id} value={mat.id}>
-                  {mat.nom}
+              {availableMaterials.map((mat) => (
+                <SelectItem key={mat.id} value={mat.id.toString()}>
+                  {mat.nom_equipement} - Stock: {mat.quantite}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
+                                        </div>
+        
         <div>
-          <Label htmlFor="quantite_affectee">Quantité Affectée</Label>
+          <Label htmlFor="quantite_assignee">Quantité à Assigner *</Label>
           <Input
-            id="quantite_affectee"
+            id="quantite_assignee"
             type="number"
-            value={formData.quantite_affectee}
-            onChange={(e) => setFormData({...formData, quantite_affectee: e.target.value})}
-            className="glass-card border border-white/20"
+            min="1"
+            value={formData.quantite_assignee}
+            onChange={(e) => handleChange('quantite_assignee', parseInt(e.target.value) || 1)}
             required
           />
         </div>
-        <div>
-          <Label htmlFor="statut">Statut</Label>
-          <Select value={formData.statut} onValueChange={(value) => setFormData({...formData, statut: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en_cours">En Cours</SelectItem>
-              <SelectItem value="retourne">Retourné</SelectItem>
-              <SelectItem value="perdu">Perdu</SelectItem>
-              <SelectItem value="casse">Cassé</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="date_affectation">Date d'Affectation</Label>
-          <Input
-            id="date_affectation"
-            type="date"
-            value={formData.date_affectation}
-            onChange={(e) => setFormData({...formData, date_affectation: e.target.value})}
-            className="glass-card border border-white/20"
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="date_retour">Date de Retour</Label>
-          <Input
-            id="date_retour"
-            type="date"
-            value={formData.date_retour}
-            onChange={(e) => setFormData({...formData, date_retour: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-      </div>
-      
+        
       <div>
         <Label htmlFor="commentaires">Commentaires</Label>
         <Textarea
           id="commentaires"
           value={formData.commentaires}
-          onChange={(e) => setFormData({...formData, commentaires: e.target.value})}
-          className="glass-card border border-white/20"
+            onChange={(e) => handleChange('commentaires', e.target.value)}
+            placeholder="Commentaires sur l'affectation..."
           rows={3}
         />
       </div>
+      </div>
+
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
+        <Button type="button" variant="outline" onClick={onCancel}>
           Annuler
-        </Button>
-        <Button type="submit" className="gradient-primary text-white">
-          {affectation ? "Modifier" : "Ajouter"}
         </Button>
       </DialogFooter>
     </form>
   )
 }
 
-// Penalty Form Component
-function PenaltyForm({ penalty, onSave, onCancel, employees }: { 
-  penalty: any, 
+// Reclamation Form Component
+function ReclamationForm({ reclamation, employees, interventions, onSave, onCancel }: { 
+  reclamation: any, 
+  employees: any[], 
+  interventions: any[], 
   onSave: (data: any) => void, 
-  onCancel: () => void,
-  employees: any[]
+  onCancel: () => void 
 }) {
   const [formData, setFormData] = useState({
-    employee_id: penalty?.employee_id || '',
-    type: penalty?.type || '',
-    motif: penalty?.motif || '',
-    montant: penalty?.montant || '',
-    statut: penalty?.statut || 'active',
-    date_echeance: penalty?.date_echeance || '',
-    commentaires: penalty?.commentaires || ''
+    numero_reclamation: reclamation?.numero_reclamation || '',
+    type_reclamation: reclamation?.type_reclamation || '',
+    priorite: reclamation?.priorite || 'normale',
+    statut: reclamation?.statut || 'ouverte',
+    client_id: reclamation?.client_id || '',
+    nom_client: reclamation?.nom_client || '',
+    telephone_client: reclamation?.telephone_client || '',
+    email_client: reclamation?.email_client || '',
+    adresse_client: reclamation?.adresse_client || '',
+    intervention_id: reclamation?.intervention_id || '',
+    employe_id: reclamation?.employe_id || '',
+    description_probleme: reclamation?.description_probleme || '',
+    description_solution: reclamation?.description_solution || '',
+    deadline: reclamation?.date_resolution || '',
+    temps_resolution: reclamation?.temps_resolution || '',
+    commentaires_client: reclamation?.commentaires_client || '',
+    commentaires_internes: reclamation?.commentaires_internes || '',
+    materiel_defectueux: reclamation?.materiel_defectueux || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!formData.nom_client || !formData.description_probleme) {
+      alert('Veuillez remplir les champs obligatoires (Nom client, Description du problème)')
+      return
+    }
     onSave(formData)
+  }
+
+  const handleChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="employee_id">Employé *</Label>
-          <Select value={formData.employee_id} onValueChange={(value) => setFormData({...formData, employee_id: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
-              <SelectValue placeholder="Sélectionner un employé" />
-            </SelectTrigger>
-            <SelectContent>
-              {employees.map((emp) => (
-                <SelectItem key={emp.id} value={emp.id}>
-                  {emp.prenom} {emp.nom}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="type">Type de Pénalité *</Label>
-          <Select value={formData.type} onValueChange={(value) => setFormData({...formData, type: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
-              <SelectValue placeholder="Sélectionner un type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="absence">Absence</SelectItem>
-              <SelectItem value="retard">Retard</SelectItem>
-              <SelectItem value="comportement">Comportement</SelectItem>
-              <SelectItem value="performance">Performance</SelectItem>
-              <SelectItem value="autre">Autre</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="motif">Motif *</Label>
-          <Input
-            id="motif"
-            value={formData.motif}
-            onChange={(e) => setFormData({...formData, motif: e.target.value})}
-            className="glass-card border border-white/20"
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="montant">Montant (€) *</Label>
-          <Input
-            id="montant"
-            type="number"
-            step="0.01"
-            value={formData.montant}
-            onChange={(e) => setFormData({...formData, montant: e.target.value})}
-            className="glass-card border border-white/20"
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="statut">Statut *</Label>
-          <Select value={formData.statut} onValueChange={(value) => setFormData({...formData, statut: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="soumis">Soumis</SelectItem>
-              <SelectItem value="annulee">Annulée</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="date_echeance">Date d'Échéance *</Label>
-          <Input
-            id="date_echeance"
-            type="date"
-            value={formData.date_echeance}
-            onChange={(e) => setFormData({...formData, date_echeance: e.target.value})}
-            className="glass-card border border-white/20"
-            required
-          />
-        </div>
-      </div>
-      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <Label htmlFor="commentaires">Commentaires</Label>
-        <Textarea
-          id="commentaires"
-          value={formData.commentaires}
-          onChange={(e) => setFormData({...formData, commentaires: e.target.value})}
-          className="glass-card border border-white/20"
-          rows={3}
-        />
-      </div>
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
-          Annuler
-        </Button>
-        <Button type="submit" className="gradient-primary text-white">
-          {penalty ? "Modifier" : "Ajouter"}
-        </Button>
-      </DialogFooter>
-    </form>
-  )
-}
-
-// Claim Form Component
-function ClaimForm({ claim, onSave, onCancel, employees, interventions }: { 
-  claim: any, 
-  onSave: (data: any) => void, 
-  onCancel: () => void,
-  employees: any[],
-  interventions: any[]
-}) {
-  const [formData, setFormData] = useState({
-    type: claim?.type || '',
-    priorite: claim?.priorite || 'normale',
-    statut: claim?.statut || 'ouverte',
-    client_nom: claim?.client_nom || '',
-    client_telephone: claim?.client_telephone || '',
-    client_email: claim?.client_email || '',
-    employee_id: claim?.employee_id || '',
-    intervention_id: claim?.intervention_id || '',
-    description_probleme: claim?.description_probleme || '',
-    description_solution: claim?.description_solution || '',
-    commentaires_internes: claim?.commentaires_internes || ''
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSave(formData)
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+          <Label htmlFor="numero_reclamation">Numéro de Réclamation</Label>
+          <Input
+            id="numero_reclamation"
+            value={formData.numero_reclamation}
+            onChange={(e) => handleChange('numero_reclamation', e.target.value)}
+            placeholder="Ex: REC-2025-0001"
+          />
+        </div>
         <div>
-          <Label htmlFor="type">Type de Réclamation</Label>
-          <Select value={formData.type} onValueChange={(value) => setFormData({...formData, type: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
+          <Label htmlFor="type_reclamation">Type de Réclamation *</Label>
+          <Select value={formData.type_reclamation} onValueChange={(value) => handleChange('type_reclamation', value)}>
+            <SelectTrigger>
               <SelectValue placeholder="Sélectionner un type" />
-            </SelectTrigger>
-            <SelectContent>
+          </SelectTrigger>
+          <SelectContent>
               <SelectItem value="technique">Technique</SelectItem>
-              <SelectItem value="commercial">Commercial</SelectItem>
+              <SelectItem value="service">Service</SelectItem>
+              <SelectItem value="materiel">Matériel</SelectItem>
               <SelectItem value="facturation">Facturation</SelectItem>
-              <SelectItem value="service">Service Client</SelectItem>
               <SelectItem value="autre">Autre</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
           <Label htmlFor="priorite">Priorité</Label>
-          <Select value={formData.priorite} onValueChange={(value) => setFormData({...formData, priorite: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
+          <Select value={formData.priorite} onValueChange={(value) => handleChange('priorite', value)}>
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="basse">Basse</SelectItem>
               <SelectItem value="normale">Normale</SelectItem>
               <SelectItem value="haute">Haute</SelectItem>
               <SelectItem value="critique">Critique</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <div>
+                <div>
           <Label htmlFor="statut">Statut</Label>
-          <Select value={formData.statut} onValueChange={(value) => setFormData({...formData, statut: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
+          <Select value={formData.statut} onValueChange={(value) => handleChange('statut', value)}>
+            <SelectTrigger>
               <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
+                    </SelectTrigger>
+                    <SelectContent>
               <SelectItem value="ouverte">Ouverte</SelectItem>
               <SelectItem value="en_cours">En Cours</SelectItem>
               <SelectItem value="resolue">Résolue</SelectItem>
               <SelectItem value="fermee">Fermée</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+          <Label htmlFor="nom_client">Nom du Client *</Label>
+                  <Input
+            id="nom_client"
+            value={formData.nom_client}
+            onChange={(e) => handleChange('nom_client', e.target.value)}
+            placeholder="Ex: Jean Dupont"
+            required
+                  />
+                </div>
+                <div>
+          <Label htmlFor="telephone_client">Téléphone Client</Label>
+                  <Input
+            id="telephone_client"
+            value={formData.telephone_client}
+            onChange={(e) => handleChange('telephone_client', e.target.value)}
+            placeholder="Ex: 0123456789"
+                  />
+                </div>
         <div>
-          <Label htmlFor="client_nom">Nom du Client</Label>
+          <Label htmlFor="email_client">Email Client</Label>
           <Input
-            id="client_nom"
-            value={formData.client_nom}
-            onChange={(e) => setFormData({...formData, client_nom: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="client_telephone">Téléphone Client</Label>
-          <Input
-            id="client_telephone"
-            value={formData.client_telephone}
-            onChange={(e) => setFormData({...formData, client_telephone: e.target.value})}
-            className="glass-card border border-white/20"
-          />
-        </div>
-        <div>
-          <Label htmlFor="client_email">Email Client</Label>
-          <Input
-            id="client_email"
+            id="email_client"
             type="email"
-            value={formData.client_email}
-            onChange={(e) => setFormData({...formData, client_email: e.target.value})}
-            className="glass-card border border-white/20"
+            value={formData.email_client}
+            onChange={(e) => handleChange('email_client', e.target.value)}
+            placeholder="Ex: client@example.com"
           />
-        </div>
+              </div>
         <div>
-          <Label htmlFor="employee_id">Employé Assigné</Label>
-          <Select value={formData.employee_id} onValueChange={(value) => setFormData({...formData, employee_id: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
+          <Label htmlFor="employe_id">Employé Responsable</Label>
+          <Select value={formData.employe_id} onValueChange={(value) => handleChange('employe_id', value)}>
+            <SelectTrigger>
               <SelectValue placeholder="Sélectionner un employé" />
             </SelectTrigger>
             <SelectContent>
               {employees.map((emp) => (
-                <SelectItem key={emp.id} value={emp.id}>
-                  {emp.prenom} {emp.nom}
+                <SelectItem key={emp.id} value={emp.id.toString()}>
+                  {emp.prenom} {emp.nom} ({emp.matricule})
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
+                        </div>
         <div>
-          <Label htmlFor="intervention_id">Intervention Concernée</Label>
-          <Select value={formData.intervention_id} onValueChange={(value) => setFormData({...formData, intervention_id: value})}>
-            <SelectTrigger className="glass-card border border-white/20">
+          <Label htmlFor="intervention_id">Intervention Associée</Label>
+          <Select value={formData.intervention_id} onValueChange={(value) => handleChange('intervention_id', value)}>
+            <SelectTrigger>
               <SelectValue placeholder="Sélectionner une intervention" />
             </SelectTrigger>
             <SelectContent>
-              {interventions.map((intervention) => (
-                <SelectItem key={intervention.id} value={intervention.id}>
-                  {intervention.numero_intervention || `Intervention ${intervention.id}`}
+              {interventions.map((inter) => (
+                <SelectItem key={inter.id} value={inter.id.toString()}>
+                  {inter.num_inter} - {inter.client}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
+                    </div>
       </div>
       
       <div>
@@ -3779,44 +4141,224 @@ function ClaimForm({ claim, onSave, onCancel, employees, interventions }: {
         <Textarea
           id="description_probleme"
           value={formData.description_probleme}
-          onChange={(e) => setFormData({...formData, description_probleme: e.target.value})}
-          className="glass-card border border-white/20"
-          rows={4}
-          required
-        />
-      </div>
+          onChange={(e) => handleChange('description_probleme', e.target.value)}
+          placeholder="Décrivez le problème rencontré..."
+          rows={3}
+            required
+          />
+            </div>
       
-      <div>
+        <div>
         <Label htmlFor="description_solution">Description de la Solution</Label>
         <Textarea
           id="description_solution"
           value={formData.description_solution}
-          onChange={(e) => setFormData({...formData, description_solution: e.target.value})}
-          className="glass-card border border-white/20"
-          rows={4}
-        />
+          onChange={(e) => handleChange('description_solution', e.target.value)}
+          placeholder="Décrivez la solution apportée..."
+          rows={3}
+          />
       </div>
       
+        <div>
+        <Label htmlFor="adresse_client">Adresse Client</Label>
+        <Textarea
+          id="adresse_client"
+          value={formData.adresse_client}
+          onChange={(e) => handleChange('adresse_client', e.target.value)}
+          placeholder="Adresse complète du client..."
+          rows={2}
+        />
+    </div>
+
+        <div>
+        <Label htmlFor="deadline">Deadline</Label>
+          <Input
+          id="deadline"
+            type="date"
+          value={formData.deadline}
+          onChange={(e) => handleChange('deadline', e.target.value)}
+          />
+        </div>
+
+
+      <div>
+        <Label htmlFor="commentaires_client">Commentaires Client</Label>
+        <Textarea
+          id="commentaires_client"
+          value={formData.commentaires_client}
+          onChange={(e) => handleChange('commentaires_client', e.target.value)}
+          placeholder="Commentaires du client..."
+          rows={2}
+        />
+      </div>
+
       <div>
         <Label htmlFor="commentaires_internes">Commentaires Internes</Label>
         <Textarea
           id="commentaires_internes"
           value={formData.commentaires_internes}
-          onChange={(e) => setFormData({...formData, commentaires_internes: e.target.value})}
-          className="glass-card border border-white/20"
-          rows={3}
+          onChange={(e) => handleChange('commentaires_internes', e.target.value)}
+          placeholder="Commentaires internes..."
+          rows={2}
         />
       </div>
-      
+
+
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel} className="glass-card border border-white/20 text-gray-900 font-medium hover:bg-white/10">
+        <Button type="button" variant="outline" onClick={onCancel}>
           Annuler
         </Button>
-        <Button type="submit" className="gradient-primary text-white">
-          {claim ? "Modifier" : "Ajouter"}
+        <Button type="submit">
+          {reclamation ? 'Modifier' : 'Ajouter'}
         </Button>
       </DialogFooter>
     </form>
   )
 }
 
+// Penalty Form Component
+function PenaltyForm({ penalty, employees, onSave, onCancel }: { 
+  penalty: any, 
+  employees: any[], 
+  onSave: (data: any) => void, 
+  onCancel: () => void 
+}) {
+  const [formData, setFormData] = useState({
+    type_penalite: penalty?.type_penalite || '',
+    montant: penalty?.montant || 0,
+    statut: penalty?.statut || 'active',
+    date_echeance: penalty?.date_echeance || '',
+    motif: penalty?.motif || '',
+    employe_id: penalty?.employe_id || '',
+    commentaires: penalty?.commentaires || '',
+    manager_approbateur: penalty?.manager_approbateur || ''
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.type_penalite || !formData.montant || !formData.employe_id) {
+      alert('Veuillez remplir les champs obligatoires (Type, Montant, Employé)')
+      return
+    }
+    onSave(formData)
+  }
+
+  const handleChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="type_penalite">Type de Pénalité *</Label>
+          <Select value={formData.type_penalite} onValueChange={(value) => handleChange('type_penalite', value)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner un type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="retard">Retard</SelectItem>
+              <SelectItem value="absence">Absence</SelectItem>
+              <SelectItem value="comportement">Comportement</SelectItem>
+              <SelectItem value="performance">Performance</SelectItem>
+              <SelectItem value="materiel">Matériel</SelectItem>
+              <SelectItem value="autre">Autre</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="montant">Montant (€) *</Label>
+          <Input
+            id="montant"
+            type="number"
+            step="0.01"
+            min="0"
+            value={formData.montant}
+            onChange={(e) => handleChange('montant', parseFloat(e.target.value) || 0)}
+            placeholder="Ex: 50.00"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="statut">Statut</Label>
+          <Select value={formData.statut} onValueChange={(value) => handleChange('statut', value)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="annulee">Annulée</SelectItem>
+              <SelectItem value="suspendue">Suspendue</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="date_echeance">Date d'Échéance</Label>
+          <Input
+            id="date_echeance"
+            type="date"
+            value={formData.date_echeance}
+            onChange={(e) => handleChange('date_echeance', e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="employe_id">Employé *</Label>
+          <Select value={formData.employe_id} onValueChange={(value) => handleChange('employe_id', value)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner un employé" />
+            </SelectTrigger>
+            <SelectContent>
+              {employees.map((emp) => (
+                <SelectItem key={emp.id} value={emp.id.toString()}>
+                  {emp.prenom} {emp.nom} ({emp.matricule})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        </div>
+      
+      <div>
+        <Label htmlFor="motif">Motif *</Label>
+        <Textarea
+          id="motif"
+          value={formData.motif}
+          onChange={(e) => handleChange('motif', e.target.value)}
+          placeholder="Motif de la pénalité..."
+          rows={3}
+          required
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="commentaires">Commentaires</Label>
+        <Textarea
+          id="commentaires"
+          value={formData.commentaires}
+          onChange={(e) => handleChange('commentaires', e.target.value)}
+          placeholder="Commentaires supplémentaires..."
+          rows={2}
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="manager_approbateur">Manager Approbateur</Label>
+        <Input
+          id="manager_approbateur"
+          value={formData.manager_approbateur}
+          onChange={(e) => handleChange('manager_approbateur', e.target.value)}
+          placeholder="Nom du manager approbateur"
+        />
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Annuler
+        </Button>
+        <Button type="submit">
+          {penalty ? 'Modifier' : 'Ajouter'}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/database'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -16,23 +18,23 @@ export async function GET(request: NextRequest) {
     
     switch (period) {
       case 'week':
-        dateGrouping = 'DATE_TRUNC(\'week\', c.date_livraison)'
-        dateFormat = 'TO_CHAR(DATE_TRUNC(\'week\', c.date_livraison), \'YYYY-"W"WW\')'
+        dateGrouping = 'DATE_TRUNC(\'week\', TO_DATE(c.date_livraison, \'DD.MM.YYYY\'))'
+        dateFormat = 'TO_CHAR(DATE_TRUNC(\'week\', TO_DATE(c.date_livraison, \'DD.MM.YYYY\')), \'YYYY-"W"WW\')'
         break
       case 'year':
-        dateGrouping = 'DATE_TRUNC(\'year\', c.date_livraison)'
-        dateFormat = 'TO_CHAR(DATE_TRUNC(\'year\', c.date_livraison), \'YYYY\')'
+        dateGrouping = 'DATE_TRUNC(\'year\', TO_DATE(c.date_livraison, \'DD.MM.YYYY\'))'
+        dateFormat = 'TO_CHAR(DATE_TRUNC(\'year\', TO_DATE(c.date_livraison, \'DD.MM.YYYY\')), \'YYYY\')'
         break
       default: // month
-        dateGrouping = 'DATE_TRUNC(\'month\', c.date_livraison)'
-        dateFormat = 'TO_CHAR(DATE_TRUNC(\'month\', c.date_livraison), \'YYYY-MM\')'
+        dateGrouping = 'DATE_TRUNC(\'month\', TO_DATE(c.date_livraison, \'DD.MM.YYYY\'))'
+        dateFormat = 'TO_CHAR(DATE_TRUNC(\'month\', TO_DATE(c.date_livraison, \'DD.MM.YYYY\')), \'YYYY-MM\')'
     }
     
     let whereClause = ''
     const params = []
     
     if (startDate && endDate) {
-      whereClause = 'WHERE c.date_livraison BETWEEN $1 AND $2'
+      whereClause = 'WHERE TO_DATE(c.date_livraison, \'DD.MM.YYYY\') BETWEEN TO_DATE($1, \'DD.MM.YYYY\') AND TO_DATE($2, \'DD.MM.YYYY\')'
       params.push(startDate, endDate)
     }
     
@@ -45,8 +47,8 @@ export async function GET(request: NextRequest) {
         e.matricule as employe_matricule,
         COUNT(DISTINCT c.numero_carte) as nombre_cartes,
         COUNT(c.id) as nombre_transactions,
-        SUM(CAST(COALESCE(c.ca_ttc, 0) AS DECIMAL)) as consommation_totale,
-        AVG(CAST(COALESCE(c.ca_ttc, 0) AS DECIMAL)) as consommation_moyenne,
+        SUM(CAST(COALESCE(c.ca_ttc, '0') AS DECIMAL)) as consommation_totale,
+        AVG(CAST(COALESCE(c.ca_ttc, '0') AS DECIMAL)) as consommation_moyenne,
         MIN(c.date_livraison) as premiere_transaction,
         MAX(c.date_livraison) as derniere_transaction,
         ${dateGrouping} as periode_date

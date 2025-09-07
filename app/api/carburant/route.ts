@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { query, CarburantConsommation } from "@/lib/database"
+import { query } from "@/lib/database"
 
 export async function POST(request: NextRequest) {
   try {
@@ -90,39 +90,15 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     const result = await query(`
-      SELECT 
-        c.*,
-        e.nom,
-        e.prenom,
-        e.email,
-        e.telephone,
-        ca.statut as assignation_statut,
-        ca.date_assignation,
-        ca.date_fin
-      FROM carburant_consommation c
-      LEFT JOIN employes e ON c.employe_assigné = e.id
-      LEFT JOIN carburant_assignations ca ON c.numero_carte = ca.numero_carte AND ca.statut = 'active'
-      ORDER BY c.created_at DESC 
+      SELECT *
+      FROM carburant_consommation
+      ORDER BY created_at DESC 
       LIMIT 1000
     `)
     
-    // Transform the data to include employee info in a nested object
-    const transformedData = result.rows.map(row => ({
-      ...row,
-      employe_assigné: row.nom ? {
-        nom: row.nom,
-        prenom: row.prenom,
-        email: row.email,
-        telephone: row.telephone,
-        assignation_statut: row.assignation_statut,
-        date_assignation: row.date_assignation,
-        date_fin: row.date_fin
-      } : null
-    }))
-    
     return NextResponse.json({
-      carburant: transformedData,
-      total: transformedData.length,
+      carburant: result.rows,
+      total: result.rows.length,
     })
   } catch (error) {
     console.error("Erreur GET carburant:", error)
