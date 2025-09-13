@@ -39,6 +39,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import {
   Building2,
   Users,
+  UserPlus,
   FileText,
   TrendingUp,
   LogOut,
@@ -62,6 +63,8 @@ import {
   CheckCircle,
   ChevronLeft,
   ChevronRight,
+  Receipt,
+  Building,
 } from "lucide-react"
 
 // User authentication data
@@ -168,6 +171,8 @@ export default function EmployeeTracker() {
   const [loadingClaims, setLoadingClaims] = useState(false)
   const [loadingAffectations, setLoadingAffectations] = useState(false)
   const [loadingConsommationCarburant, setLoadingConsommationCarburant] = useState(false)
+  const [loadingFraisErt, setLoadingFraisErt] = useState(false)
+  const [loadingFraisAxecom, setLoadingFraisAxecom] = useState(false)
 
   // CRUD Modal states
   const [showEmployeeModal, setShowEmployeeModal] = useState(false)
@@ -176,6 +181,8 @@ export default function EmployeeTracker() {
   const [showClaimModal, setShowClaimModal] = useState(false)
   const [showAffectationModal, setShowAffectationModal] = useState(false)
   const [showMultiAffectationModal, setShowMultiAffectationModal] = useState(false)
+  const [showFraisErtModal, setShowFraisErtModal] = useState(false)
+  const [showFraisAxecomModal, setShowFraisAxecomModal] = useState(false)
   const [editingItem, setEditingItem] = useState<any>(null)
   
   // Employee details and assignment modals
@@ -200,6 +207,11 @@ export default function EmployeeTracker() {
   const [showEmployeeFuelModal, setShowEmployeeFuelModal] = useState(false)
   const [selectedEmployeeFuel, setSelectedEmployeeFuel] = useState<any>(null)
 
+  // Frais d'entreprise data
+  const [fraisErt, setFraisErt] = useState<any[]>([])
+  const [fraisAxecom, setFraisAxecom] = useState<any[]>([])
+  const [bordereauPrixErt, setBordereauPrixErt] = useState<any[]>([])
+
   // Assignation data
   const [assignationData, setAssignationData] = useState({
     numero_carte: '',
@@ -218,6 +230,10 @@ export default function EmployeeTracker() {
       loadAvailableCards()
       loadFuelGroupedData()
       loadFuelEmployeesData()
+      // Charger les données des frais d'entreprise
+      loadFraisErtFromDatabase().then(setFraisErt)
+      loadFraisAxecomFromDatabase().then(setFraisAxecom)
+      loadBordereauPrixErtFromDatabase().then(setBordereauPrixErt)
     }
   }, [isLoggedIn])
 
@@ -569,6 +585,43 @@ export default function EmployeeTracker() {
       setLoadingClaims(false)
       setLoadingAffectations(false)
       setLoadingConsommationCarburant(false)
+    }
+  }
+
+  // Fonctions de chargement des frais d'entreprise
+  const loadFraisErtFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/frais-ert")
+      if (!response.ok) throw new Error("Erreur lors du chargement des frais ERT")
+      const data = await response.json()
+      return data.frais_ert || []
+    } catch (error) {
+      console.error("[v0] Erreur chargement frais ERT:", error)
+      return []
+    }
+  }
+
+  const loadFraisAxecomFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/frais-axecom")
+      if (!response.ok) throw new Error("Erreur lors du chargement des frais Axecom")
+      const data = await response.json()
+      return data.frais_axecom || []
+    } catch (error) {
+      console.error("[v0] Erreur chargement frais Axecom:", error)
+      return []
+    }
+  }
+
+  const loadBordereauPrixErtFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/bordereau-prix-ert")
+      if (!response.ok) throw new Error("Erreur lors du chargement du bordereau de prix ERT")
+      const data = await response.json()
+      return data.bordereau_prix_ert || []
+    } catch (error) {
+      console.error("[v0] Erreur chargement bordereau prix ERT:", error)
+      return []
     }
   }
 
@@ -953,6 +1006,78 @@ export default function EmployeeTracker() {
       alert(editingItem ? "Réclamation modifiée avec succès" : "Réclamation ajoutée avec succès")
     } catch (error) {
       console.error("Erreur sauvegarde réclamation:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+    }
+  }
+
+  // CRUD Functions for Frais ERT
+  const saveFraisErt = async (fraisData: any) => {
+    try {
+      const url = editingItem ? "/api/frais-ert" : "/api/frais-ert"
+      const method = editingItem ? "PUT" : "POST"
+      
+      const body = editingItem 
+        ? { id: editingItem.id, ...fraisData }
+        : fraisData
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+
+      // Recharger les données des frais ERT
+      const fraisErtData = await loadFraisErtFromDatabase()
+      setFraisErt(fraisErtData)
+      
+      setShowFraisErtModal(false)
+      setEditingItem(null)
+      alert(editingItem ? "Frais ERT modifié avec succès" : "Frais ERT ajouté avec succès")
+    } catch (error) {
+      console.error("Erreur sauvegarde frais ERT:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+    }
+  }
+
+  // CRUD Functions for Frais Axecom
+  const saveFraisAxecom = async (fraisData: any) => {
+    try {
+      const url = editingItem ? "/api/frais-axecom" : "/api/frais-axecom"
+      const method = editingItem ? "PUT" : "POST"
+      
+      const body = editingItem 
+        ? { id: editingItem.id, ...fraisData }
+        : fraisData
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+
+      // Recharger les données des frais Axecom
+      const fraisAxecomData = await loadFraisAxecomFromDatabase()
+      setFraisAxecom(fraisAxecomData)
+      
+      setShowFraisAxecomModal(false)
+      setEditingItem(null)
+      alert(editingItem ? "Frais Axecom modifié avec succès" : "Frais Axecom ajouté avec succès")
+    } catch (error) {
+      console.error("Erreur sauvegarde frais Axecom:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
     }
   }
@@ -1410,6 +1535,32 @@ export default function EmployeeTracker() {
                 <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "frais-ert"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+              onClick={() => setActiveTab("frais-ert")}
+                >
+              <Receipt className="w-5 h-5" />
+              Frais Entreprise ERT
+                </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "frais-axecom"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+              onClick={() => setActiveTab("frais-axecom")}
+                >
+              <Building className="w-5 h-5" />
+              Frais Entreprise Axecom
+                </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "fuel-consumption"
                       ? "gradient-primary text-white shadow-lg animate-pulse-glow"
                       : "glass-card border border-white/20 hover:bg-primary/5"
@@ -1736,6 +1887,218 @@ export default function EmployeeTracker() {
               </Card>
                     </div>
                   )}
+
+          {/* Frais ERT Tab */}
+          {activeTab === "frais-ert" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold">Frais Entreprise ERT</h2>
+                  <p className="text-muted-foreground">Gestion des frais d'entreprise ERT</p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditingItem(null)
+                    setShowFraisErtModal(true)
+                  }}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Nouveau Frais
+                </Button>
+              </div>
+              
+              {/* Frais ERT Management Section */}
+              <div className="space-y-6">
+                <Card className="glass-card border border-white/20 hover-lift">
+                  <CardHeader>
+                    <CardTitle>Liste des Frais ERT</CardTitle>
+                    <CardDescription>
+                      {fraisErt.length} frais trouvés dans la base de données
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {fraisErt.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Receipt className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground">Aucun frais ERT trouvé</p>
+                        <p className="text-sm text-muted-foreground">Créez votre premier frais pour commencer.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-white/10">
+                              <th className="text-left p-4 font-semibold">Article</th>
+                              <th className="text-left p-4 font-semibold">Intitulé</th>
+                              <th className="text-left p-4 font-semibold">Unité</th>
+                              <th className="text-left p-4 font-semibold">PU HT (€)</th>
+                              <th className="text-left p-4 font-semibold">Prix Emp (€)</th>
+                              <th className="text-left p-4 font-semibold">Statut</th>
+                              <th className="text-left p-4 font-semibold">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fraisErt.slice(0, 50).map((frais, index) => (
+                              <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                <td className="p-4 font-medium">
+                                  <Badge variant="outline" className="bg-blue-500/20 text-blue-400">
+                                    {frais.article}
+                                  </Badge>
+                                </td>
+                                <td className="p-4">{frais.intitule}</td>
+                                <td className="p-4">{frais.unite}</td>
+                                <td className="p-4 font-medium text-green-400">{frais.pu_ht_euros} €</td>
+                                <td className="p-4 font-medium text-blue-400">{frais.prix_emp} €</td>
+                                <td className="p-4">
+                                  <Badge 
+                                    variant={frais.statut === 'actif' ? 'default' : 'secondary'}
+                                    className={frais.statut === 'actif' ? 'bg-green-500/20 text-green-400' : 
+                                             'bg-gray-500/20 text-gray-400'}
+                                  >
+                                    {frais.statut}
+                                  </Badge>
+                                </td>
+                                <td className="p-4">
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setEditingItem(frais)
+                                        setShowFraisErtModal(true)
+                                      }}
+                                      className="glass-card border border-white/20"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleDelete('frais-ert', frais.id)}
+                                      className="glass-card border border-white/20 text-red-400 hover:text-red-300"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {/* Frais Axecom Tab */}
+          {activeTab === "frais-axecom" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold">Frais Entreprise Axecom</h2>
+                  <p className="text-muted-foreground">Gestion des frais d'entreprise Axecom</p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditingItem(null)
+                    setShowFraisAxecomModal(true)
+                  }}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Nouveau Frais
+                </Button>
+              </div>
+              
+              {/* Frais Axecom Management Section */}
+              <div className="space-y-6">
+                <Card className="glass-card border border-white/20 hover-lift">
+                  <CardHeader>
+                    <CardTitle>Liste des Frais Axecom</CardTitle>
+                    <CardDescription>
+                      {fraisAxecom.length} frais trouvés dans la base de données
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {fraisAxecom.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Building className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground">Aucun frais Axecom trouvé</p>
+                        <p className="text-sm text-muted-foreground">Créez votre premier frais pour commencer.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-white/10">
+                              <th className="text-left p-4 font-semibold">Article</th>
+                              <th className="text-left p-4 font-semibold">Intitulé</th>
+                              <th className="text-left p-4 font-semibold">Unité</th>
+                              <th className="text-left p-4 font-semibold">PU HT (€)</th>
+                              <th className="text-left p-4 font-semibold">Prix Emp (€)</th>
+                              <th className="text-left p-4 font-semibold">Statut</th>
+                              <th className="text-left p-4 font-semibold">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fraisAxecom.slice(0, 50).map((frais, index) => (
+                              <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                <td className="p-4 font-medium">
+                                  <Badge variant="outline" className="bg-purple-500/20 text-purple-400">
+                                    {frais.article}
+                                  </Badge>
+                                </td>
+                                <td className="p-4">{frais.intitule}</td>
+                                <td className="p-4">{frais.unite}</td>
+                                <td className="p-4 font-medium text-green-400">{frais.pu_ht_euros} €</td>
+                                <td className="p-4 font-medium text-purple-400">{frais.prix_emp} €</td>
+                                <td className="p-4">
+                                  <Badge 
+                                    variant={frais.statut === 'actif' ? 'default' : 'secondary'}
+                                    className={frais.statut === 'actif' ? 'bg-green-500/20 text-green-400' : 
+                                             'bg-gray-500/20 text-gray-400'}
+                                  >
+                                    {frais.statut}
+                                  </Badge>
+                                </td>
+                                <td className="p-4">
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setEditingItem(frais)
+                                        setShowFraisAxecomModal(true)
+                                      }}
+                                      className="glass-card border border-white/20"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleDelete('frais-axecom', frais.id)}
+                                      className="glass-card border border-white/20 text-red-400 hover:text-red-300"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
 
           {/* Fuel Consumption Tab */}
           {activeTab === "fuel-consumption" && (
@@ -2771,6 +3134,17 @@ export default function EmployeeTracker() {
                                   <Button
                                        variant="outline"
                                     size="sm"
+                                    onClick={() => {
+                                      setEditingItem({ materiel_id: material.id, nom_equipement: material.nom_equipement })
+                                      setShowAffectationModal(true)
+                                    }}
+                                       className="glass-card border border-white/20 text-blue-400 hover:text-blue-300"
+                                     >
+                                       <UserPlus className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                       variant="outline"
+                                    size="sm"
                                        onClick={() => handleDelete('material', material.id)}
                                        className="glass-card border border-white/20 text-red-400 hover:text-red-300"
                                      >
@@ -3485,7 +3859,51 @@ export default function EmployeeTracker() {
             }}
           />
         </DialogContent>
-      </Dialog>
+       </Dialog>
+
+       {/* Frais ERT Modal */}
+       <Dialog open={showFraisErtModal} onOpenChange={setShowFraisErtModal}>
+         <DialogContent className="glass-card border border-white/20">
+           <DialogHeader>
+             <DialogTitle>
+               {editingItem ? 'Modifier le Frais ERT' : 'Nouveau Frais ERT'}
+             </DialogTitle>
+             <DialogDescription>
+               {editingItem ? 'Modifiez les informations du frais ERT' : 'Ajoutez un nouveau frais ERT'}
+             </DialogDescription>
+           </DialogHeader>
+          <FraisErtForm 
+            frais={editingItem} 
+            onSave={saveFraisErt} 
+            onCancel={() => {
+              setShowFraisErtModal(false)
+              setEditingItem(null)
+            }}
+          />
+         </DialogContent>
+       </Dialog>
+
+       {/* Frais Axecom Modal */}
+       <Dialog open={showFraisAxecomModal} onOpenChange={setShowFraisAxecomModal}>
+         <DialogContent className="glass-card border border-white/20">
+           <DialogHeader>
+             <DialogTitle>
+               {editingItem ? 'Modifier le Frais Axecom' : 'Nouveau Frais Axecom'}
+             </DialogTitle>
+             <DialogDescription>
+               {editingItem ? 'Modifiez les informations du frais Axecom' : 'Ajoutez un nouveau frais Axecom'}
+             </DialogDescription>
+           </DialogHeader>
+          <FraisAxecomForm 
+            frais={editingItem} 
+            onSave={saveFraisAxecom} 
+            onCancel={() => {
+              setShowFraisAxecomModal(false)
+              setEditingItem(null)
+            }}
+          />
+         </DialogContent>
+       </Dialog>
 
       {/* Penalty Modal */}
       <Dialog open={showPenaltyModal} onOpenChange={setShowPenaltyModal}>
@@ -3894,6 +4312,18 @@ function AffectationForm({ affectation, employees, materials, onSave, onCancel }
     commentaires: affectation?.commentaires || ''
   })
 
+  // Mettre à jour le formData quand affectation change
+  useEffect(() => {
+    if (affectation) {
+      setFormData({
+        materiel_id: affectation.materiel_id || '',
+        employe_id: affectation.employe_id || '',
+        quantite_assignee: affectation.quantite_assignee || 1,
+        commentaires: affectation.commentaires || ''
+      })
+    }
+  }, [affectation])
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.materiel_id || !formData.employe_id || !formData.quantite_assignee) {
@@ -3973,8 +4403,129 @@ function AffectationForm({ affectation, employees, materials, onSave, onCancel }
         <Button type="button" variant="outline" onClick={onCancel}>
           Annuler
         </Button>
+        <Button type="submit">
+          {affectation ? 'Modifier' : 'Affecter'}
+        </Button>
       </DialogFooter>
     </form>
+  )
+}
+
+// Intervention Search Component
+function InterventionSearch({ value, onSelect, placeholder, interventions: allInterventions }: {
+  value: string,
+  onSelect: (intervention: any) => void,
+  placeholder: string,
+  interventions?: any[]
+}) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [interventions, setInterventions] = useState<any[]>([])
+  const [isOpen, setIsOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [selectedIntervention, setSelectedIntervention] = useState<any>(null)
+
+  // Initialize with selected intervention if value is provided
+  useEffect(() => {
+    if (value && allInterventions) {
+      const intervention = allInterventions.find(inter => inter.id.toString() === value)
+      if (intervention) {
+        setSelectedIntervention(intervention)
+        setSearchTerm(`${intervention.num_inter} - ${intervention.client}`)
+      }
+    }
+  }, [value, allInterventions])
+
+  // Debounced search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchTerm.length >= 2) {
+        searchInterventions(searchTerm)
+      } else {
+        setInterventions([])
+        setIsOpen(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(timeoutId)
+  }, [searchTerm])
+
+  const searchInterventions = async (term: string) => {
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/interventions/search?search=${encodeURIComponent(term)}&limit=10`)
+      if (response.ok) {
+        const data = await response.json()
+        setInterventions(data.interventions || [])
+        setIsOpen(true)
+      }
+    } catch (error) {
+      console.error('Erreur recherche interventions:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSelect = (intervention: any) => {
+    setSelectedIntervention(intervention)
+    setSearchTerm(`${intervention.num_inter} - ${intervention.client}`)
+    setIsOpen(false)
+    onSelect(intervention)
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setSearchTerm(value)
+    if (!value) {
+      setSelectedIntervention(null)
+      onSelect({ id: '' })
+    }
+  }
+
+  return (
+    <div className="relative">
+      <Input
+        value={searchTerm}
+        onChange={handleInputChange}
+        placeholder={placeholder}
+        onFocus={() => {
+          if (interventions.length > 0) setIsOpen(true)
+        }}
+        onBlur={() => {
+          // Delay to allow click on dropdown items
+          setTimeout(() => setIsOpen(false), 200)
+        }}
+      />
+      
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+          {loading ? (
+            <div className="p-3 text-center text-gray-500">Recherche...</div>
+          ) : interventions.length > 0 ? (
+            interventions.map((intervention) => (
+              <div
+                key={intervention.id}
+                className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                onClick={() => handleSelect(intervention)}
+              >
+                <div className="font-medium text-sm">
+                  {intervention.num_inter} - {intervention.client}
+                </div>
+                <div className="text-xs text-gray-500">
+                  Technicien: {intervention.prenom_technicien} {intervention.nom_technicien}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {intervention.type_intervention} - {intervention.statut}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-3 text-center text-gray-500">
+              Aucune intervention trouvée
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -4120,20 +4671,25 @@ function ReclamationForm({ reclamation, employees, interventions, onSave, onCanc
           </Select>
                         </div>
         <div>
-          <Label htmlFor="intervention_id">Intervention Associée</Label>
-          <Select value={formData.intervention_id} onValueChange={(value) => handleChange('intervention_id', value)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner une intervention" />
-            </SelectTrigger>
-            <SelectContent>
-              {interventions.map((inter) => (
-                <SelectItem key={inter.id} value={inter.id.toString()}>
-                  {inter.num_inter} - {inter.client}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-                    </div>
+          <Label htmlFor="intervention_search">Rechercher une Intervention</Label>
+          <InterventionSearch 
+            value={formData.intervention_id}
+            onSelect={(intervention) => {
+              handleChange('intervention_id', intervention.id)
+              // Auto-fill employee based on intervention
+              if (intervention.nom_technicien && intervention.prenom_technicien) {
+                const matchingEmployee = employees.find(emp => 
+                  emp.nom === intervention.nom_technicien && emp.prenom === intervention.prenom_technicien
+                )
+                if (matchingEmployee) {
+                  handleChange('employe_id', matchingEmployee.id)
+                }
+              }
+            }}
+            placeholder="Tapez pour rechercher une intervention..."
+            interventions={interventions}
+          />
+        </div>
       </div>
       
       <div>
@@ -4210,6 +4766,252 @@ function ReclamationForm({ reclamation, employees, interventions, onSave, onCanc
         </Button>
         <Button type="submit">
           {reclamation ? 'Modifier' : 'Ajouter'}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+// Frais ERT Form Component
+function FraisErtForm({ frais, onSave, onCancel }: { 
+  frais: any, 
+  onSave: (data: any) => void, 
+  onCancel: () => void 
+}) {
+  const [formData, setFormData] = useState({
+    article: frais?.article || '',
+    intitule: frais?.intitule || '',
+    unite: frais?.unite || '',
+    pu_ht_euros: frais?.pu_ht_euros || 0,
+    prix_emp: frais?.prix_emp || 0,
+    description: frais?.description || '',
+    statut: frais?.statut || 'actif'
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.article || !formData.intitule || !formData.unite) {
+      alert('Veuillez remplir les champs obligatoires (Article, Intitulé, Unité)')
+      return
+    }
+    onSave(formData)
+  }
+
+  const handleChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="article">Article *</Label>
+          <Input
+            id="article"
+            value={formData.article}
+            onChange={(e) => handleChange('article', e.target.value)}
+            placeholder="Ex: RECOIP"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="unite">Unité *</Label>
+          <Input
+            id="unite"
+            value={formData.unite}
+            onChange={(e) => handleChange('unite', e.target.value)}
+            placeholder="Ex: Unité"
+            required
+          />
+        </div>
+        <div className="md:col-span-2">
+          <Label htmlFor="intitule">Intitulé *</Label>
+          <Input
+            id="intitule"
+            value={formData.intitule}
+            onChange={(e) => handleChange('intitule', e.target.value)}
+            placeholder="Ex: Reconnexion Immeuble ou Pavillon"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="pu_ht_euros">PU HT (€) *</Label>
+          <Input
+            id="pu_ht_euros"
+            type="number"
+            step="0.01"
+            min="0"
+            value={formData.pu_ht_euros}
+            onChange={(e) => handleChange('pu_ht_euros', parseFloat(e.target.value) || 0)}
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="prix_emp">Prix Emp (€) *</Label>
+          <Input
+            id="prix_emp"
+            type="number"
+            step="0.01"
+            min="0"
+            value={formData.prix_emp}
+            onChange={(e) => handleChange('prix_emp', parseFloat(e.target.value) || 0)}
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="statut">Statut</Label>
+          <Select value={formData.statut} onValueChange={(value) => handleChange('statut', value)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="actif">Actif</SelectItem>
+              <SelectItem value="inactif">Inactif</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      
+      <div>
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
+          value={formData.description}
+          onChange={(e) => handleChange('description', e.target.value)}
+          placeholder="Description de l'article..."
+          rows={3}
+        />
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Annuler
+        </Button>
+        <Button type="submit">
+          {frais ? 'Modifier' : 'Ajouter'}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+// Frais Axecom Form Component
+function FraisAxecomForm({ frais, onSave, onCancel }: { 
+  frais: any, 
+  onSave: (data: any) => void, 
+  onCancel: () => void 
+}) {
+  const [formData, setFormData] = useState({
+    article: frais?.article || '',
+    intitule: frais?.intitule || '',
+    unite: frais?.unite || '',
+    pu_ht_euros: frais?.pu_ht_euros || 0,
+    prix_emp: frais?.prix_emp || 0,
+    description: frais?.description || '',
+    statut: frais?.statut || 'actif'
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.article || !formData.intitule || !formData.unite) {
+      alert('Veuillez remplir les champs obligatoires (Article, Intitulé, Unité)')
+      return
+    }
+    onSave(formData)
+  }
+
+  const handleChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="article">Article *</Label>
+          <Input
+            id="article"
+            value={formData.article}
+            onChange={(e) => handleChange('article', e.target.value)}
+            placeholder="Ex: AXE001"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="unite">Unité *</Label>
+          <Input
+            id="unite"
+            value={formData.unite}
+            onChange={(e) => handleChange('unite', e.target.value)}
+            placeholder="Ex: Unité"
+            required
+          />
+        </div>
+        <div className="md:col-span-2">
+          <Label htmlFor="intitule">Intitulé *</Label>
+          <Input
+            id="intitule"
+            value={formData.intitule}
+            onChange={(e) => handleChange('intitule', e.target.value)}
+            placeholder="Ex: Service Axecom"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="pu_ht_euros">PU HT (€) *</Label>
+          <Input
+            id="pu_ht_euros"
+            type="number"
+            step="0.01"
+            min="0"
+            value={formData.pu_ht_euros}
+            onChange={(e) => handleChange('pu_ht_euros', parseFloat(e.target.value) || 0)}
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="prix_emp">Prix Emp (€) *</Label>
+          <Input
+            id="prix_emp"
+            type="number"
+            step="0.01"
+            min="0"
+            value={formData.prix_emp}
+            onChange={(e) => handleChange('prix_emp', parseFloat(e.target.value) || 0)}
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="statut">Statut</Label>
+          <Select value={formData.statut} onValueChange={(value) => handleChange('statut', value)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="actif">Actif</SelectItem>
+              <SelectItem value="inactif">Inactif</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      
+      <div>
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
+          value={formData.description}
+          onChange={(e) => handleChange('description', e.target.value)}
+          placeholder="Description de l'article..."
+          rows={3}
+        />
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Annuler
+        </Button>
+        <Button type="submit">
+          {frais ? 'Modifier' : 'Ajouter'}
         </Button>
       </DialogFooter>
     </form>
