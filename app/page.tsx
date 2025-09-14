@@ -193,6 +193,15 @@ export default function EmployeeTracker() {
   const [editingIntervention, setEditingIntervention] = useState<any>(null)
   const [articlesText, setArticlesText] = useState("")
   const [savingArticles, setSavingArticles] = useState(false)
+
+  // Interventions filtering states
+  const [interventionFilters, setInterventionFilters] = useState({
+    statut: '',
+    dateRdvStart: '',
+    dateRdvEnd: '',
+    numInter: ''
+  })
+  const [filteredInterventions, setFilteredInterventions] = useState<any[]>([])
   const [showCardAssignmentModal, setShowCardAssignmentModal] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
   const [availableCards, setAvailableCards] = useState<any[]>([])
@@ -249,6 +258,13 @@ export default function EmployeeTracker() {
       loadFuelGroupedData()
     }
   }, [fuelPeriod, fuelDateRange])
+
+  // Apply filters when interventions or filters change
+  useEffect(() => {
+    if (interventions.length > 0) {
+      applyInterventionFilters()
+    }
+  }, [interventions, interventionFilters])
 
   // Pagination functions for fuel transactions
   const getFuelPaginatedData = () => {
@@ -354,6 +370,75 @@ export default function EmployeeTracker() {
       intervention.articles.toString().trim() === ''
     
     return isClotureTerminee && hasNoArticles
+  }
+
+  // Filtering functions for interventions
+  const applyInterventionFilters = () => {
+    let filtered = [...interventions]
+
+    // Filter by statut
+    if (interventionFilters.statut) {
+      filtered = filtered.filter(intervention => 
+        intervention.statut && 
+        intervention.statut.toString().toLowerCase().includes(interventionFilters.statut.toLowerCase())
+      )
+    }
+
+    // Filter by numéro d'intervention
+    if (interventionFilters.numInter) {
+      filtered = filtered.filter(intervention => 
+        intervention.num_inter && 
+        intervention.num_inter.toString().toLowerCase().includes(interventionFilters.numInter.toLowerCase())
+      )
+    }
+
+    // Filter by date RDV range
+    if (interventionFilters.dateRdvStart) {
+      filtered = filtered.filter(intervention => {
+        if (!intervention.date_rdv) return false
+        const interventionDate = new Date(intervention.date_rdv)
+        const startDate = new Date(interventionFilters.dateRdvStart)
+        return interventionDate >= startDate
+      })
+    }
+
+    if (interventionFilters.dateRdvEnd) {
+      filtered = filtered.filter(intervention => {
+        if (!intervention.date_rdv) return false
+        const interventionDate = new Date(intervention.date_rdv)
+        const endDate = new Date(interventionFilters.dateRdvEnd)
+        return interventionDate <= endDate
+      })
+    }
+
+    setFilteredInterventions(filtered)
+  }
+
+  const handleFilterChange = (filterType: string, value: string) => {
+    setInterventionFilters(prev => ({
+      ...prev,
+      [filterType]: value
+    }))
+  }
+
+  const clearFilters = () => {
+    setInterventionFilters({
+      statut: '',
+      dateRdvStart: '',
+      dateRdvEnd: '',
+      numInter: ''
+    })
+    setFilteredInterventions([])
+  }
+
+  // Get unique statuts for filter dropdown
+  const getUniqueStatuts = () => {
+    const statuts = interventions
+      .map(intervention => intervention.statut)
+      .filter(statut => statut && statut.trim() !== '')
+      .map(statut => statut.toString())
+    
+    return [...new Set(statuts)].sort()
   }
 
   // Load fuel consumption by employee
@@ -2285,6 +2370,122 @@ export default function EmployeeTracker() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  {/* Filtres pour les interventions */}
+                  <div className="mb-6 p-4 bg-white/5 rounded-lg border border-white/10">
+                    <div className="flex items-center gap-4 mb-4">
+                      <h3 className="text-lg font-semibold">Filtres</h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={clearFilters}
+                        className="text-xs"
+                      >
+                        Effacer les filtres
+                      </Button>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* Filtre par statut */}
+                      <div>
+                        <Label htmlFor="filter-statut" className="text-sm font-medium">
+                          Statut
+                        </Label>
+                        <Select
+                          value={interventionFilters.statut || "all"}
+                          onValueChange={(value) => handleFilterChange('statut', value === "all" ? "" : value)}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Tous les statuts" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Tous les statuts</SelectItem>
+                            {getUniqueStatuts().map((statut) => (
+                              <SelectItem key={statut} value={statut}>
+                                {statut}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Filtre par numéro d'intervention */}
+                      <div>
+                        <Label htmlFor="filter-num-inter" className="text-sm font-medium">
+                          Numéro Intervention
+                        </Label>
+                        <Input
+                          id="filter-num-inter"
+                          type="text"
+                          placeholder="Rechercher par numéro..."
+                          value={interventionFilters.numInter}
+                          onChange={(e) => handleFilterChange('numInter', e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+
+                      {/* Filtre par date RDV - Début */}
+                      <div>
+                        <Label htmlFor="filter-date-start" className="text-sm font-medium">
+                          Date RDV - Début
+                        </Label>
+                        <Input
+                          id="filter-date-start"
+                          type="date"
+                          value={interventionFilters.dateRdvStart}
+                          onChange={(e) => handleFilterChange('dateRdvStart', e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+
+                      {/* Filtre par date RDV - Fin */}
+                      <div>
+                        <Label htmlFor="filter-date-end" className="text-sm font-medium">
+                          Date RDV - Fin
+                        </Label>
+                        <Input
+                          id="filter-date-end"
+                          type="date"
+                          value={interventionFilters.dateRdvEnd}
+                          onChange={(e) => handleFilterChange('dateRdvEnd', e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Résumé des filtres actifs */}
+                    {(interventionFilters.statut || interventionFilters.numInter || 
+                      interventionFilters.dateRdvStart || interventionFilters.dateRdvEnd) && (
+                      <div className="mt-4 p-3 bg-blue-50/20 rounded-lg border border-blue-200/30">
+                        <div className="flex items-center gap-2 text-sm text-blue-700">
+                          <span className="font-medium">Filtres actifs:</span>
+                          {interventionFilters.statut && (
+                            <Badge variant="secondary" className="text-xs">
+                              Statut: {interventionFilters.statut}
+                            </Badge>
+                          )}
+                          {interventionFilters.numInter && (
+                            <Badge variant="secondary" className="text-xs">
+                              Num: {interventionFilters.numInter}
+                            </Badge>
+                          )}
+                          {interventionFilters.dateRdvStart && (
+                            <Badge variant="secondary" className="text-xs">
+                              Depuis: {interventionFilters.dateRdvStart}
+                            </Badge>
+                          )}
+                          {interventionFilters.dateRdvEnd && (
+                            <Badge variant="secondary" className="text-xs">
+                              Jusqu'à: {interventionFilters.dateRdvEnd}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-blue-600 mt-1">
+                          {filteredInterventions.length} intervention(s) trouvée(s) sur {interventions.length} total
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {loadingInterventions ? (
                     <div className="text-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -2301,6 +2502,7 @@ export default function EmployeeTracker() {
                       <table className="w-full border-collapse">
                       <thead>
                           <tr className="border-b border-white/10">
+                            <th className="text-left p-4 font-semibold">Num Inter</th>
                             <th className="text-left p-4 font-semibold">Technicien</th>
                             <th className="text-left p-4 font-semibold">Client</th>
                             <th className="text-left p-4 font-semibold">Date RDV</th>
@@ -2311,7 +2513,7 @@ export default function EmployeeTracker() {
                         </tr>
                       </thead>
                       <tbody>
-                          {interventions.slice(0, 100).map((intervention, index) => {
+                          {(filteredInterventions.length > 0 ? filteredInterventions : interventions).slice(0, 100).map((intervention, index) => {
                             const needsArticlesFlag = needsArticles(intervention)
                             return (
                             <tr 
@@ -2320,6 +2522,11 @@ export default function EmployeeTracker() {
                                 needsArticlesFlag ? 'bg-yellow-200/20 border-yellow-300/30' : ''
                               }`}
                             >
+                            <td className="p-4">
+                              <span className="font-mono text-sm text-gray-600">
+                                {intervention.num_inter || 'N/A'}
+                              </span>
+                            </td>
                             <td className="p-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
@@ -3431,7 +3638,11 @@ export default function EmployeeTracker() {
                                      <span>{penalty.employe_nom}</span>
                                 </div>
                               </td>
-                              <td className="p-4">{penalty.type_penalite}</td>
+                              <td className="p-4">
+                                {penalty.type_penalite || (
+                                  <span className="text-gray-400 italic">Dossier Non Clôturé</span>
+                                )}
+                              </td>
                                  <td className="p-4 font-medium text-red-400">{penalty.montant} €</td>
                                  <td className="p-4">{penalty.date_penalite}</td>
                               <td className="p-4">
@@ -4011,6 +4222,7 @@ export default function EmployeeTracker() {
           <PenaltyForm 
             penalty={editingItem} 
             employees={employees}
+            interventions={interventions}
             onSave={savePenalty} 
             onCancel={() => {
               setShowPenaltyModal(false)
@@ -5122,67 +5334,152 @@ function FraisAxecomForm({ frais, onSave, onCancel }: {
 }
 
 // Penalty Form Component
-function PenaltyForm({ penalty, employees, onSave, onCancel }: { 
+function PenaltyForm({ penalty, employees, interventions, onSave, onCancel }: { 
   penalty: any, 
   employees: any[], 
+  interventions: any[],
   onSave: (data: any) => void, 
   onCancel: () => void 
 }) {
   const [formData, setFormData] = useState({
-    type_penalite: penalty?.type_penalite || '',
+    type_penalite: penalty?.type_penalite || 'dossier_non_cloture',
     montant: penalty?.montant || 0,
     statut: penalty?.statut || 'active',
     date_echeance: penalty?.date_echeance || '',
     motif: penalty?.motif || '',
     employe_id: penalty?.employe_id || '',
     commentaires: penalty?.commentaires || '',
-    manager_approbateur: penalty?.manager_approbateur || ''
+    manager_approbateur: penalty?.manager_approbateur || '',
+    num_inter: penalty?.num_inter || '',
+    intervention_id: penalty?.intervention_concernee || '',
+    auto_calculate: false,
+    j_plus_1: false,
+    j_plus_n: false
   })
+
+  const [interventionData, setInterventionData] = useState<any>(null)
+  const [searchingIntervention, setSearchingIntervention] = useState(false)
+  const [searchError, setSearchError] = useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.type_penalite || !formData.montant || !formData.employe_id) {
-      alert('Veuillez remplir les champs obligatoires (Type, Montant, Employé)')
+    if (!formData.montant || (!formData.employe_id && !formData.intervention_id)) {
+      alert('Veuillez remplir les champs obligatoires (Montant via les checkboxes, Employé ou Intervention)')
       return
     }
-    onSave(formData)
+    
+    if (!formData.j_plus_1 && !formData.j_plus_n) {
+      alert('Veuillez sélectionner au moins un type de pénalité (J+1 ou J+n)')
+      return
+    }
+    
+    // Préparer les données avec l'intervention concernée
+    const submitData = {
+      ...formData,
+      intervention_concernee: formData.intervention_id,
+      num_inter: formData.num_inter,
+      auto_calculate: formData.auto_calculate,
+      type_penalite: 'dossier_non_cloture' // Toujours défini sur dossier non clôturé
+    }
+    
+    onSave(submitData)
   }
 
   const handleChange = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value }
+      
+      // Calculer automatiquement le montant basé sur les checkboxes
+      if (field === 'j_plus_1' || field === 'j_plus_n') {
+        if (newData.j_plus_1 && newData.j_plus_n) {
+          // Si les deux sont cochées, prendre le plus élevé (J+n)
+          newData.montant = 140
+          newData.motif = 'Dossier clôturé à J+n (plus de 1 jour de retard)'
+        } else if (newData.j_plus_1) {
+          newData.montant = 60
+          newData.motif = 'Dossier clôturé à J+1 (1 jour de retard)'
+        } else if (newData.j_plus_n) {
+          newData.montant = 140
+          newData.motif = 'Dossier clôturé à J+n (plus de 1 jour de retard)'
+        } else {
+          newData.montant = 0
+          newData.motif = ''
+        }
+      }
+      
+      return newData
+    })
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <Label htmlFor="type_penalite">Type de Pénalité *</Label>
-          <Select value={formData.type_penalite} onValueChange={(value) => handleChange('type_penalite', value)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner un type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="retard">Retard</SelectItem>
-              <SelectItem value="absence">Absence</SelectItem>
-              <SelectItem value="comportement">Comportement</SelectItem>
-              <SelectItem value="performance">Performance</SelectItem>
-              <SelectItem value="materiel">Matériel</SelectItem>
-              <SelectItem value="autre">Autre</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label htmlFor="type_penalite">Type de Pénalité</Label>
+          <div className="p-3 bg-gray-50 rounded-md border">
+            <p className="text-sm text-gray-700 font-medium">Dossier Non Clôturé</p>
+            <p className="text-xs text-gray-500 mt-1">Type automatiquement défini</p>
+          </div>
         </div>
+        
         <div>
-          <Label htmlFor="montant">Montant (€) *</Label>
-          <Input
-            id="montant"
-            type="number"
-            step="0.01"
-            min="0"
-            value={formData.montant}
-            onChange={(e) => handleChange('montant', parseFloat(e.target.value) || 0)}
-            placeholder="Ex: 50.00"
-            required
+          <Label htmlFor="intervention_search">Rechercher une Intervention</Label>
+          <InterventionSearch 
+            value={formData.intervention_id || ''}
+            onSelect={(intervention) => {
+              handleChange('intervention_id', intervention.id)
+              handleChange('num_inter', intervention.num_inter)
+              // Auto-fill employee based on intervention
+              if (intervention.nom_technicien && intervention.prenom_technicien) {
+                const matchingEmployee = employees.find(emp => 
+                  emp.nom === intervention.nom_technicien && emp.prenom === intervention.prenom_technicien
+                )
+                if (matchingEmployee) {
+                  handleChange('employe_id', matchingEmployee.id)
+                }
+              }
+            }}
+            placeholder="Tapez pour rechercher une intervention..."
+            interventions={interventions}
           />
+        </div>
+
+        <div>
+          <Label htmlFor="montant">Montant de la Pénalité</Label>
+          <div className="space-y-3 mt-2">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="j_plus_1"
+                checked={formData.j_plus_1}
+                onChange={(e) => handleChange('j_plus_1', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <Label htmlFor="j_plus_1" className="text-sm font-medium text-gray-700">
+                J+1 (60€)
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="j_plus_n"
+                checked={formData.j_plus_n}
+                onChange={(e) => handleChange('j_plus_n', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <Label htmlFor="j_plus_n" className="text-sm font-medium text-gray-700">
+                J+n (140€)
+              </Label>
+            </div>
+            {formData.montant > 0 && (
+              <div className="p-2 bg-blue-50 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>Montant calculé : {formData.montant}€</strong>
+                </p>
+                <p className="text-xs text-blue-600 mt-1">{formData.motif}</p>
+              </div>
+            )}
+          </div>
         </div>
         <div>
           <Label htmlFor="statut">Statut</Label>
