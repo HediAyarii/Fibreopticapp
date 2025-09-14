@@ -187,6 +187,12 @@ export default function EmployeeTracker() {
   
   // Employee details and assignment modals
   const [showEmployeeDetailsModal, setShowEmployeeDetailsModal] = useState(false)
+  
+  // Articles management states
+  const [showArticlesModal, setShowArticlesModal] = useState(false)
+  const [editingIntervention, setEditingIntervention] = useState<any>(null)
+  const [articlesText, setArticlesText] = useState("")
+  const [savingArticles, setSavingArticles] = useState(false)
   const [showCardAssignmentModal, setShowCardAssignmentModal] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
   const [availableCards, setAvailableCards] = useState<any[]>([])
@@ -280,6 +286,74 @@ export default function EmployeeTracker() {
       console.error("Erreur chargement historique:", error)
       setCardHistory([])
     }
+  }
+
+  // Articles management functions
+  const handleEditArticles = (intervention: any) => {
+    setEditingIntervention(intervention)
+    setArticlesText(intervention.articles || "")
+    setShowArticlesModal(true)
+  }
+
+  const handleSaveArticles = async () => {
+    if (!editingIntervention) return
+
+    setSavingArticles(true)
+    try {
+      const response = await fetch('/api/interventions', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingIntervention.id,
+          articles: articlesText
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        
+        // Update the intervention in the local state
+        setInterventions(prev => 
+          prev.map(intervention => 
+            intervention.id === editingIntervention.id 
+              ? { ...intervention, articles: articlesText }
+              : intervention
+          )
+        )
+        
+        setShowArticlesModal(false)
+        setEditingIntervention(null)
+        setArticlesText("")
+        
+        console.log("Articles sauvegardés avec succès:", data)
+      } else {
+        console.error("Erreur lors de la sauvegarde des articles")
+      }
+    } catch (error) {
+      console.error("Erreur lors de la sauvegarde des articles:", error)
+    } finally {
+      setSavingArticles(false)
+    }
+  }
+
+  const handleCancelArticles = () => {
+    setShowArticlesModal(false)
+    setEditingIntervention(null)
+    setArticlesText("")
+  }
+
+  // Check if intervention needs articles (CLOTURE TERMINEE and articles NaN/N/A)
+  const needsArticles = (intervention: any) => {
+    const isClotureTerminee = intervention.statut && 
+      intervention.statut.toString().toUpperCase().includes('CLOTURE TERMINEE')
+    const hasNoArticles = !intervention.articles || 
+      intervention.articles.toString().toUpperCase() === 'NAN' || 
+      intervention.articles.toString().toUpperCase() === 'N/A' ||
+      intervention.articles.toString().trim() === ''
+    
+    return isClotureTerminee && hasNoArticles
   }
 
   // Load fuel consumption by employee
@@ -2237,8 +2311,15 @@ export default function EmployeeTracker() {
                         </tr>
                       </thead>
                       <tbody>
-                          {interventions.slice(0, 100).map((intervention, index) => (
-                            <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                          {interventions.slice(0, 100).map((intervention, index) => {
+                            const needsArticlesFlag = needsArticles(intervention)
+                            return (
+                            <tr 
+                              key={index} 
+                              className={`border-b border-white/5 hover:bg-white/5 transition-colors ${
+                                needsArticlesFlag ? 'bg-yellow-200/20 border-yellow-300/30' : ''
+                              }`}
+                            >
                             <td className="p-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
@@ -2253,10 +2334,21 @@ export default function EmployeeTracker() {
                               <td className="p-4">{intervention.date_rdv}</td>
                               <td className="p-4">{intervention.type_intervention}</td>
                             <td className="p-4">
-                                <div className="max-w-xs">
-                                  <span className="text-sm text-gray-600">
+                                <div className="max-w-xs flex items-center gap-2">
+                                  <span className={`text-sm ${needsArticlesFlag ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
                                     {intervention.articles || 'N/A'}
                                   </span>
+                                  {needsArticlesFlag && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleEditArticles(intervention)}
+                                      className="h-6 px-2 text-xs bg-yellow-100 hover:bg-yellow-200 border-yellow-300 text-yellow-800"
+                                    >
+                                      <Plus className="h-3 w-3 mr-1" />
+                                      Articles
+                                    </Button>
+                                  )}
                               </div>
                             </td>
                             <td className="p-4">
@@ -2269,7 +2361,7 @@ export default function EmployeeTracker() {
                             </td>
                               <td className="p-4">{intervention.ville}</td>
                           </tr>
-                        ))}
+                        )})}
                       </tbody>
                     </table>
                   </div>
@@ -3927,6 +4019,17 @@ export default function EmployeeTracker() {
           />
         </DialogContent>
       </Dialog>
+
+      {/* Articles Edit Modal */}
+      <ArticlesEditModal
+        isOpen={showArticlesModal}
+        intervention={editingIntervention}
+        articlesText={articlesText}
+        setArticlesText={setArticlesText}
+        onSave={handleSaveArticles}
+        onCancel={handleCancelArticles}
+        saving={savingArticles}
+      />
      </div>
    )
  }
@@ -5162,5 +5265,101 @@ function PenaltyForm({ penalty, employees, onSave, onCancel }: {
         </Button>
       </DialogFooter>
     </form>
+  )
+}
+
+// Articles Edit Modal Component
+function ArticlesEditModal({ 
+  isOpen, 
+  intervention, 
+  articlesText, 
+  setArticlesText, 
+  onSave, 
+  onCancel, 
+  saving 
+}: {
+  isOpen: boolean
+  intervention: any
+  articlesText: string
+  setArticlesText: (text: string) => void
+  onSave: () => void
+  onCancel: () => void
+  saving: boolean
+}) {
+  if (!isOpen || !intervention) return null
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onCancel}>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            Ajouter des Articles
+          </DialogTitle>
+          <DialogDescription>
+            Intervention #{intervention.num_inter} - {intervention.client}
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <Label className="font-semibold">Technicien:</Label>
+              <p className="text-gray-600">
+                {intervention.prenom_technicien} {intervention.nom_technicien}
+              </p>
+            </div>
+            <div>
+              <Label className="font-semibold">Date RDV:</Label>
+              <p className="text-gray-600">{intervention.date_rdv}</p>
+            </div>
+            <div>
+              <Label className="font-semibold">Type:</Label>
+              <p className="text-gray-600">{intervention.type_intervention}</p>
+            </div>
+            <div>
+              <Label className="font-semibold">Statut:</Label>
+              <p className="text-gray-600">{intervention.statut}</p>
+            </div>
+          </div>
+          
+          <div>
+            <Label htmlFor="articles" className="text-base font-semibold">
+              Articles utilisés *
+            </Label>
+            <Textarea
+              id="articles"
+              value={articlesText}
+              onChange={(e) => setArticlesText(e.target.value)}
+              placeholder="Entrez les articles utilisés lors de cette intervention..."
+              className="mt-2 min-h-[120px]"
+              required
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              Décrivez tous les articles, matériels ou pièces utilisés
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={saving}>
+            Annuler
+          </Button>
+          <Button onClick={onSave} disabled={saving || !articlesText.trim()}>
+            {saving ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Sauvegarde...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Sauvegarder
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

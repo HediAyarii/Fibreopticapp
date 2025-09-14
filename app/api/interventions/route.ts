@@ -227,3 +227,30 @@ export async function GET() {
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
+
+export async function PUT(request: NextRequest) {
+  try {
+    const { id, articles } = await request.json()
+
+    if (!id || articles === undefined) {
+      return NextResponse.json({ error: "ID et articles requis" }, { status: 400 })
+    }
+
+    const result = await query(
+      'UPDATE interventions SET articles = $1 WHERE id = $2 RETURNING *',
+      [articles, id]
+    )
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ error: "Intervention non trouvée" }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      intervention: result.rows[0]
+    })
+  } catch (error) {
+    console.error("Erreur PUT interventions:", error)
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+  }
+}
