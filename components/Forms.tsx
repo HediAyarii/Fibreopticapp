@@ -177,9 +177,9 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
     poste: employee?.poste || '',
     departement: employee?.departement || '',
     date_embauche: employee?.date_embauche || '',
-    salaire: employee?.salaire || '',
+    salaire_base: employee?.salaire_base || '',
     statut: employee?.statut || 'actif',
-    role: employee?.role || 'technicien'
+    niveau_acces: employee?.niveau_acces || 'technicien'
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -281,13 +281,13 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
             />
           </div>
           <div>
-            <Label htmlFor="salaire">Salaire (€)</Label>
+            <Label htmlFor="salaire_base">Salaire (€)</Label>
             <Input
-              id="salaire"
+              id="salaire_base"
               type="number"
               step="0.01"
-              value={formData.salaire}
-              onChange={(e) => handleChange('salaire', e.target.value)}
+              value={formData.salaire_base}
+              onChange={(e) => handleChange('salaire_base', e.target.value)}
               placeholder="0.00"
               min="0"
             />
@@ -296,10 +296,10 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="role">Rôle *</Label>
-            <Select value={formData.role} onValueChange={(value) => handleChange('role', value)}>
+            <Label htmlFor="niveau_acces">Niveau d'accès *</Label>
+            <Select value={formData.niveau_acces} onValueChange={(value) => handleChange('niveau_acces', value)}>
               <SelectTrigger>
-                <SelectValue placeholder="Sélectionnez un rôle" />
+                <SelectValue placeholder="Sélectionnez un niveau d'accès" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="admin">Administrateur</SelectItem>

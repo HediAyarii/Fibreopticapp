@@ -56,6 +56,7 @@ import {
   PieChartIcon,
   RefreshCw,
   User,
+  UserCog,
   Activity,
   DollarSign,
   Fuel,
@@ -1746,6 +1747,19 @@ export default function EmployeeTracker() {
                 >
               <TrendingUp className="w-5 h-5" />
               Rapports
+                </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "technicien-accounts"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+              onClick={() => setActiveTab("technicien-accounts")}
+                >
+              <UserCog className="w-5 h-5" />
+              Comptes Techniciens
                 </Button>
           </nav>
         </aside>
@@ -3973,6 +3987,116 @@ export default function EmployeeTracker() {
               </div>
                         </div>
                       )}
+
+          {/* Technicien Accounts Section */}
+          {activeTab === "technicien-accounts" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold">Comptes Techniciens</h2>
+                  <p className="text-muted-foreground">Gestion des comptes d'accès des techniciens</p>
+                </div>
+                <Button 
+                  variant="outline"
+                  onClick={() => window.open('/admin/technicien-accounts', '_blank')}
+                >
+                  <UserCog className="w-4 h-4 mr-2" />
+                  Gérer les Comptes
+                </Button>
+              </div>
+              
+              <Card className="glass-card border border-white/20 hover-lift">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <UserCog className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl font-bold">Espace Technicien</CardTitle>
+                      <CardDescription>
+                        Créez et gérez les comptes d'accès pour les techniciens
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold">Fonctionnalités</h3>
+                      <ul className="space-y-2 text-sm text-muted-foreground">
+                        <li className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          Création automatique de comptes pour nouveaux employés
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          Accès sécurisé avec authentification JWT
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          Filtrage automatique des données par technicien
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          Gestion des permissions et verrouillage de comptes
+                        </li>
+                      </ul>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold">Données Accessibles</h3>
+                      <ul className="space-y-2 text-sm text-muted-foreground">
+                        <li className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-blue-500" />
+                          Ses interventions personnelles
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-orange-500" />
+                          Ses réclamations assignées
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <CreditCard className="w-4 h-4 text-red-500" />
+                          Ses pénalités personnelles
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Fuel className="w-4 h-4 text-green-500" />
+                          Sa consommation carburant
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <h4 className="font-medium text-blue-900 mb-2">Accès Technicien</h4>
+                    <p className="text-sm text-blue-800 mb-3">
+                      Les techniciens peuvent accéder à leur espace personnel via : <code className="bg-blue-100 px-2 py-1 rounded">/logintech</code>
+                    </p>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => window.open('/logintech', '_blank')}
+                        className="border-blue-200 text-blue-700 hover:bg-blue-50"
+                      >
+                        <User className="w-4 h-4 mr-1" />
+                        Page de Connexion
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => window.open('/admin/technicien-accounts', '_blank')}
+                        className="border-blue-200 text-blue-700 hover:bg-blue-50"
+                      >
+                        <UserCog className="w-4 h-4 mr-1" />
+                        Gestion Admin
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
         </main>
                     </div>
 
@@ -4269,12 +4393,9 @@ export default function EmployeeTracker() {
       {/* Articles Edit Modal */}
       <ArticlesEditModal
         isOpen={showArticlesModal}
+        onClose={handleCancelArticles}
         intervention={editingIntervention}
-        articlesText={articlesText}
-        setArticlesText={setArticlesText}
         onSave={handleSaveArticles}
-        onCancel={handleCancelArticles}
-        saving={savingArticles}
       />
      </div>
    )

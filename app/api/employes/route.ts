@@ -1,157 +1,113 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { query } from "@/lib/database"
+import { NextRequest, NextResponse } from 'next/server'
+import { query } from '@/lib/database'
+
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+
+// Fonction utilitaire pour traiter les valeurs de date et numérique
+function processValue(value: any, fieldType: 'date' | 'numeric' | 'text'): any {
+  if (value === '' || value === undefined) {
+    return null
+  }
+  
+  if (fieldType === 'numeric') {
+    // Pour les champs numériques, convertir en nombre ou null
+    const numValue = parseFloat(value)
+    return isNaN(numValue) ? null : numValue
+  }
+  
+  return value
+}
 
 export async function GET() {
   try {
-    // D'abord synchroniser les employés avec les interventions
-    await syncEmployeesFromInterventions()
-    
-    // Puis récupérer tous les employés
-    const result = await query('SELECT * FROM employes ORDER BY created_at DESC')
-    return NextResponse.json({ employes: result.rows })
-  } catch (error) {
-    console.error("Erreur API employés GET:", error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
-  }
-}
-
-async function syncEmployeesFromInterventions() {
-  try {
-    // Récupérer tous les techniciens distincts des interventions
-    const interventionsResult = await query(`
-      SELECT DISTINCT 
-        nom_technicien, 
-        prenom_technicien,
-        COUNT(*) as nb_interventions
-      FROM interventions 
-      WHERE nom_technicien IS NOT NULL 
-      AND prenom_technicien IS NOT NULL
-      AND nom_technicien != 'nan'
-      AND prenom_technicien != 'nan'
-      GROUP BY nom_technicien, prenom_technicien
-      ORDER BY nb_interventions DESC
+    const result = await query(`
+      SELECT 
+        id,
+        prenom,
+        nom,
+        matricule,
+        niveau_acces,
+        statut,
+        email,
+        telephone,
+        date_embauche,
+        created_at
+      FROM employes 
+      ORDER BY prenom, nom
     `)
 
-    for (const intervention of interventionsResult.rows) {
-      const { nom_technicien, prenom_technicien, nb_interventions } = intervention
-      
-      // Générer un matricule basé sur le nom/prénom
-      const matricule = `EMP${nom_technicien.substring(0, 3).toUpperCase()}${prenom_technicien.substring(0, 2).toUpperCase()}`
-      
-      // Vérifier si l'employé existe déjà (par nom et prénom)
-      const existingEmployee = await query(
-        'SELECT id FROM employes WHERE nom = $1 AND prenom = $2',
-        [nom_technicien, prenom_technicien]
-      )
-      
-      if (existingEmployee.rows.length === 0) {
-        // Créer le nouvel employé avec seulement les champs essentiels
-        await query(`
-          INSERT INTO employes (
-            matricule, nom, prenom, statut, commentaires, created_at, updated_at
-          ) VALUES (
-            $1, $2, $3, $4, $5, NOW(), NOW()
-          )
-        `, [
-          matricule,
-          nom_technicien,
-          prenom_technicien,
-          'actif',
-          `Technicien avec ${nb_interventions} interventions réalisées - À compléter par l'admin`
-        ])
-        
-        console.log(`[SYNC] Employé créé: ${prenom_technicien} ${nom_technicien} (${nb_interventions} interventions)`)
-      }
-    }
+    return NextResponse.json({
+      success: true,
+      employes: result.rows
+    })
   } catch (error) {
-    console.error("Erreur synchronisation employés:", error)
+    console.error('Erreur GET employes:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const {
-      matricule,
-      nom,
       prenom,
+      nom,
+      matricule,
+      niveau_acces,
+      statut,
       email,
       telephone,
-      poste,
-      departement,
-      manager_id,
-      date_embauche,
-      statut,
-      niveau_acces,
-      region,
-      plaque_vehicule,
-      numero_carte_carburant,
-      salaire_base,
-      taux_horaire,
-      pourcentage_taxe,
-      heures_travaillees,
-      heures_supplementaires,
-      prime_performance,
-      penalites_total,
-      notes_performance,
-      competences,
-      certifications,
-      date_derniere_evaluation,
-      commentaires
+      date_embauche
     } = await request.json()
 
-    // Vérifier si l'employé existe déjà (par matricule ou email)
-    if (matricule) {
-      const existingByMatricule = await query(
-        'SELECT id FROM employes WHERE matricule = $1',
-        [matricule]
-      )
-      if (existingByMatricule.rows.length > 0) {
-        return NextResponse.json({ error: "Un employé avec ce matricule existe déjà" }, { status: 400 })
-      }
+    if (!prenom || !nom || !matricule) {
+      return NextResponse.json({ error: 'Prénom, nom et matricule requis' }, { status: 400 })
     }
 
-    if (email) {
-      const existingByEmail = await query(
-        'SELECT id FROM employes WHERE email = $1',
-        [email]
-      )
-      if (existingByEmail.rows.length > 0) {
-        return NextResponse.json({ error: "Un employé avec cet email existe déjà" }, { status: 400 })
-      }
+    // Vérifier que le matricule n'existe pas déjà
+    const existingEmployee = await query(
+      'SELECT id FROM employes WHERE matricule = $1',
+      [matricule]
+    )
+
+    if (existingEmployee.rows.length > 0) {
+      return NextResponse.json({ error: 'Ce matricule existe déjà' }, { status: 400 })
     }
 
-    const insertQuery = `
+    const result = await query(`
       INSERT INTO employes (
-        matricule, nom, prenom, email, telephone, poste, departement,
-        manager_id, date_embauche, statut, niveau_acces, region,
-        plaque_vehicule, numero_carte_carburant, salaire_base, taux_horaire, pourcentage_taxe,
-        heures_travaillees, heures_supplementaires, prime_performance,
-        penalites_total, notes_performance, competences, certifications,
-        date_derniere_evaluation, commentaires
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-        $18, $19, $20, $21, $22, $23, $24, $25, $26
-      ) RETURNING *
-    `
+        prenom,
+        nom,
+        matricule,
+        niveau_acces,
+        statut,
+        email,
+        telephone,
+        date_embauche,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *
+    `, [
+      prenom,
+      nom,
+      matricule,
+      niveau_acces || 'technicien',
+      statut || 'actif',
+      email || null,
+      telephone || null,
+      processValue(date_embauche, 'date'),
+      new Date()
+    ])
 
-    const values = [
-      matricule, nom, prenom, email, telephone, poste, departement,
-      manager_id, date_embauche, statut || 'actif', niveau_acces || 'technicien',
-      region, plaque_vehicule, numero_carte_carburant, salaire_base, taux_horaire, pourcentage_taxe,
-      heures_travaillees || 0, heures_supplementaires || 0, prime_performance || 0,
-      penalites_total || 0, notes_performance, competences, certifications,
-      date_derniere_evaluation, commentaires
-    ]
-
-    const result = await query(insertQuery, values)
-    
     return NextResponse.json({
       success: true,
-      employe: result.rows[0]
+      employe: result.rows[0],
+      message: 'Employé créé avec succès'
     })
+
   } catch (error) {
-    console.error("Erreur API employés POST:", error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+    console.error('Erreur POST employe:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }
 
@@ -160,63 +116,65 @@ export async function PUT(request: NextRequest) {
     const { id, ...updateData } = await request.json()
 
     if (!id) {
-      return NextResponse.json({ error: "ID employé requis" }, { status: 400 })
+      return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
     }
 
-    // Nettoyer les données : convertir les chaînes vides en null pour les champs entiers et dates
-    const cleanedData = { ...updateData }
-    
-    // Champs entiers qui doivent être null si vides
-    const integerFields = ['manager_id', 'salaire_base', 'taux_horaire', 'pourcentage_taxe', 
-                          'heures_travaillees', 'heures_supplementaires', 'prime_performance', 
-                          'penalites_total']
-    
-    // Champs de date qui doivent être null si vides
-    const dateFields = ['date_embauche', 'date_derniere_evaluation']
-    
-    integerFields.forEach(field => {
-      if (cleanedData[field] === '' || cleanedData[field] === undefined) {
-        cleanedData[field] = null
-      } else if (typeof cleanedData[field] === 'string' && !isNaN(Number(cleanedData[field]))) {
-        cleanedData[field] = Number(cleanedData[field])
-      }
-    })
-    
-    dateFields.forEach(field => {
-      if (cleanedData[field] === '' || cleanedData[field] === undefined) {
-        cleanedData[field] = null
-      }
-    })
+    const updateFields = []
+    const params = []
+    let paramIndex = 1
 
-    // Construire la requête de mise à jour dynamiquement
-    const fields = Object.keys(cleanedData).filter(key => cleanedData[key] !== undefined)
-    if (fields.length === 0) {
-      return NextResponse.json({ error: "Aucune donnée à mettre à jour" }, { status: 400 })
+    // Définir les types de champs
+    const fieldTypes: { [key: string]: 'date' | 'numeric' | 'text' } = {
+      date_embauche: 'date',
+      salaire_base: 'numeric',
+      taux_horaire: 'numeric',
+      pourcentage_taxe: 'numeric',
+      heures_travaillees: 'numeric',
+      heures_supplementaires: 'numeric',
+      prime_performance: 'numeric',
+      penalites_total: 'numeric',
+      date_derniere_evaluation: 'date'
     }
 
-    const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ')
-    const values = [id, ...fields.map(field => cleanedData[field])]
+    Object.entries(updateData).forEach(([key, value]) => {
+      if (value !== undefined) {
+        // Traiter les valeurs selon leur type
+        const fieldType = fieldTypes[key] || 'text'
+        const processedValue = processValue(value, fieldType)
+        
+        updateFields.push(`${key} = $${paramIndex}`)
+        params.push(processedValue)
+        paramIndex++
+      }
+    })
 
-    const updateQuery = `
+    if (updateFields.length === 0) {
+      return NextResponse.json({ error: 'Aucune donnée à mettre à jour' }, { status: 400 })
+    }
+
+    params.push(id)
+    const queryText = `
       UPDATE employes 
-      SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
-      WHERE id = $1 
+      SET ${updateFields.join(', ')}, updated_at = NOW()
+      WHERE id = $${paramIndex}
       RETURNING *
     `
 
-    const result = await query(updateQuery, values)
-    
+    const result = await query(queryText, params)
+
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Employé non trouvé" }, { status: 404 })
+      return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
     }
 
     return NextResponse.json({
       success: true,
-      employe: result.rows[0]
+      employe: result.rows[0],
+      message: 'Employé mis à jour avec succès'
     })
+
   } catch (error) {
-    console.error("Erreur API employés PUT:", error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+    console.error('Erreur PUT employe:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }
 
@@ -226,21 +184,25 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id')
 
     if (!id) {
-      return NextResponse.json({ error: "ID employé requis" }, { status: 400 })
+      return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
     }
 
-    const result = await query('DELETE FROM employes WHERE id = $1 RETURNING *', [id])
-    
+    const result = await query(
+      'DELETE FROM employes WHERE id = $1 RETURNING *',
+      [id]
+    )
+
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Employé non trouvé" }, { status: 404 })
+      return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
     }
 
     return NextResponse.json({
       success: true,
-      message: "Employé supprimé avec succès"
+      message: 'Employé supprimé avec succès'
     })
+
   } catch (error) {
-    console.error("Erreur API employés DELETE:", error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+    console.error('Erreur DELETE employe:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }

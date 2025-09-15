@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -18,6 +18,23 @@ export default function LoginTechPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
+
+  // Vérifier si l'utilisateur est déjà connecté au chargement de la page
+  useEffect(() => {
+    const checkExistingAuth = async () => {
+      try {
+        const response = await fetch('/api/auth/technicien')
+        if (response.ok) {
+          console.log('Utilisateur déjà connecté, redirection vers dashboard')
+          router.push('/technicien/dashboard')
+        }
+      } catch (error) {
+        console.log('Pas de session existante')
+      }
+    }
+    
+    checkExistingAuth()
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

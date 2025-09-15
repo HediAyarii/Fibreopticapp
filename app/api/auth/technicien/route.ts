@@ -125,7 +125,15 @@ export async function GET(request: NextRequest) {
     const token = request.cookies.get('technicien_token')?.value
 
     if (!token) {
-      return NextResponse.json({ error: "Token manquant" }, { status: 401 })
+      const response = NextResponse.json({ error: "Token manquant" }, { status: 401 })
+      // Supprimer le cookie s'il existe mais est vide
+      response.cookies.set('technicien_token', '', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 0
+      })
+      return response
     }
 
     try {
@@ -152,7 +160,15 @@ export async function GET(request: NextRequest) {
       )
 
       if (result.rows.length === 0 || !result.rows[0].is_active || result.rows[0].is_locked) {
-        return NextResponse.json({ error: "Session invalide" }, { status: 401 })
+        const response = NextResponse.json({ error: "Session invalide" }, { status: 401 })
+        // Supprimer le cookie car le compte est invalide
+        response.cookies.set('technicien_token', '', {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 0
+        })
+        return response
       }
 
       const userData = result.rows[0]
@@ -169,7 +185,15 @@ export async function GET(request: NextRequest) {
       })
 
     } catch (jwtError) {
-      return NextResponse.json({ error: "Token invalide" }, { status: 401 })
+      const response = NextResponse.json({ error: "Token invalide ou expiré" }, { status: 401 })
+      // Supprimer le cookie car le token est invalide
+      response.cookies.set('technicien_token', '', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 0
+      })
+      return response
     }
 
   } catch (error) {

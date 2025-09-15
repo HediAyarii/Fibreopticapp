@@ -1,27 +1,27 @@
-import { NextRequest, NextResponse } from "next/server"
-import { query } from "@/lib/database"
+import { NextRequest, NextResponse } from 'next/server'
+import { query } from '@/lib/database'
 import bcrypt from 'bcryptjs'
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
+    // Récupérer tous les comptes techniciens avec les informations des employés
     const result = await query(`
       SELECT 
         ta.id,
-        ta.technicien_id,
         ta.username,
         ta.is_active,
         ta.is_locked,
         ta.login_attempts,
-        ta.last_login,
         ta.created_at,
-        e.prenom as technicien_prenom,
-        e.nom as technicien_nom,
-        e.matricule as technicien_matricule,
-        e.email as technicien_email,
-        e.niveau_acces as technicien_niveau_acces
+        ta.last_login,
+        e.id as technicien_id,
+        e.prenom,
+        e.nom,
+        e.matricule,
+        e.niveau_acces
       FROM technicien_accounts ta
       JOIN employes e ON ta.technicien_id = e.id
       ORDER BY ta.created_at DESC
@@ -31,79 +31,84 @@ export async function GET(request: NextRequest) {
       success: true,
       accounts: result.rows
     })
-
   } catch (error) {
-    console.error("Erreur GET technicien accounts:", error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+    console.error('Erreur GET comptes techniciens:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { technicien_id, username, password, is_active = true } = await request.json()
+    const { technicien_id, username, password } = await request.json()
 
-    if (!technicien_id || !username) {
-      return NextResponse.json({ error: "ID technicien et nom d'utilisateur requis" }, { status: 400 })
+    if (!technicien_id || !username || !password) {
+      return NextResponse.json({ error: 'Données manquantes' }, { status: 400 })
     }
 
-    // Vérifier si le technicien existe
-    const technicienResult = await query(
+    // Vérifier que l'employé existe
+    const employeResult = await query(
       'SELECT id, prenom, nom, matricule FROM employes WHERE id = $1',
       [technicien_id]
     )
 
-    if (technicienResult.rows.length === 0) {
-      return NextResponse.json({ error: "Technicien non trouvé" }, { status: 404 })
+    if (employeResult.rows.length === 0) {
+      return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
     }
 
-    // Vérifier si le nom d'utilisateur existe déjà
-    const existingUser = await query(
-      'SELECT id FROM technicien_accounts WHERE username = $1',
-      [username]
-    )
-
-    if (existingUser.rows.length > 0) {
-      return NextResponse.json({ error: "Nom d'utilisateur déjà utilisé" }, { status: 400 })
-    }
-
-    // Vérifier si le technicien a déjà un compte
+    // Vérifier que l'employé n'a pas déjà un compte
     const existingAccount = await query(
       'SELECT id FROM technicien_accounts WHERE technicien_id = $1',
       [technicien_id]
     )
 
     if (existingAccount.rows.length > 0) {
-      return NextResponse.json({ error: "Ce technicien a déjà un compte" }, { status: 400 })
+      return NextResponse.json({ error: 'Cet employé a déjà un compte technicien' }, { status: 400 })
     }
 
-    // Générer le mot de passe
-    let passwordHash
-    if (password && password.trim()) {
-      passwordHash = await bcrypt.hash(password, 10)
-    } else {
-      // Mot de passe par défaut : matricule + "123"
-      const technicien = technicienResult.rows[0]
-      const defaultPassword = technicien.matricule + "123"
-      passwordHash = await bcrypt.hash(defaultPassword, 10)
+    // Vérifier que le nom d'utilisateur n'est pas déjà pris
+    const existingUsername = await query(
+      'SELECT id FROM technicien_accounts WHERE username = $1',
+      [username]
+    )
+
+    if (existingUsername.rows.length > 0) {
+      return NextResponse.json({ error: 'Ce nom d\'utilisateur est déjà pris' }, { status: 400 })
     }
+
+    // Hasher le mot de passe
+    const passwordHash = await bcrypt.hash(password, 10)
 
     // Créer le compte
-    const result = await query(
-      `INSERT INTO technicien_accounts (technicien_id, username, password_hash, is_active)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [technicien_id, username, passwordHash, is_active]
-    )
+    const result = await query(`
+      INSERT INTO technicien_accounts (
+        technicien_id,
+        username,
+        password_hash,
+        is_active,
+        is_locked,
+        login_attempts,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+    `, [
+      technicien_id,
+      username,
+      passwordHash,
+      true,  // is_active
+      false, // is_locked
+      0,     // login_attempts
+      new Date()
+    ])
 
     return NextResponse.json({
       success: true,
       account: result.rows[0],
-      message: "Compte technicien créé avec succès"
+      message: 'Compte technicien créé avec succès'
     })
 
   } catch (error) {
-    console.error("Erreur POST technicien accounts:", error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+    console.error('Erreur POST compte technicien:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }
 
@@ -112,54 +117,59 @@ export async function PUT(request: NextRequest) {
     const { id, is_active, is_locked, password } = await request.json()
 
     if (!id) {
-      return NextResponse.json({ error: "ID du compte requis" }, { status: 400 })
+      return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
     }
 
-    let updateQuery = 'UPDATE technicien_accounts SET '
-    const params: any[] = []
-    let paramCount = 0
+    let updateFields = []
+    let params = []
+    let paramIndex = 1
 
     if (is_active !== undefined) {
-      paramCount++
-      updateQuery += `is_active = $${paramCount}, `
+      updateFields.push(`is_active = $${paramIndex}`)
       params.push(is_active)
+      paramIndex++
     }
 
     if (is_locked !== undefined) {
-      paramCount++
-      updateQuery += `is_locked = $${paramCount}, `
+      updateFields.push(`is_locked = $${paramIndex}`)
       params.push(is_locked)
+      paramIndex++
     }
 
-    if (password && password.trim()) {
-      paramCount++
+    if (password) {
       const passwordHash = await bcrypt.hash(password, 10)
-      updateQuery += `password_hash = $${paramCount}, `
+      updateFields.push(`password_hash = $${paramIndex}`)
       params.push(passwordHash)
+      paramIndex++
     }
 
-    // Supprimer la virgule finale
-    updateQuery = updateQuery.slice(0, -2)
+    if (updateFields.length === 0) {
+      return NextResponse.json({ error: 'Aucune donnée à mettre à jour' }, { status: 400 })
+    }
 
-    paramCount++
-    updateQuery += ` WHERE id = $${paramCount} RETURNING *`
     params.push(id)
+    const queryText = `
+      UPDATE technicien_accounts 
+      SET ${updateFields.join(', ')}, updated_at = NOW()
+      WHERE id = $${paramIndex}
+      RETURNING *
+    `
 
-    const result = await query(updateQuery, params)
+    const result = await query(queryText, params)
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Compte non trouvé" }, { status: 404 })
+      return NextResponse.json({ error: 'Compte non trouvé' }, { status: 404 })
     }
 
     return NextResponse.json({
       success: true,
       account: result.rows[0],
-      message: "Compte mis à jour avec succès"
+      message: 'Compte mis à jour avec succès'
     })
 
   } catch (error) {
-    console.error("Erreur PUT technicien accounts:", error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+    console.error('Erreur PUT compte technicien:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }
 
@@ -169,7 +179,7 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id')
 
     if (!id) {
-      return NextResponse.json({ error: "ID du compte requis" }, { status: 400 })
+      return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
     }
 
     const result = await query(
@@ -178,16 +188,16 @@ export async function DELETE(request: NextRequest) {
     )
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Compte non trouvé" }, { status: 404 })
+      return NextResponse.json({ error: 'Compte non trouvé' }, { status: 404 })
     }
 
     return NextResponse.json({
       success: true,
-      message: "Compte supprimé avec succès"
+      message: 'Compte supprimé avec succès'
     })
 
   } catch (error) {
-    console.error("Erreur DELETE technicien accounts:", error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+    console.error('Erreur DELETE compte technicien:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }

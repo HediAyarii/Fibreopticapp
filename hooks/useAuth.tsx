@@ -34,9 +34,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(data.user)
       } else {
         setUser(null)
+        // Si la session est expirée, rediriger vers la page de login
+        if (response.status === 401) {
+          console.log('Session expirée, redirection vers /logintech')
+          window.location.href = '/logintech'
+        }
       }
     } catch (error) {
       setUser(null)
+      console.error('Erreur lors de la vérification de l\'authentification:', error)
     } finally {
       setLoading(false)
     }

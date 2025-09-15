@@ -28,6 +28,7 @@ import {
   ChevronRight
 } from "lucide-react"
 import { useRouter } from 'next/navigation'
+import { fetchWithAuth } from '@/lib/authManager'
 
 interface User {
   id: number
@@ -91,6 +92,17 @@ export default function TechnicienDashboard() {
     checkAuth()
   }, [])
 
+  // Vérification périodique de l'authentification (toutes les 5 minutes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (user) {
+        checkAuth()
+      }
+    }, 5 * 60 * 1000) // 5 minutes
+
+    return () => clearInterval(interval)
+  }, [user])
+
   useEffect(() => {
     if (user) {
       loadData()
@@ -100,7 +112,7 @@ export default function TechnicienDashboard() {
   const checkAuth = async () => {
     try {
       console.log('Vérification de l\'authentification...')
-      const response = await fetch('/api/auth/technicien')
+      const response = await fetchWithAuth('/api/auth/technicien')
       const data = await response.json()
       
       console.log('Réponse auth:', response.status, data)
@@ -108,13 +120,10 @@ export default function TechnicienDashboard() {
       if (response.ok) {
         console.log('Utilisateur authentifié:', data.user)
         setUser(data.user)
-      } else {
-        console.log('Non authentifié, redirection vers login')
-        router.push('/logintech')
       }
     } catch (error) {
-      console.log('Erreur auth:', error)
-      router.push('/logintech')
+      console.log('Erreur auth ou session expirée:', error)
+      setUser(null)
     } finally {
       setLoading(false)
     }
@@ -125,7 +134,7 @@ export default function TechnicienDashboard() {
 
     try {
       // Charger les interventions du technicien
-      const interventionsResponse = await fetch(`/api/interventions?employe_id=${user.id}`)
+      const interventionsResponse = await fetchWithAuth(`/api/interventions?employe_id=${user.id}`)
       const interventionsData = await interventionsResponse.json()
       
       if (interventionsData.interventions) {
@@ -149,7 +158,7 @@ export default function TechnicienDashboard() {
       }
 
       // Charger les réclamations
-      const reclamationsResponse = await fetch(`/api/reclamations?employe_id=${user.id}`)
+      const reclamationsResponse = await fetchWithAuth(`/api/reclamations?employe_id=${user.id}`)
       const reclamationsData = await reclamationsResponse.json()
       
       if (reclamationsData.reclamations) {
@@ -161,7 +170,7 @@ export default function TechnicienDashboard() {
       }
 
       // Charger les pénalités
-      const penalitesResponse = await fetch(`/api/penalites?employe_id=${user.id}`)
+      const penalitesResponse = await fetchWithAuth(`/api/penalites?employe_id=${user.id}`)
       const penalitesData = await penalitesResponse.json()
       
       if (penalitesData.penalites) {
@@ -174,7 +183,7 @@ export default function TechnicienDashboard() {
 
       // Charger les données de carburant (optionnel)
       try {
-        const carburantResponse = await fetch(`/api/carburant-assignation?employe_id=${user.id}`)
+        const carburantResponse = await fetchWithAuth(`/api/carburant-assignation?employe_id=${user.id}`)
         if (carburantResponse.ok) {
           const carburantData = await carburantResponse.json()
           console.log('Données carburant:', carburantData)
@@ -191,10 +200,14 @@ export default function TechnicienDashboard() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/technicien', { method: 'DELETE' })
+      await fetchWithAuth('/api/auth/technicien', { method: 'DELETE' })
+      setUser(null)
       router.push('/logintech')
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error)
+      // Même en cas d'erreur, rediriger
+      setUser(null)
+      router.push('/logintech')
     }
   }
 
