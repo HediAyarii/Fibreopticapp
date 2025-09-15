@@ -1,17 +1,29 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const result = await query(`
+    const { searchParams } = new URL(request.url)
+    const employeId = searchParams.get('employe_id')
+    
+    let queryText = `
       SELECT r.*, 
              e.nom as employe_nom, e.prenom as employe_prenom,
              i.num_inter, i.client as intervention_client
       FROM reclamations r 
       LEFT JOIN employes e ON r.employe_id = e.id 
       LEFT JOIN interventions i ON r.intervention_id = i.id
-      ORDER BY r.created_at DESC
-    `)
+    `
+    let params: any[] = []
+    
+    if (employeId) {
+      queryText += ' WHERE r.employe_id = $1'
+      params = [employeId]
+    }
+    
+    queryText += ' ORDER BY r.created_at DESC'
+    
+    const result = await query(queryText, params)
     return NextResponse.json({ reclamations: result.rows })
   } catch (error) {
     console.error("Erreur API réclamations GET:", error)

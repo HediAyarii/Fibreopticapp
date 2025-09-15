@@ -1,9 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const result = await query(`
+    const { searchParams } = new URL(request.url)
+    const employeId = searchParams.get('employe_id')
+    
+    let queryText = `
       SELECT p.*, 
              e.nom as employe_nom, e.prenom as employe_prenom,
              i.num_inter, i.client as intervention_client,
@@ -14,8 +17,17 @@ export async function GET() {
       LEFT JOIN interventions i ON p.intervention_concernee = i.id
       LEFT JOIN reclamations r ON p.reclamation_concernee = r.id
       LEFT JOIN materiel m ON p.materiel_concerne = m.id
-      ORDER BY p.created_at DESC
-    `)
+    `
+    let params: any[] = []
+    
+    if (employeId) {
+      queryText += ' WHERE p.employe_id = $1'
+      params = [employeId]
+    }
+    
+    queryText += ' ORDER BY p.created_at DESC'
+    
+    const result = await query(queryText, params)
     return NextResponse.json({ penalites: result.rows })
   } catch (error) {
     console.error("Erreur API pénalités GET:", error)

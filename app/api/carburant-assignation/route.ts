@@ -12,31 +12,32 @@ export async function GET(request: NextRequest) {
     let params: any[] = []
     
     if (employeId) {
-      // Récupérer l'assignation actuelle d'un employé spécifique
+      // Récupérer la consommation carburant d'un employé spécifique
       query = `
         SELECT 
-          ca.*,
+          cc.*,
           e.nom as employe_nom,
           e.prenom as employe_prenom,
           e.matricule as employe_matricule
-        FROM carburant_assignations ca
-        LEFT JOIN employes e ON ca.employe_id = e.id
-        WHERE ca.employe_id = $1 AND ca.statut = 'active'
-        ORDER BY ca.date_assignation DESC
-        LIMIT 1
+        FROM carburant_consommation cc
+        LEFT JOIN employes e ON cc.employe_assigné = e.id
+        WHERE cc.employe_assigné = $1
+        ORDER BY cc.date_livraison DESC
+        LIMIT 100
       `
       params = [employeId]
     } else {
-      // Récupérer l'historique complet des assignations
+      // Récupérer l'historique complet de la consommation carburant
       query = `
         SELECT 
-          ca.*,
+          cc.*,
           e.nom as employe_nom,
           e.prenom as employe_prenom,
           e.matricule as employe_matricule
-        FROM carburant_assignations ca
-        LEFT JOIN employes e ON ca.employe_id = e.id
-        ORDER BY ca.date_assignation DESC, ca.created_at DESC
+        FROM carburant_consommation cc
+        LEFT JOIN employes e ON cc.employe_assigné = e.id
+        ORDER BY cc.date_livraison DESC, cc.created_at DESC
+        LIMIT 1000
       `
     }
     

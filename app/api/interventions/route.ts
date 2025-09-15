@@ -214,9 +214,31 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const result = await query('SELECT * FROM interventions ORDER BY created_at DESC LIMIT 1000')
+    const { searchParams } = new URL(request.url)
+    const employeId = searchParams.get('employe_id')
+    
+    let queryText = 'SELECT * FROM interventions'
+    let params: any[] = []
+    
+    if (employeId) {
+      // Filtrer par employé en utilisant nom_technicien et prenom_technicien
+      const employeResult = await query(
+        'SELECT prenom, nom FROM employes WHERE id = $1',
+        [employeId]
+      )
+      
+      if (employeResult.rows.length > 0) {
+        const employe = employeResult.rows[0]
+        queryText += ' WHERE nom_technicien = $1 AND prenom_technicien = $2'
+        params = [employe.nom, employe.prenom]
+      }
+    }
+    
+    queryText += ' ORDER BY created_at DESC LIMIT 1000'
+    
+    const result = await query(queryText, params)
     
     return NextResponse.json({
       interventions: result.rows,
