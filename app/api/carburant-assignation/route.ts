@@ -69,43 +69,86 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const data = await request.json()
-    const { numero_carte, employe_id, employe_nom, date_assignation, statut } = data
+    const { numero_carte, employe_id, employe_nom, date_assignation, statut, commentaires } = data
     
     console.log('✅ Connexion PostgreSQL établie avec succès')
     
+    const pool = getPool()
+    
     // Vérifier si l'employé a déjà une carte assignée
     const checkQuery = `
-      SELECT id, numero_carte, statut 
+      SELECT id, numero_carte, statut, employe_nom
       FROM carburant_assignations 
       WHERE employe_id = $1 AND statut = 'active'
     `
     
-    const pool = getPool()
     const checkResult = await pool.query(checkQuery, [employe_id])
     
     if (checkResult.rows.length > 0) {
-      // Désactiver l'ancienne assignation
+      const oldAssignment = checkResult.rows[0]
+      console.log(`📊 Transfert de carte détecté: ${oldAssignment.numero_carte} de ${oldAssignment.employe_nom} vers ${employe_nom}`)
+      
+      // Désactiver l'ancienne assignation avec date de fin
       const deactivateQuery = `
         UPDATE carburant_assignations 
-        SET statut = 'inactive', date_fin = NOW()
+        SET statut = 'inactive', 
+            date_fin = NOW(),
+            commentaires = CASE 
+              WHEN commentaires IS NULL OR commentaires = '' 
+              THEN 'Transfert vers ' || $2 || ' le ' || TO_CHAR(NOW(), 'DD/MM/YYYY à HH24:MI')
+              ELSE commentaires || ' | Transfert vers ' || $2 || ' le ' || TO_CHAR(NOW(), 'DD/MM/YYYY à HH24:MI')
+            END,
+            updated_at = NOW()
         WHERE employe_id = $1 AND statut = 'active'
       `
-      const pool2 = getPool()
-      await pool2.query(deactivateQuery, [employe_id])
-      console.log(`📊 Ancienne carte désactivée pour l'employé ${employe_id}`)
+      await pool.query(deactivateQuery, [employe_id, employe_nom])
+      console.log(`📊 Ancienne carte ${oldAssignment.numero_carte} désactivée pour l'employé ${employe_id}`)
       
       // Retirer l'assignation de la table carburant_consommation pour l'ancienne carte
-      const oldCardNumber = checkResult.rows[0].numero_carte
       const removeOldAssignmentQuery = `
         UPDATE carburant_consommation 
         SET employe_assigné = NULL
         WHERE numero_carte = $1
       `
-      await pool2.query(removeOldAssignmentQuery, [oldCardNumber])
-      console.log(`📊 Ancienne assignation retirée de carburant_consommation pour carte ${oldCardNumber}`)
+      await pool.query(removeOldAssignmentQuery, [oldAssignment.numero_carte])
+      console.log(`📊 Ancienne assignation retirée de carburant_consommation pour carte ${oldAssignment.numero_carte}`)
     }
     
-    // Créer la nouvelle assignation
+    // Vérifier si la carte est déjà assignée à un autre employé
+    const cardCheckQuery = `
+      SELECT id, employe_id, employe_nom, statut
+      FROM carburant_assignations 
+      WHERE numero_carte = $1 AND statut = 'active'
+    `
+    
+    const cardCheckResult = await pool.query(cardCheckQuery, [numero_carte])
+    
+    if (cardCheckResult.rows.length > 0) {
+      const currentAssignment = cardCheckResult.rows[0]
+      console.log(`📊 Carte ${numero_carte} actuellement assignée à ${currentAssignment.employe_nom}, transfert en cours...`)
+      
+      // Désactiver l'assignation actuelle de la carte
+      const deactivateCardQuery = `
+        UPDATE carburant_assignations 
+        SET statut = 'inactive', 
+            date_fin = NOW(),
+            commentaires = CASE 
+              WHEN commentaires IS NULL OR commentaires = '' 
+              THEN 'Transfert de ' || $2 || ' vers ' || $3 || ' le ' || TO_CHAR(NOW(), 'DD/MM/YYYY à HH24:MI')
+              ELSE commentaires || ' | Transfert de ' || $2 || ' vers ' || $3 || ' le ' || TO_CHAR(NOW(), 'DD/MM/YYYY à HH24:MI')
+            END,
+            updated_at = NOW()
+        WHERE numero_carte = $1 AND statut = 'active'
+      `
+      await pool.query(deactivateCardQuery, [numero_carte, currentAssignment.employe_nom, employe_nom])
+      console.log(`📊 Carte ${numero_carte} désactivée pour ${currentAssignment.employe_nom}`)
+    }
+    
+    // Créer la nouvelle assignation avec commentaires de transfert
+    const transferComment = cardCheckResult.rows.length > 0 
+      ? `Assignation le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}${commentaires ? ' | ' + commentaires : ''}`
+      : `Nouvelle assignation le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}${commentaires ? ' | ' + commentaires : ''}`
+    
     const insertQuery = `
       INSERT INTO carburant_assignations (
         numero_carte, 
@@ -113,19 +156,20 @@ export async function POST(request: NextRequest) {
         employe_nom, 
         date_assignation, 
         statut,
+        commentaires,
         created_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
       RETURNING *
     `
     
     const startTime = Date.now()
-    const pool3 = getPool()
-    const result = await pool3.query(insertQuery, [
+    const result = await pool.query(insertQuery, [
       numero_carte,
       employe_id,
       employe_nom,
       date_assignation || new Date().toISOString().split('T')[0],
-      statut || 'active'
+      statut || 'active',
+      transferComment
     ])
     const duration = Date.now() - startTime
     
@@ -138,14 +182,18 @@ export async function POST(request: NextRequest) {
       WHERE numero_carte = $2
     `
     
-    const pool4 = getPool()
-    await pool4.query(updateConsumptionQuery, [employe_id, numero_carte])
+    await pool.query(updateConsumptionQuery, [employe_id, numero_carte])
     console.log(`📊 Mise à jour carburant_consommation: carte ${numero_carte} assignée à employé ${employe_id}`)
     
     return NextResponse.json({
       success: true,
       assignation: result.rows[0],
-      message: `Carte ${numero_carte} assignée avec succès à ${employe_nom}`
+      message: `Carte ${numero_carte} assignée avec succès à ${employe_nom}`,
+      transfer_info: cardCheckResult.rows.length > 0 ? {
+        previous_employee: cardCheckResult.rows[0].employe_nom,
+        transfer_date: new Date().toISOString(),
+        transfer_type: 'employee_to_employee'
+      } : null
     })
   } catch (error) {
     console.error('❌ Erreur lors de l\'assignation de la carte:', error)

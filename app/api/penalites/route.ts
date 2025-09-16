@@ -52,24 +52,25 @@ export async function PATCH(request: NextRequest) {
         LOWER(e.prenom) = LOWER(i.prenom_technicien) AND 
         LOWER(e.nom) = LOWER(i.nom_technicien)
       )
-      WHERE i.num_inter = $1
-    `, [num_inter])
+      WHERE i.num_inter LIKE $1
+      ORDER BY i.num_inter
+      LIMIT 10
+    `, [`${num_inter}%`])
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Intervention non trouvée" }, { status: 404 })
+      return NextResponse.json({ error: "Aucune intervention trouvée" }, { status: 404 })
     }
 
-    const intervention = result.rows[0]
+    // Retourner toutes les interventions trouvées
+    const interventions = []
+    for (const intervention of result.rows) {
+      // Vérifier si une pénalité existe déjà pour cette intervention
+      const existingPenalty = await query(
+        'SELECT id FROM penalites WHERE intervention_concernee = $1 AND type_penalite = $2',
+        [intervention.id, 'dossier_non_cloture']
+      )
 
-    // Vérifier si une pénalité existe déjà pour cette intervention
-    const existingPenalty = await query(
-      'SELECT id FROM penalites WHERE intervention_concernee = $1 AND type_penalite = $2',
-      [intervention.id, 'dossier_non_cloture']
-    )
-
-    return NextResponse.json({
-      success: true,
-      intervention: {
+      interventions.push({
         id: intervention.id,
         num_inter: intervention.num_inter,
         client: intervention.client,
@@ -83,7 +84,13 @@ export async function PATCH(request: NextRequest) {
         employe_prenom: intervention.prenom,
         employe_matricule: intervention.matricule,
         has_existing_penalty: existingPenalty.rows.length > 0
-      }
+      })
+    }
+
+    return NextResponse.json({
+      success: true,
+      interventions: interventions,
+      count: interventions.length
     })
   } catch (error) {
     console.error("Erreur API recherche intervention:", error)

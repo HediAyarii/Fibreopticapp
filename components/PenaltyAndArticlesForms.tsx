@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -39,6 +39,10 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
   })
 
   const [selectedIntervention, setSelectedIntervention] = useState<any>(null)
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -77,7 +81,69 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
       num_inter: intervention.num_inter,
       employe_id: intervention.employe_id || ''
     }))
+    setShowDropdown(false)
   }
+
+  const searchInterventions = async (searchTerm: string) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setSearchResults([])
+      setShowDropdown(false)
+      return
+    }
+
+    setIsSearching(true)
+    try {
+      const response = await fetch(`/api/interventions/search?q=${encodeURIComponent(searchTerm)}&limit=10`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setSearchResults(data.interventions)
+        setShowDropdown(data.interventions.length > 0)
+      } else {
+        setSearchResults([])
+        setShowDropdown(false)
+      }
+    } catch (error) {
+      console.error('Erreur lors de la recherche d\'interventions:', error)
+      setSearchResults([])
+      setShowDropdown(false)
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  const handleInterventionInputChange = (value: string) => {
+    setFormData(prev => ({ ...prev, num_inter: value }))
+    
+    // Si on efface le champ, réinitialiser la sélection
+    if (!value) {
+      setSelectedIntervention(null)
+      setSearchResults([])
+      setShowDropdown(false)
+      return
+    }
+
+    // Rechercher les interventions avec un délai pour éviter trop de requêtes
+    const timeoutId = setTimeout(() => {
+      searchInterventions(value)
+    }, 300)
+
+    return () => clearTimeout(timeoutId)
+  }
+
+  // Fermer la liste déroulante quand on clique ailleurs
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
 
   return (
     <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -93,14 +159,16 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="numero_penalite">Numéro de Pénalité *</Label>
+            <Label htmlFor="numero_penalite">Numéro de Pénalité</Label>
             <Input
               id="numero_penalite"
               value={formData.numero_penalite}
               onChange={(e) => handleChange('numero_penalite', e.target.value)}
-              placeholder="Ex: PEN-2024-001"
-              required
+              placeholder="Laissé vide pour génération automatique"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Laissez vide pour génération automatique (PEN-YYYY-NNNN)
+            </p>
           </div>
           <div>
             <Label>Type de Pénalité</Label>
@@ -117,23 +185,76 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
 
         <div>
           <Label htmlFor="num_inter">Recherche par Numéro d'Intervention</Label>
-          <div className="space-y-2">
-            <Input
-              value={formData.num_inter}
-              onChange={(e) => handleChange('num_inter', e.target.value)}
-              placeholder="Entrez le numéro d'intervention..."
-            />
-            {selectedIntervention && (
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <div className="text-sm font-medium text-blue-800">
-                  Intervention: {selectedIntervention.num_inter}
+          <div className="space-y-2 relative" ref={dropdownRef}>
+            <div className="relative">
+              <Input
+                value={formData.num_inter}
+                onChange={(e) => handleInterventionInputChange(e.target.value)}
+                placeholder="Entrez le numéro d'intervention..."
+                className="pr-8"
+              />
+              {isSearching && (
+                <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                 </div>
-                <div className="text-xs text-blue-600">
-                  Client: {selectedIntervention.client} | Technicien: {selectedIntervention.prenom_technicien} {selectedIntervention.nom_technicien}
+              )}
+            </div>
+            
+            {/* Liste déroulante des résultats */}
+            {showDropdown && searchResults.length > 0 && (
+              <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                {searchResults.map((intervention) => (
+                  <div
+                    key={intervention.id}
+                    onClick={() => handleInterventionSelect(intervention)}
+                    className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-medium text-sm text-gray-900">
+                          {intervention.num_inter}
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Client: {intervention.client}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Technicien: {intervention.prenom_technicien} {intervention.nom_technicien}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-400 text-right">
+                        <div>{new Date(intervention.date_rdv).toLocaleDateString('fr-FR')}</div>
+                        <div className="capitalize">{intervention.statut}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Message si aucune intervention trouvée */}
+            {showDropdown && searchResults.length === 0 && !isSearching && formData.num_inter.length >= 2 && (
+              <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg p-3">
+                <div className="text-sm text-gray-500 text-center">
+                  Aucune intervention trouvée pour "{formData.num_inter}"
                 </div>
               </div>
             )}
           </div>
+          
+          {/* Intervention sélectionnée */}
+          {selectedIntervention && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md mt-2">
+              <div className="text-sm font-medium text-blue-800">
+                Intervention sélectionnée: {selectedIntervention.num_inter}
+              </div>
+              <div className="text-xs text-blue-600">
+                Client: {selectedIntervention.client} | Technicien: {selectedIntervention.prenom_technicien} {selectedIntervention.nom_technicien}
+              </div>
+              <div className="text-xs text-blue-500">
+                Date RDV: {new Date(selectedIntervention.date_rdv).toLocaleDateString('fr-FR')} | Statut: {selectedIntervention.statut}
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

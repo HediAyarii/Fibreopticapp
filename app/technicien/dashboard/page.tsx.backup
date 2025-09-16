@@ -276,14 +276,14 @@ export default function TechnicienDashboard() {
     intervention.num_inter.toLowerCase().includes(searchTerm.toLowerCase()) ||
     intervention.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
     intervention.type_intervention.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  )
 
   const paginatedInterventions = filteredInterventions.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
-  );
+  )
 
-  const totalPages = Math.ceil(filteredInterventions.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredInterventions.length / itemsPerPage)
 
   if (loading) {
     return (
@@ -365,59 +365,58 @@ export default function TechnicienDashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <nav className="flex space-x-8">
-              <button
-                onClick={() => setActiveTab('overview')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'overview'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <Home className="w-4 h-4 inline mr-2" />
-                Vue d'ensemble
-              </button>
-              <button
-                onClick={() => setActiveTab('interventions')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'interventions'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <Calendar className="w-4 h-4 inline mr-2" />
-                Mes Interventions
-              </button>
-              <button
-                onClick={() => setActiveTab('reclamations')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'reclamations'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <FileText className="w-4 h-4 inline mr-2" />
-                Réclamations
-              </button>
-              <button
-                onClick={() => setActiveTab('penalites')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'penalites'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <AlertCircle className="w-4 h-4 inline mr-2" />
-                Pénalités
-              </button>
-            </nav>
-            
-            {/* Indicateur de statut temps réel */}
-            <div className="flex items-center space-x-2 text-xs">
-              <div className={`w-2 h-2 rounded-full ${isUpdating ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
-              <span className="text-gray-500">
-                {isUpdating ? 'Mise à jour...' : 'Temps réel'}
-              </span>
-            </div>
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Home className="w-4 h-4 inline mr-2" />
+              Vue d'ensemble
+            </button>
+            <button
+              onClick={() => setActiveTab('interventions')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'interventions'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Calendar className="w-4 h-4 inline mr-2" />
+              Mes Interventions
+            </button>
+            <button
+              onClick={() => setActiveTab('reclamations')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'reclamations'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <FileText className="w-4 h-4 inline mr-2" />
+              Réclamations
+            </button>
+            <button
+              onClick={() => setActiveTab('penalites')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'penalites'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <AlertCircle className="w-4 h-4 inline mr-2" />
+              Pénalités
+            </button>
+          </nav>
+          
+          {/* Indicateur de statut temps réel */}
+          <div className="flex items-center space-x-2 text-xs">
+            <div className={`w-2 h-2 rounded-full ${isUpdating ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
+            <span className="text-gray-500">
+              {isUpdating ? 'Mise à jour...' : 'Temps réel'}
+            </span>
           </div>
         </div>
       </div>

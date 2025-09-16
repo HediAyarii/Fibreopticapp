@@ -41,6 +41,7 @@ import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
 import { ReclamationForm } from "@/components/ReclamationForm"
 import { FraisErtForm, FraisAxecomForm } from "@/components/FraisForms"
 import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesForms"
+import { PricingTable } from "@/components/PricingTable"
 import {
   Building2,
   Users,
@@ -71,6 +72,8 @@ import {
   ChevronRight,
   Receipt,
   Building,
+  X,
+  Minus,
 } from "lucide-react"
 
 // User authentication data
@@ -211,6 +214,11 @@ export default function EmployeeTracker() {
   const [showCardAssignmentModal, setShowCardAssignmentModal] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
   const [availableCards, setAvailableCards] = useState<any[]>([])
+  const [selectedCardNumber, setSelectedCardNumber] = useState('')
+  const [assignmentStartDate, setAssignmentStartDate] = useState('')
+  const [assignmentComments, setAssignmentComments] = useState('')
+  const [showUnassignModal, setShowUnassignModal] = useState(false)
+  const [unassignComments, setUnassignComments] = useState('')
   const [showCardHistoryModal, setShowCardHistoryModal] = useState(false)
   const [selectedEmployeeHistory, setSelectedEmployeeHistory] = useState<any>(null)
   const [cardHistory, setCardHistory] = useState<any[]>([])
@@ -1443,8 +1451,9 @@ export default function EmployeeTracker() {
           numero_carte: numeroCarte,
           employe_id: selectedEmployee.id,
           employe_nom: `${selectedEmployee.prenom} ${selectedEmployee.nom}`,
-          date_assignation: new Date().toISOString().split('T')[0],
-          statut: 'active'
+          date_assignation: assignmentStartDate || new Date().toISOString().split('T')[0],
+          statut: 'active',
+          commentaires: assignmentComments
         })
       })
 
@@ -1456,9 +1465,12 @@ export default function EmployeeTracker() {
       const result = await response.json()
       alert(`Carte ${numeroCarte} assignée à ${selectedEmployee.prenom} ${selectedEmployee.nom}`)
       
-      // Fermer le modal d'abord
+      // Fermer le modal et réinitialiser les champs
       setShowCardAssignmentModal(false)
       setSelectedEmployee(null)
+      setSelectedCardNumber('')
+      setAssignmentStartDate('')
+      setAssignmentComments('')
       
       // Recharger les données avec gestion d'erreur et délai pour éviter les conflits
       setTimeout(async () => {
@@ -1475,6 +1487,55 @@ export default function EmployeeTracker() {
     } catch (error) {
       console.error('Erreur assignation carte:', error)
       alert(`Erreur lors de l'assignation de la carte: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
+    }
+  }
+
+  // Function to unassign card from employee
+  const unassignCardFromEmployee = async () => {
+    try {
+      if (!selectedEmployee) {
+        alert("Aucun employé sélectionné")
+        return
+      }
+
+      const response = await fetch('/api/carburant-unassign', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employe_id: selectedEmployee.id,
+          employe_nom: `${selectedEmployee.prenom} ${selectedEmployee.nom}`,
+          commentaires: unassignComments
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Erreur lors de la désassignation')
+      }
+
+      const result = await response.json()
+      alert(`Carte désassignée avec succès de ${selectedEmployee.prenom} ${selectedEmployee.nom}`)
+      
+      // Fermer le modal et réinitialiser les champs
+      setShowUnassignModal(false)
+      setSelectedEmployee(null)
+      setUnassignComments('')
+      
+      // Recharger les données
+      setTimeout(async () => {
+        try {
+          await loadAllCRUDData()
+          await loadDataFromDatabase()
+        } catch (reloadError) {
+          console.error('Erreur lors du rechargement des données:', reloadError)
+          window.location.reload()
+        }
+      }, 500)
+    } catch (error) {
+      console.error('Erreur désassignation carte:', error)
+      alert(`Erreur lors de la désassignation de la carte: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
     }
   }
 
@@ -2037,6 +2098,18 @@ export default function EmployeeTracker() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => {
+                                    setSelectedEmployee(employee)
+                                    setShowUnassignModal(true)
+                                  }}
+                                  className="glass-card border border-white/20 hover:bg-red-500/20"
+                                  title="Désassigner la carte carburant"
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
                                     setEditingItem(employee)
                                     setShowEmployeeModal(true)
                                   }}
@@ -2085,6 +2158,9 @@ export default function EmployeeTracker() {
                   Nouveau Frais
                 </Button>
               </div>
+              
+              {/* Tableau des Tarifs ERT */}
+              <PricingTable company="ERT OUEST" />
               
               {/* Frais ERT Management Section */}
               <div className="space-y-6">
@@ -2191,6 +2267,9 @@ export default function EmployeeTracker() {
                   Nouveau Frais
                 </Button>
               </div>
+              
+              {/* Tableau des Tarifs Axecom */}
+              <PricingTable company="AXECOM" />
               
               {/* Frais Axecom Management Section */}
               <div className="space-y-6">
@@ -4261,19 +4340,21 @@ export default function EmployeeTracker() {
 
       {/* Card Assignment Modal */}
       <Dialog open={showCardAssignmentModal} onOpenChange={setShowCardAssignmentModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-md">
+        <DialogContent className="glass-card border border-white/20 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <CreditCard className="w-5 h-5" />
               Assigner une carte carburant
             </DialogTitle>
             <DialogDescription>
               Assignez une carte carburant à {selectedEmployee?.prenom} {selectedEmployee?.nom}
             </DialogDescription>
           </DialogHeader>
-                    <div className="space-y-4">
+          
+          <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium">Sélectionner une carte</Label>
-              <Select onValueChange={(value) => assignCardToEmployee(value)}>
+              <Select onValueChange={(value) => setSelectedCardNumber(value)}>
                 <SelectTrigger className="glass-card border border-white/20">
                   <SelectValue placeholder="Choisir une carte carburant" />
                 </SelectTrigger>
@@ -4285,14 +4366,133 @@ export default function EmployeeTracker() {
                   ))}
                 </SelectContent>
               </Select>
-                        </div>
-                          </div>
-          <DialogFooter>
+            </div>
+            
+            <div>
+              <Label className="text-sm font-medium">Date de début d'assignation</Label>
+              <Input
+                type="date"
+                value={assignmentStartDate}
+                onChange={(e) => setAssignmentStartDate(e.target.value)}
+                className="glass-card border border-white/20"
+                min={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            
+            <div>
+              <Label className="text-sm font-medium">Commentaires (optionnel)</Label>
+              <Textarea
+                placeholder="Ajoutez des commentaires sur cette assignation..."
+                value={assignmentComments}
+                onChange={(e) => setAssignmentComments(e.target.value)}
+                className="glass-card border border-white/20"
+                rows={3}
+              />
+            </div>
+            
+            {selectedCardNumber && (
+              <div className="p-3 glass-card border border-white/20 rounded-lg">
+                <div className="text-sm text-gray-600 mb-2">Résumé de l'assignation :</div>
+                <div className="space-y-1 text-sm">
+                  <div><strong>Employé :</strong> {selectedEmployee?.prenom} {selectedEmployee?.nom}</div>
+                  <div><strong>Carte :</strong> {selectedCardNumber}</div>
+                  <div><strong>Date de début :</strong> {assignmentStartDate || 'Aujourd\'hui'}</div>
+                  <div><strong>Statut :</strong> Active</div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="flex gap-2">
             <Button
-              onClick={() => setShowCardAssignmentModal(false)}
-              className="glass-card border border-white/20 hover:bg-white/10 text-gray-900"
+              variant="outline"
+              onClick={() => {
+                setShowCardAssignmentModal(false)
+                setSelectedCardNumber('')
+                setAssignmentStartDate('')
+                setAssignmentComments('')
+              }}
+              className="glass-card border border-white/20 hover:bg-white/10"
             >
               Annuler
+            </Button>
+            <Button
+              onClick={() => assignCardToEmployee(selectedCardNumber)}
+              disabled={!selectedCardNumber}
+              className="glass-card border border-white/20 hover:bg-white/10"
+            >
+              <CreditCard className="w-4 h-4 mr-2" />
+              Assigner la carte
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Card Unassign Modal */}
+      <Dialog open={showUnassignModal} onOpenChange={setShowUnassignModal}>
+        <DialogContent className="glass-card border border-white/20 max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <X className="w-5 h-5 text-red-600" />
+              Désassigner la carte carburant
+            </DialogTitle>
+            <DialogDescription>
+              Retirez la carte carburant de {selectedEmployee?.prenom} {selectedEmployee?.nom}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="p-4 glass-card border border-red-200 rounded-lg bg-red-50">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <span className="font-semibold text-red-800">Attention</span>
+              </div>
+              <div className="text-sm text-red-700">
+                Cette action va retirer la carte carburant de cet employé. 
+                L'employé n'aura plus accès à aucune carte carburant après cette action.
+              </div>
+            </div>
+            
+            <div>
+              <Label className="text-sm font-medium">Raison de la désassignation (optionnel)</Label>
+              <Textarea
+                placeholder="Ex: Congé, changement de poste, fin de mission..."
+                value={unassignComments}
+                onChange={(e) => setUnassignComments(e.target.value)}
+                className="glass-card border border-white/20"
+                rows={3}
+              />
+            </div>
+            
+            <div className="p-3 glass-card border border-white/20 rounded-lg">
+              <div className="text-sm text-gray-600 mb-2">Résumé de l'action :</div>
+              <div className="space-y-1 text-sm">
+                <div><strong>Employé :</strong> {selectedEmployee?.prenom} {selectedEmployee?.nom}</div>
+                <div><strong>Action :</strong> Désassignation de la carte carburant</div>
+                <div><strong>Date :</strong> {new Date().toLocaleDateString('fr-FR')}</div>
+                <div><strong>Statut après :</strong> Aucune carte assignée</div>
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUnassignModal(false)
+                setSelectedEmployee(null)
+                setUnassignComments('')
+              }}
+              className="glass-card border border-white/20 hover:bg-white/10"
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={unassignCardFromEmployee}
+              className="glass-card border border-red-200 hover:bg-red-500/20 text-red-700"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Désassigner la carte
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4397,6 +4597,141 @@ export default function EmployeeTracker() {
         intervention={editingIntervention}
         onSave={handleSaveArticles}
       />
-     </div>
-   )
- }
+
+      {/* Card History Modal */}
+      <Dialog open={showCardHistoryModal} onOpenChange={setShowCardHistoryModal}>
+        <DialogContent className="glass-card border border-white/20 max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5" />
+              Historique des Cartes Carburant
+            </DialogTitle>
+            <DialogDescription>
+              Historique complet des mouvements de cartes pour {selectedEmployeeHistory?.prenom} {selectedEmployeeHistory?.nom}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {cardHistory.length > 0 ? (
+              <>
+                {/* Résumé de l'employé */}
+                {cardHistory.map((empData) => (
+                  <Card key={empData.employe_id} className="glass-card border border-white/20">
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <User className="w-5 h-5" />
+                          {empData.employe_prenom} {empData.employe_nom}
+                        </span>
+                        <Badge variant="outline" className="glass-card border border-white/20">
+                          {empData.matricule}
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div className="text-center p-4 glass-card border border-white/20 rounded-lg">
+                          <div className="text-2xl font-bold text-blue-600">{empData.total_consomme_toutes_cartes.toFixed(2)}€</div>
+                          <div className="text-sm text-gray-600">Total Consommé</div>
+                        </div>
+                        <div className="text-center p-4 glass-card border border-white/20 rounded-lg">
+                          <div className="text-2xl font-bold text-green-600">{empData.nombre_cartes_utilisees}</div>
+                          <div className="text-sm text-gray-600">Cartes Utilisées</div>
+                        </div>
+                        <div className="text-center p-4 glass-card border border-white/20 rounded-lg">
+                          <div className="text-2xl font-bold text-purple-600">{empData.nombre_periodes_assignation}</div>
+                          <div className="text-sm text-gray-600">Périodes d'Assignation</div>
+                        </div>
+                      </div>
+
+                      {/* Historique détaillé des cartes */}
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-semibold flex items-center gap-2">
+                          <CreditCard className="w-4 h-4" />
+                          Historique Détaillé des Cartes
+                        </h4>
+                        
+                        {empData.historique_cartes.map((carte: any, index: number) => (
+                          <Card key={index} className="glass-card border border-white/20">
+                            <CardContent className="p-4">
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                  <div className="text-sm text-gray-600">Numéro de Carte</div>
+                                  <div className="font-semibold">{carte.numero_carte}</div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-gray-600">Période d'Assignation</div>
+                                  <div className="font-semibold">
+                                    {new Date(carte.date_assignation).toLocaleDateString('fr-FR')} - 
+                                    {carte.date_fin ? new Date(carte.date_fin).toLocaleDateString('fr-FR') : 'En cours'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-gray-600">Consommation Période</div>
+                                  <div className="font-semibold text-blue-600">{carte.consommation_periode.toFixed(2)}€</div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-gray-600">Transactions</div>
+                                  <div className="font-semibold">{carte.nombre_transactions_periode}</div>
+                                </div>
+                              </div>
+                              
+                              <div className="mt-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <Badge 
+                                    variant={carte.statut === 'active' ? 'default' : 'secondary'}
+                                    className="glass-card border border-white/20"
+                                  >
+                                    {carte.statut}
+                                  </Badge>
+                                  <div className="text-xs text-gray-500">
+                                    Assigné le: {new Date(carte.mouvement_date).toLocaleString('fr-FR')}
+                                  </div>
+                                </div>
+                                
+                                {carte.transfer_comments && (
+                                  <div className="p-2 glass-card border border-white/20 rounded text-xs">
+                                    <div className="font-medium text-blue-600 mb-1">📋 Historique des transferts:</div>
+                                    <div className="text-gray-600">{carte.transfer_comments}</div>
+                                  </div>
+                                )}
+                                
+                                {carte.last_update && carte.last_update !== carte.mouvement_date && (
+                                  <div className="text-xs text-gray-400">
+                                    Dernière mise à jour: {new Date(carte.last_update).toLocaleString('fr-FR')}
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </>
+            ) : (
+              <div className="text-center py-12">
+                <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun historique trouvé</h3>
+                <p className="text-gray-500">
+                  {selectedEmployeeHistory?.prenom} {selectedEmployeeHistory?.nom} n'a pas encore d'historique de cartes carburant.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowCardHistoryModal(false)}
+              className="glass-card border border-white/20 hover:bg-white/10"
+            >
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

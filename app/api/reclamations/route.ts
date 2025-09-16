@@ -33,33 +33,44 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const data = await request.json()
+    
+    console.log("📝 Received reclamation data:", {
+      keys: Object.keys(data),
+      values: Object.entries(data).reduce((acc, [key, value]) => {
+        acc[key] = typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : value
+        return acc
+      }, {} as any)
+    })
+    
+    // Mapper les noms de champs du formulaire vers ceux de l'API
     const {
-      numero_reclamation,
-      type_reclamation,
-      priorite,
-      statut,
-      client_id,
-      nom_client,
-      telephone_client,
-      email_client,
-      adresse_client,
-      intervention_id,
-      employe_id,
-      technicien_responsable,
-      description_probleme,
-      description_solution,
-      date_resolution,
-      temps_resolution,
-      satisfaction_client,
-      commentaires_client,
-      commentaires_internes,
-      cout_reclamation,
-      indemnisation,
-      materiel_defectueux,
-      garantie_applicable,
-      escalade_requise,
-      manager_notifie
-    } = await request.json()
+      numero_reclamation = data.numero_reclamation,
+      type_reclamation = data.type_reclamation,
+      priorite = data.priorite,
+      statut = data.statut,
+      client_id = data.client_id,
+      nom_client = data.nom_client || data.client, // Support both field names
+      telephone_client = data.telephone_client,
+      email_client = data.email_client,
+      adresse_client = data.adresse_client,
+      intervention_id = data.intervention_id || data.intervention_concernee, // Support both field names
+      employe_id = data.employe_id || data.employe_responsable, // Support both field names
+      technicien_responsable = data.technicien_responsable,
+      description_probleme = data.description_probleme || data.description, // Support both field names
+      description_solution = data.description_solution || data.resolution, // Support both field names
+      date_resolution = data.date_resolution,
+      temps_resolution = data.temps_resolution,
+      satisfaction_client = data.satisfaction_client,
+      commentaires_client = data.commentaires_client,
+      commentaires_internes = data.commentaires_internes || data.commentaires, // Support both field names
+      cout_reclamation = data.cout_reclamation,
+      indemnisation = data.indemnisation,
+      materiel_defectueux = data.materiel_defectueux,
+      garantie_applicable = data.garantie_applicable,
+      escalade_requise = data.escalade_requise,
+      manager_notifie = data.manager_notifie
+    } = data
 
     // Générer un numéro de réclamation si non fourni
     let numeroReclamation = numero_reclamation
@@ -78,6 +89,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Une réclamation avec ce numéro existe déjà" }, { status: 400 })
     }
 
+    // Validation des champs requis
+    if (!description_probleme || description_probleme.trim() === '') {
+      console.error("❌ Validation failed: description_probleme is empty or null")
+      return NextResponse.json({ error: "La description du problème est requise" }, { status: 400 })
+    }
+
+    if (!nom_client || nom_client.trim() === '') {
+      console.error("❌ Validation failed: nom_client is empty or null")
+      return NextResponse.json({ error: "Le nom du client est requis" }, { status: 400 })
+    }
+
+    if (!type_reclamation || type_reclamation.trim() === '') {
+      console.error("❌ Validation failed: type_reclamation is empty or null")
+      return NextResponse.json({ error: "Le type de réclamation est requis" }, { status: 400 })
+    }
+
+    console.log("✅ Validation passed. Creating reclamation with data:", {
+      numero_reclamation,
+      nom_client,
+      type_reclamation,
+      description_probleme: description_probleme.substring(0, 50) + "...",
+      employe_id,
+      intervention_id
+    })
+
     // Nettoyer les données : convertir les chaînes vides en null pour les champs entiers et dates
     const cleanedData = {
       client_id: client_id === '' ? null : client_id,
@@ -91,7 +127,8 @@ export async function POST(request: NextRequest) {
       materiel_defectueux: materiel_defectueux === '' ? null : materiel_defectueux,
       garantie_applicable: garantie_applicable === '' ? false : (garantie_applicable || false),
       escalade_requise: escalade_requise === '' ? false : (escalade_requise || false),
-      manager_notifie: manager_notifie === '' ? false : (manager_notifie || false)
+      manager_notifie: manager_notifie === '' ? false : (manager_notifie || false),
+      description_probleme: description_probleme.trim() // Assurer que la description n'est pas vide
     }
 
     const insertQuery = `
@@ -111,7 +148,7 @@ export async function POST(request: NextRequest) {
     const values = [
       numeroReclamation, type_reclamation, priorite || 'normale', statut || 'ouverte',
       cleanedData.client_id, nom_client, telephone_client, email_client, adresse_client,
-      cleanedData.intervention_id, cleanedData.employe_id, technicien_responsable, description_probleme,
+      cleanedData.intervention_id, cleanedData.employe_id, technicien_responsable, cleanedData.description_probleme,
       description_solution, cleanedData.date_resolution, cleanedData.temps_resolution, cleanedData.satisfaction_client,
       commentaires_client, commentaires_internes, cleanedData.cout_reclamation, cleanedData.indemnisation,
       cleanedData.materiel_defectueux, cleanedData.garantie_applicable, cleanedData.escalade_requise,
