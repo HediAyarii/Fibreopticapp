@@ -39,9 +39,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { MaterialForm, EmployeeForm } from "@/components/Forms"
 import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
 import { ReclamationForm } from "@/components/ReclamationForm"
-import { FraisErtForm, FraisAxecomForm } from "@/components/FraisForms"
 import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesForms"
 import { PricingTable } from "@/components/PricingTable"
+import { TarifsManager } from "@/components/TarifsManager"
+import { RevenueCalculation } from "@/components/RevenueCalculation"
 import {
   Building2,
   Users,
@@ -190,8 +191,6 @@ export default function EmployeeTracker() {
   const [showClaimModal, setShowClaimModal] = useState(false)
   const [showAffectationModal, setShowAffectationModal] = useState(false)
   const [showMultiAffectationModal, setShowMultiAffectationModal] = useState(false)
-  const [showFraisErtModal, setShowFraisErtModal] = useState(false)
-  const [showFraisAxecomModal, setShowFraisAxecomModal] = useState(false)
   const [editingItem, setEditingItem] = useState<any>(null)
   
   // Employee details and assignment modals
@@ -236,10 +235,10 @@ export default function EmployeeTracker() {
   const [showEmployeeFuelModal, setShowEmployeeFuelModal] = useState(false)
   const [selectedEmployeeFuel, setSelectedEmployeeFuel] = useState<any>(null)
 
-  // Frais d'entreprise data
-  const [fraisErt, setFraisErt] = useState<any[]>([])
-  const [fraisAxecom, setFraisAxecom] = useState<any[]>([])
-  const [bordereauPrixErt, setBordereauPrixErt] = useState<any[]>([])
+  // Tarifs data
+  const [tarifs, setTarifs] = useState<any[]>([])
+  const [showTarifsModal, setShowTarifsModal] = useState(false)
+  const [editingTarif, setEditingTarif] = useState<any>(null)
 
   // Assignation data
   const [assignationData, setAssignationData] = useState({
@@ -259,10 +258,8 @@ export default function EmployeeTracker() {
       loadAvailableCards()
       loadFuelGroupedData()
       loadFuelEmployeesData()
-      // Charger les données des frais d'entreprise
-      loadFraisErtFromDatabase().then(setFraisErt)
-      loadFraisAxecomFromDatabase().then(setFraisAxecom)
-      loadBordereauPrixErtFromDatabase().then(setBordereauPrixErt)
+      // Charger les données des tarifs
+      loadTarifsFromDatabase()
     }
   }, [isLoggedIn])
 
@@ -761,42 +758,19 @@ export default function EmployeeTracker() {
     }
   }
 
-  // Fonctions de chargement des frais d'entreprise
-  const loadFraisErtFromDatabase = async () => {
+  // Fonction de chargement des tarifs
+  const loadTarifsFromDatabase = async () => {
     try {
-      const response = await fetch("/api/frais-ert")
-      if (!response.ok) throw new Error("Erreur lors du chargement des frais ERT")
+      const response = await fetch("/api/company-pricing")
+      if (!response.ok) throw new Error("Erreur lors du chargement des tarifs")
       const data = await response.json()
-      return data.frais_ert || []
+      setTarifs(data.success ? data.pricing : [])
     } catch (error) {
-      console.error("[v0] Erreur chargement frais ERT:", error)
-      return []
+      console.error("[v0] Erreur chargement tarifs:", error)
+      setTarifs([])
     }
   }
 
-  const loadFraisAxecomFromDatabase = async () => {
-    try {
-      const response = await fetch("/api/frais-axecom")
-      if (!response.ok) throw new Error("Erreur lors du chargement des frais Axecom")
-      const data = await response.json()
-      return data.frais_axecom || []
-    } catch (error) {
-      console.error("[v0] Erreur chargement frais Axecom:", error)
-      return []
-    }
-  }
-
-  const loadBordereauPrixErtFromDatabase = async () => {
-    try {
-      const response = await fetch("/api/bordereau-prix-ert")
-      if (!response.ok) throw new Error("Erreur lors du chargement du bordereau de prix ERT")
-      const data = await response.json()
-      return data.bordereau_prix_ert || []
-    } catch (error) {
-      console.error("[v0] Erreur chargement bordereau prix ERT:", error)
-      return []
-    }
-  }
 
   // Generic delete function for all entities
   const handleDelete = async (entityType: string, id: number) => {
@@ -1183,22 +1157,13 @@ export default function EmployeeTracker() {
     }
   }
 
-  // CRUD Functions for Frais ERT
-  const saveFraisErt = async (fraisData: any) => {
+  // Fonctions de gestion des tarifs
+  const handleSaveTarif = async (tarifData: any) => {
     try {
-      const url = editingItem ? "/api/frais-ert" : "/api/frais-ert"
-      const method = editingItem ? "PUT" : "POST"
-      
-      const body = editingItem 
-        ? { id: editingItem.id, ...fraisData }
-        : fraisData
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
+      const response = await fetch("/api/company-pricing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tarifData)
       })
 
       if (!response.ok) {
@@ -1206,52 +1171,51 @@ export default function EmployeeTracker() {
         throw new Error(error.error || "Erreur lors de la sauvegarde")
       }
 
-      // Recharger les données des frais ERT
-      const fraisErtData = await loadFraisErtFromDatabase()
-      setFraisErt(fraisErtData)
-      
-      setShowFraisErtModal(false)
-      setEditingItem(null)
-      alert(editingItem ? "Frais ERT modifié avec succès" : "Frais ERT ajouté avec succès")
+      await loadTarifsFromDatabase()
+      alert("Tarif ajouté avec succès")
     } catch (error) {
-      console.error("Erreur sauvegarde frais ERT:", error)
+      console.error("Erreur sauvegarde tarif:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
     }
   }
 
-  // CRUD Functions for Frais Axecom
-  const saveFraisAxecom = async (fraisData: any) => {
+  const handleUpdateTarif = async (tarifData: any) => {
     try {
-      const url = editingItem ? "/api/frais-axecom" : "/api/frais-axecom"
-      const method = editingItem ? "PUT" : "POST"
-      
-      const body = editingItem 
-        ? { id: editingItem.id, ...fraisData }
-        : fraisData
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
+      const response = await fetch("/api/company-pricing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tarifData)
       })
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || "Erreur lors de la sauvegarde")
+        throw new Error(error.error || "Erreur lors de la modification")
       }
 
-      // Recharger les données des frais Axecom
-      const fraisAxecomData = await loadFraisAxecomFromDatabase()
-      setFraisAxecom(fraisAxecomData)
-      
-      setShowFraisAxecomModal(false)
-      setEditingItem(null)
-      alert(editingItem ? "Frais Axecom modifié avec succès" : "Frais Axecom ajouté avec succès")
+      await loadTarifsFromDatabase()
+      alert("Tarif modifié avec succès")
     } catch (error) {
-      console.error("Erreur sauvegarde frais Axecom:", error)
-      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+      console.error("Erreur modification tarif:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la modification")
+    }
+  }
+
+  const handleDeleteTarif = async (id: number) => {
+    try {
+      const response = await fetch(`/api/company-pricing?id=${id}`, {
+        method: "DELETE"
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la suppression")
+      }
+
+      await loadTarifsFromDatabase()
+      alert("Tarif supprimé avec succès")
+    } catch (error) {
+      console.error("Erreur suppression tarif:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
     }
   }
 
@@ -1748,40 +1712,27 @@ export default function EmployeeTracker() {
                 <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "claims"
+                activeTab === "tarifs"
                       ? "gradient-primary text-white shadow-lg animate-pulse-glow"
                       : "glass-card border border-white/20 hover:bg-primary/5"
                   }`}
-              onClick={() => setActiveTab("claims")}
+              onClick={() => setActiveTab("tarifs")}
                 >
-              <FileText className="w-5 h-5" />
-              Réclamations
+                  <Building2 className="w-5 h-5" />
+                  Tarifs
                 </Button>
 
                 <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "frais-ert"
+                activeTab === "recette-generer"
                       ? "gradient-primary text-white shadow-lg animate-pulse-glow"
                       : "glass-card border border-white/20 hover:bg-primary/5"
                   }`}
-              onClick={() => setActiveTab("frais-ert")}
+              onClick={() => setActiveTab("recette-generer")}
                 >
-              <Receipt className="w-5 h-5" />
-              Frais Entreprise ERT
-                </Button>
-
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "frais-axecom"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("frais-axecom")}
-                >
-              <Building className="w-5 h-5" />
-              Frais Entreprise Axecom
+                  <TrendingUp className="w-5 h-5" />
+                  Recette Générée
                 </Button>
 
                 <Button
@@ -2139,222 +2090,19 @@ export default function EmployeeTracker() {
                     </div>
                   )}
 
-          {/* Frais ERT Tab */}
-          {activeTab === "frais-ert" && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-3xl font-bold">Frais Entreprise ERT</h2>
-                  <p className="text-muted-foreground">Gestion des frais d'entreprise ERT</p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEditingItem(null)
-                    setShowFraisErtModal(true)
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Nouveau Frais
-                </Button>
-              </div>
-              
-              {/* Tableau des Tarifs ERT */}
-              <PricingTable company="ERT OUEST" />
-              
-              {/* Frais ERT Management Section */}
-              <div className="space-y-6">
-                <Card className="glass-card border border-white/20 hover-lift">
-                  <CardHeader>
-                    <CardTitle>Liste des Frais ERT</CardTitle>
-                    <CardDescription>
-                      {fraisErt.length} frais trouvés dans la base de données
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {fraisErt.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Receipt className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                        <p className="text-muted-foreground">Aucun frais ERT trouvé</p>
-                        <p className="text-sm text-muted-foreground">Créez votre premier frais pour commencer.</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b border-white/10">
-                              <th className="text-left p-4 font-semibold">Article</th>
-                              <th className="text-left p-4 font-semibold">Intitulé</th>
-                              <th className="text-left p-4 font-semibold">Unité</th>
-                              <th className="text-left p-4 font-semibold">PU HT (€)</th>
-                              <th className="text-left p-4 font-semibold">Prix Emp (€)</th>
-                              <th className="text-left p-4 font-semibold">Statut</th>
-                              <th className="text-left p-4 font-semibold">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {fraisErt.slice(0, 50).map((frais, index) => (
-                              <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                <td className="p-4 font-medium">
-                                  <Badge variant="outline" className="bg-blue-500/20 text-blue-400">
-                                    {frais.article}
-                                  </Badge>
-                                </td>
-                                <td className="p-4">{frais.intitule}</td>
-                                <td className="p-4">{frais.unite}</td>
-                                <td className="p-4 font-medium text-green-400">{frais.pu_ht_euros} €</td>
-                                <td className="p-4 font-medium text-blue-400">{frais.prix_emp} €</td>
-                                <td className="p-4">
-                                  <Badge 
-                                    variant={frais.statut === 'actif' ? 'default' : 'secondary'}
-                                    className={frais.statut === 'actif' ? 'bg-green-500/20 text-green-400' : 
-                                             'bg-gray-500/20 text-gray-400'}
-                                  >
-                                    {frais.statut}
-                                  </Badge>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex gap-2">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => {
-                                        setEditingItem(frais)
-                                        setShowFraisErtModal(true)
-                                      }}
-                                      className="glass-card border border-white/20"
-                                    >
-                                      <Edit className="w-4 h-4" />
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleDelete('frais-ert', frais.id)}
-                                      className="glass-card border border-white/20 text-red-400 hover:text-red-300"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
+          {/* Tarifs Tab */}
+          {activeTab === "tarifs" && (
+            <TarifsManager
+              tarifs={tarifs}
+              onSave={handleSaveTarif}
+              onUpdate={handleUpdateTarif}
+              onDelete={handleDeleteTarif}
+            />
           )}
 
-          {/* Frais Axecom Tab */}
-          {activeTab === "frais-axecom" && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-3xl font-bold">Frais Entreprise Axecom</h2>
-                  <p className="text-muted-foreground">Gestion des frais d'entreprise Axecom</p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEditingItem(null)
-                    setShowFraisAxecomModal(true)
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Nouveau Frais
-                </Button>
-              </div>
-              
-              {/* Tableau des Tarifs Axecom */}
-              <PricingTable company="AXECOM" />
-              
-              {/* Frais Axecom Management Section */}
-              <div className="space-y-6">
-                <Card className="glass-card border border-white/20 hover-lift">
-                  <CardHeader>
-                    <CardTitle>Liste des Frais Axecom</CardTitle>
-                    <CardDescription>
-                      {fraisAxecom.length} frais trouvés dans la base de données
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {fraisAxecom.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Building className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                        <p className="text-muted-foreground">Aucun frais Axecom trouvé</p>
-                        <p className="text-sm text-muted-foreground">Créez votre premier frais pour commencer.</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b border-white/10">
-                              <th className="text-left p-4 font-semibold">Article</th>
-                              <th className="text-left p-4 font-semibold">Intitulé</th>
-                              <th className="text-left p-4 font-semibold">Unité</th>
-                              <th className="text-left p-4 font-semibold">PU HT (€)</th>
-                              <th className="text-left p-4 font-semibold">Prix Emp (€)</th>
-                              <th className="text-left p-4 font-semibold">Statut</th>
-                              <th className="text-left p-4 font-semibold">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {fraisAxecom.slice(0, 50).map((frais, index) => (
-                              <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                <td className="p-4 font-medium">
-                                  <Badge variant="outline" className="bg-purple-500/20 text-purple-400">
-                                    {frais.article}
-                                  </Badge>
-                                </td>
-                                <td className="p-4">{frais.intitule}</td>
-                                <td className="p-4">{frais.unite}</td>
-                                <td className="p-4 font-medium text-green-400">{frais.pu_ht_euros} €</td>
-                                <td className="p-4 font-medium text-purple-400">{frais.prix_emp} €</td>
-                                <td className="p-4">
-                                  <Badge 
-                                    variant={frais.statut === 'actif' ? 'default' : 'secondary'}
-                                    className={frais.statut === 'actif' ? 'bg-green-500/20 text-green-400' : 
-                                             'bg-gray-500/20 text-gray-400'}
-                                  >
-                                    {frais.statut}
-                                  </Badge>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex gap-2">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => {
-                                        setEditingItem(frais)
-                                        setShowFraisAxecomModal(true)
-                                      }}
-                                      className="glass-card border border-white/20"
-                                    >
-                                      <Edit className="w-4 h-4" />
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleDelete('frais-axecom', frais.id)}
-                                      className="glass-card border border-white/20 text-red-400 hover:text-red-300"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
+          {/* Recette Générée Tab */}
+          {activeTab === "recette-generer" && (
+            <RevenueCalculation employees={employees} />
           )}
 
           {/* Fuel Consumption Tab */}
@@ -4522,49 +4270,6 @@ export default function EmployeeTracker() {
         </DialogContent>
        </Dialog>
 
-       {/* Frais ERT Modal */}
-       <Dialog open={showFraisErtModal} onOpenChange={setShowFraisErtModal}>
-         <DialogContent className="glass-card border border-white/20">
-           <DialogHeader>
-             <DialogTitle>
-               {editingItem ? 'Modifier le Frais ERT' : 'Nouveau Frais ERT'}
-             </DialogTitle>
-             <DialogDescription>
-               {editingItem ? 'Modifiez les informations du frais ERT' : 'Ajoutez un nouveau frais ERT'}
-             </DialogDescription>
-           </DialogHeader>
-          <FraisErtForm 
-            frais={editingItem} 
-            onSave={saveFraisErt} 
-            onCancel={() => {
-              setShowFraisErtModal(false)
-              setEditingItem(null)
-            }}
-          />
-         </DialogContent>
-       </Dialog>
-
-       {/* Frais Axecom Modal */}
-       <Dialog open={showFraisAxecomModal} onOpenChange={setShowFraisAxecomModal}>
-         <DialogContent className="glass-card border border-white/20">
-           <DialogHeader>
-             <DialogTitle>
-               {editingItem ? 'Modifier le Frais Axecom' : 'Nouveau Frais Axecom'}
-             </DialogTitle>
-             <DialogDescription>
-               {editingItem ? 'Modifiez les informations du frais Axecom' : 'Ajoutez un nouveau frais Axecom'}
-             </DialogDescription>
-           </DialogHeader>
-          <FraisAxecomForm 
-            frais={editingItem} 
-            onSave={saveFraisAxecom} 
-            onCancel={() => {
-              setShowFraisAxecomModal(false)
-              setEditingItem(null)
-            }}
-          />
-         </DialogContent>
-       </Dialog>
 
       {/* Penalty Modal */}
       <Dialog open={showPenaltyModal} onOpenChange={setShowPenaltyModal}>
