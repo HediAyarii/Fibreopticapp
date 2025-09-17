@@ -30,6 +30,8 @@ import {
 import { useRouter } from 'next/navigation'
 import { fetchWithAuth } from '@/lib/authManager'
 import { NotificationCenter } from '@/components/NotificationCenter'
+import { NotificationManager } from '@/components/NotificationManager'
+import { SimpleNotificationManager } from '@/components/SimpleNotificationManager'
 
 interface User {
   id: number
@@ -345,6 +347,8 @@ export default function TechnicienDashboard() {
                   </div>
                 )}
                 <NotificationCenter employeeId={user.id} />
+                <NotificationManager employeeId={user.id} />
+                <SimpleNotificationManager employeeId={user.id} />
                 <Button
                   variant="outline"
                   size="sm"
