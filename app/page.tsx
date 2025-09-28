@@ -74,7 +74,9 @@ import {
   Receipt,
   Building,
   X,
+  Timer,
   Minus,
+  Camera,
 } from "lucide-react"
 
 // User authentication data
@@ -201,6 +203,12 @@ export default function EmployeeTracker() {
   const [editingIntervention, setEditingIntervention] = useState<any>(null)
   const [articlesText, setArticlesText] = useState("")
   const [savingArticles, setSavingArticles] = useState(false)
+
+  // Photos management states
+  const [showPhotosModal, setShowPhotosModal] = useState(false)
+  const [selectedClaim, setSelectedClaim] = useState<any>(null)
+  const [showImageModal, setShowImageModal] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<string>('')
 
   // Interventions filtering states
   const [interventionFilters, setInterventionFilters] = useState({
@@ -849,6 +857,70 @@ export default function EmployeeTracker() {
     } catch (error) {
       console.error(`Erreur suppression ${entityType}:`, error)
       alert(error instanceof Error ? error.message : 'Erreur lors de la suppression')
+    }
+  }
+
+
+  // Fonction pour valider les réclamations (admin)
+  const handleValidateClaim = async (claimId: number, action: 'approve' | 'reject') => {
+    try {
+      const adminComment = prompt(
+        action === 'approve' 
+          ? 'Commentaire de validation (optionnel) :' 
+          : 'Raison du rejet (obligatoire) :'
+      )
+
+      if (action === 'reject' && (!adminComment || adminComment.trim() === '')) {
+        alert('Un commentaire est obligatoire pour rejeter une réclamation')
+        return
+      }
+
+      // Afficher un indicateur de chargement
+      const loadingMessage = action === 'approve' ? 'Validation en cours...' : 'Rejet en cours...'
+      const originalButton = document.querySelector(`[data-claim-id="${claimId}"][data-action="${action}"]`) as HTMLButtonElement
+      if (originalButton) {
+        originalButton.textContent = loadingMessage
+        originalButton.disabled = true
+      }
+
+      const response = await fetch('/api/reclamations/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reclamationId: claimId,
+          action,
+          adminComment: adminComment || ''
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors de la validation')
+      }
+
+      const result = await response.json()
+      await loadAllCRUDData()
+      
+      // Afficher une notification de succès
+      const successMessage = action === 'approve' 
+        ? '✅ Réclamation validée avec succès !' 
+        : '❌ Réclamation rejetée avec succès !'
+      
+      // Créer une notification temporaire
+      const notification = document.createElement('div')
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50'
+      notification.textContent = successMessage
+      document.body.appendChild(notification)
+      
+      setTimeout(() => {
+        notification.remove()
+      }, 3000)
+      
+    } catch (error) {
+      console.error('Erreur validation réclamation:', error)
+      alert(error instanceof Error ? error.message : 'Erreur lors de la validation')
     }
   }
 
@@ -1707,6 +1779,19 @@ export default function EmployeeTracker() {
                 >
               <AlertTriangle className="w-5 h-5" />
               Pénalités
+                </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "claims"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+              onClick={() => setActiveTab("claims")}
+                >
+              <FileText className="w-5 h-5" />
+              Réclamations
                 </Button>
 
                 <Button
@@ -3556,6 +3641,68 @@ export default function EmployeeTracker() {
               
                {/* Claims Management Section */}
                <div className="space-y-6">
+                 {/* Section spéciale pour les réclamations en attente de validation */}
+                 
+
+                 {claims.filter(claim => claim.statut === 'en_cours').length > 0 && (
+                   <Card className="glass-card border border-yellow-500/30 bg-yellow-500/5 hover-lift">
+                     <CardHeader>
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-yellow-500/20 rounded-lg">
+                           <Timer className="w-5 h-5 text-yellow-400" />
+                         </div>
+                         <div>
+                           <CardTitle className="text-xl font-bold text-yellow-400">
+                             Réclamations en attente de validation ({claims.filter(claim => claim.statut === 'en_cours').length})
+                           </CardTitle>
+                           <p className="text-yellow-300/80">Ces réclamations ont été résolues par les techniciens et attendent votre validation</p>
+                         </div>
+                       </div>
+                     </CardHeader>
+                     <CardContent>
+                       <div className="grid gap-4">
+                         {claims.filter(claim => claim.statut === 'en_cours').map((claim) => (
+                           <div key={claim.id} className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                             <div className="flex items-center justify-between">
+                               <div className="flex-1">
+                                 <h4 className="font-semibold text-yellow-200">{claim.numero_reclamation}</h4>
+                                 <p className="text-sm text-yellow-300/80">{claim.nom_client} - {claim.type_reclamation}</p>
+                                 <p className="text-xs text-yellow-400/60 mt-1">
+                                   Résolue le: {new Date(claim.date_resolution).toLocaleDateString('fr-FR')}
+                                 </p>
+                               </div>
+                               <div className="flex gap-2">
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                   onClick={() => handleValidateClaim(claim.id, 'approve')}
+                                   className="bg-green-500/20 border-green-500/50 text-green-400 hover:bg-green-500/30 hover:text-green-300"
+                                   data-claim-id={claim.id}
+                                   data-action="approve"
+                                 >
+                                   <CheckCircle className="w-4 h-4 mr-1" />
+                                   Accepter
+                                 </Button>
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                   onClick={() => handleValidateClaim(claim.id, 'reject')}
+                                   className="bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30 hover:text-red-300"
+                                   data-claim-id={claim.id}
+                                   data-action="reject"
+                                 >
+                                   <X className="w-4 h-4 mr-1" />
+                                   Rejeter
+                                 </Button>
+                               </div>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     </CardContent>
+                   </Card>
+                 )}
+
                  <Card className="glass-card border border-white/20 hover-lift">
                    <CardHeader>
                      <div className="flex items-center gap-3">
@@ -3598,6 +3745,7 @@ export default function EmployeeTracker() {
                                <th className="text-left p-4 font-semibold">Employé</th>
                                <th className="text-left p-4 font-semibold">Date Création</th>
                             <th className="text-left p-4 font-semibold">Statut</th>
+                            <th className="text-left p-4 font-semibold">Photos</th>
                             <th className="text-left p-4 font-semibold">Actions</th>
                           </tr>
                         </thead>
@@ -3690,16 +3838,76 @@ export default function EmployeeTracker() {
                                      className={
                                        claim.statut === 'ouverte' ? 'bg-orange-500/20 text-orange-400' : 
                                        claim.statut === 'en_cours' ? 'bg-blue-500/20 text-blue-400' :
+                                       claim.statut === 'en_cours' ? 'bg-yellow-500/20 text-yellow-400' :
                                        claim.statut === 'resolue' ? 'bg-green-500/20 text-green-400' :
+                                       claim.statut === 'résolu' ? 'bg-green-500/20 text-green-400' :
                                        'bg-gray-500/20 text-gray-400'
                                      }
                                    >
-                                     {claim.statut || 'ouverte'}
+                                     {claim.statut === 'en_cours' ? 'En cours' : 
+                                      claim.statut === 'resolue' || claim.statut === 'résolu' ? 'Résolu' :
+                                      claim.statut || 'ouverte'}
                                 </Badge>
                               </td>
                               <td className="p-4">
+                                {claim.photos && claim.photos.length > 0 ? (
+                                  <div className="flex items-center gap-2">
+                                    <Camera className="w-4 h-4 text-green-500" />
+                                    <span className="text-sm text-green-600">{claim.photos.length} photo(s)</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setSelectedClaim(claim)
+                                        setShowPhotosModal(true)
+                                      }}
+                                      className="text-xs"
+                                    >
+                                      Voir
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">Aucune</span>
+                                )}
+                              </td>
+                              <td className="p-4">
                                 <div className="flex gap-2">
-                    <Button
+                                  {/* Boutons de validation pour les réclamations en cours */}
+                                  {claim.statut === 'en_cours' && (
+                                    <div className="flex flex-col gap-2">
+                                      <div className="text-xs text-yellow-400 font-medium mb-1">
+                                        En attente de validation
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleValidateClaim(claim.id, 'approve')}
+                                          className="bg-green-500/20 border-green-500/50 text-green-400 hover:bg-green-500/30 hover:text-green-300 transition-all duration-200"
+                                          title="Accepter la résolution"
+                                          data-claim-id={claim.id}
+                                          data-action="approve"
+                                        >
+                                          <CheckCircle className="w-4 h-4 mr-1" />
+                                          Accepter
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleValidateClaim(claim.id, 'reject')}
+                                          className="bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30 hover:text-red-300 transition-all duration-200"
+                                          title="Rejeter la résolution"
+                                          data-claim-id={claim.id}
+                                          data-action="reject"
+                                        >
+                                          <X className="w-4 h-4 mr-1" />
+                                          Rejeter
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  <Button
                                        variant="outline"
                                     size="sm"
                                     onClick={() => {
@@ -4430,6 +4638,118 @@ export default function EmployeeTracker() {
             <Button 
               variant="outline" 
               onClick={() => setShowCardHistoryModal(false)}
+              className="glass-card border border-white/20 hover:bg-white/10"
+            >
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal pour afficher les photos justificatives */}
+      <Dialog open={showPhotosModal} onOpenChange={setShowPhotosModal}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="w-5 h-5" />
+              Photos Justificatives - Réclamation {selectedClaim?.numero_reclamation}
+            </DialogTitle>
+            <DialogDescription>
+              Photos fournies par le technicien pour justifier la résolution de la réclamation
+            </DialogDescription>
+          </DialogHeader>
+          
+              <div className="space-y-4">
+                {selectedClaim?.photos && selectedClaim.photos.length > 0 ? (
+                  <div>
+                    <h4 className="font-medium mb-3">Détails de la résolution :</h4>
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg mb-4">
+                      <p className="text-sm text-green-800">
+                        {selectedClaim.commentaires_internes || 'Aucun commentaire fourni'}
+                      </p>
+                    </div>
+
+                    <h4 className="font-medium mb-3">Photos justificatives :</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {selectedClaim.photos.map((photo: any, index: number) => (
+                        <div key={photo.id} className="relative group">
+                          <img
+                            src={photo.url}
+                            alt={`Photo justificative ${index + 1}`}
+                            className="w-full h-48 object-cover rounded-lg border border-gray-200"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = '/placeholder.jpg'
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                              onClick={() => {
+                                setSelectedImage(photo.url)
+                                setShowImageModal(true)
+                              }}
+                            >
+                              <Eye className="w-4 h-4 mr-2" />
+                              Agrandir
+                            </Button>
+                          </div>
+                          <div className="mt-2 text-xs text-gray-500 text-center">
+                            {photo.name}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Camera className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <h3 className="text-lg font-semibold mb-2">Aucune photo disponible</h3>
+                    <p>Cette réclamation n'a pas de photos justificatives.</p>
+                  </div>
+                )}
+              </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowPhotosModal(false)}
+              className="glass-card border border-white/20 hover:bg-white/10"
+            >
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal d'agrandissement des images */}
+      <Dialog open={showImageModal} onOpenChange={setShowImageModal}>
+        <DialogContent className="max-w-6xl max-h-[90vh] p-0">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="w-5 h-5" />
+              Aperçu de l'image
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="p-6 pt-0">
+            <div className="relative">
+              <img
+                src={selectedImage}
+                alt="Image agrandie"
+                className="w-full h-auto max-h-[70vh] object-contain rounded-lg border border-gray-200"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = '/placeholder.jpg'
+                }}
+              />
+            </div>
+          </div>
+          
+          <DialogFooter className="p-6 pt-0">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowImageModal(false)}
               className="glass-card border border-white/20 hover:bg-white/10"
             >
               Fermer

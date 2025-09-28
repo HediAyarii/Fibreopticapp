@@ -25,13 +25,20 @@ import {
   Eye,
   RefreshCw,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Menu,
+  X,
+  Camera,
+  Upload,
+  Check,
+  X as XIcon
 } from "lucide-react"
 import { useRouter } from 'next/navigation'
 import { fetchWithAuth } from '@/lib/authManager'
 import { NotificationCenter } from '@/components/NotificationCenter'
-import { NotificationManager } from '@/components/NotificationManager'
-import { SimpleNotificationManager } from '@/components/SimpleNotificationManager'
+import { SessionExpired } from '@/components/SessionExpired'
+import { MobileNotificationButton } from '@/components/MobileNotificationButton'
+import { MobilePushNotificationManager } from '@/components/MobilePushNotificationManager'
 
 interface User {
   id: number
@@ -55,11 +62,26 @@ interface Intervention {
 interface Reclamation {
   id: number
   numero_reclamation: string
-  client: string
+  nom_client: string
+  client?: string
   type_reclamation: string
   statut: string
   priorite: string
   date_creation: string
+  date_reclamation: string
+  description_probleme: string
+  description?: string
+  telephone_client?: string
+  email_client?: string
+  adresse_client?: string
+  commentaires_internes?: string
+  numero_intervention?: string
+  intervention_num?: string
+  intervention_client?: string
+  date_intervention?: string
+  intervention_statut?: string
+  created_at?: string
+  updated_at?: string
 }
 
 interface Penalite {
@@ -90,6 +112,11 @@ export default function TechnicienDashboard() {
   const [currentPage, setCurrentPage] = useState(1)
   const [isUpdating, setIsUpdating] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [selectedReclamation, setSelectedReclamation] = useState<any>(null)
+  const [showReclamationModal, setShowReclamationModal] = useState(false)
+  const [uploadedPhotos, setUploadedPhotos] = useState<File[]>([])
+  const [isResolving, setIsResolving] = useState(false)
   const itemsPerPage = 10
   const router = useRouter()
 
@@ -122,6 +149,20 @@ export default function TechnicienDashboard() {
     }
   }, [user])
 
+  // Écouter l'événement pour ouvrir le modal de résolution
+  useEffect(() => {
+    const handleOpenResolveModal = (event: CustomEvent) => {
+      setSelectedReclamation(event.detail)
+      setShowReclamationModal(true)
+    }
+
+    window.addEventListener('openResolveModal', handleOpenResolveModal as EventListener)
+    
+    return () => {
+      window.removeEventListener('openResolveModal', handleOpenResolveModal as EventListener)
+    }
+  }, [])
+
   const checkAuth = async () => {
     try {
       console.log('Vérification de l\'authentification...')
@@ -133,10 +174,15 @@ export default function TechnicienDashboard() {
       if (response.ok) {
         console.log('Utilisateur authentifié:', data.user)
         setUser(data.user)
+      } else {
+        console.log('Session expirée, redirection vers logintech')
+        setUser(null)
+        router.push('/logintech')
       }
     } catch (error) {
       console.log('Erreur auth ou session expirée:', error)
       setUser(null)
+      router.push('/logintech')
     } finally {
       setLoading(false)
     }
@@ -155,6 +201,14 @@ export default function TechnicienDashboard() {
         fetchWithAuth(`/api/reclamations?employe_id=${user.id}`),
         fetchWithAuth(`/api/penalites?employe_id=${user.id}`)
       ])
+
+      // Vérifier si l'une des réponses indique une session expirée
+      if (!interventionsResponse.ok || !reclamationsResponse.ok || !penalitesResponse.ok) {
+        console.log('Session expirée détectée lors du chargement des données')
+        setUser(null)
+        router.push('/logintech')
+        return
+      }
 
       // Traiter les interventions
       const interventionsData = await interventionsResponse.json()
@@ -187,15 +241,27 @@ export default function TechnicienDashboard() {
       const reclamationsData = await reclamationsResponse.json()
       if (reclamationsData.reclamations) {
         const previousCount = reclamations.length
-        setReclamations(reclamationsData.reclamations)
         
-        if (reclamationsData.reclamations.length !== previousCount) {
-          console.log(`📨 Réclamations mises à jour: ${previousCount} → ${reclamationsData.reclamations.length}`)
+        // Vérifier et fermer automatiquement les réclamations en retard
+        const updatedReclamations = reclamationsData.reclamations.map((reclamation: Reclamation) => {
+          const deadline = calculateDeadline(reclamation)
+          if (deadline.isOverdue && reclamation.statut === 'ouverte') {
+            console.log(`⚠️ Réclamation ${reclamation.numero_reclamation} en retard de ${Math.abs(deadline.daysRemaining)} jours`)
+            // Ici on pourrait appeler une API pour fermer automatiquement la réclamation
+            // Pour l'instant, on garde le statut mais on affiche l'alerte
+          }
+          return reclamation
+        })
+        
+        setReclamations(updatedReclamations)
+        
+        if (updatedReclamations.length !== previousCount) {
+          console.log(`📨 Réclamations mises à jour: ${previousCount} → ${updatedReclamations.length}`)
         }
         
         setStats(prev => ({
           ...prev,
-          reclamations: reclamationsData.reclamations.length
+          reclamations: updatedReclamations.length
         }))
       }
 
@@ -220,6 +286,12 @@ export default function TechnicienDashboard() {
 
     } catch (error) {
       console.error('❌ Erreur lors du chargement des données:', error)
+      // Si c'est une erreur d'authentification, rediriger vers logintech
+      if (error instanceof Error && error.message.includes('401')) {
+        console.log('Erreur 401 détectée, redirection vers logintech')
+        setUser(null)
+        router.push('/logintech')
+      }
     } finally {
       setIsUpdating(false)
     }
@@ -232,9 +304,94 @@ export default function TechnicienDashboard() {
       router.push('/logintech')
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error)
-      // Même en cas d'erreur, rediriger
+      // Même en cas d'erreur, rediriger vers logintech
       setUser(null)
       router.push('/logintech')
+    }
+  }
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    setIsMobileMenuOpen(false) // Fermer le menu mobile
+  }
+
+  const handleReclamationResolve = async (reclamationId: number, photos: File[], comment: string) => {
+    if (!user) return
+
+    setIsResolving(true)
+    try {
+      const formData = new FormData()
+      formData.append('reclamation_id', reclamationId.toString())
+      formData.append('comment', comment)
+      formData.append('resolved_by', user.id.toString())
+      
+      // Ajouter les photos
+      photos.forEach((photo, index) => {
+        formData.append(`photo_${index}`, photo)
+      })
+
+      const response = await fetchWithAuth('/api/reclamations/resolve', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (response.ok) {
+        console.log('✅ Réclamation marquée comme résolue')
+        // Recharger les données
+        loadData()
+        setShowReclamationModal(false)
+        setSelectedReclamation(null)
+        setUploadedPhotos([])
+      } else {
+        console.error('❌ Erreur lors de la résolution de la réclamation')
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors de la résolution:', error)
+    } finally {
+      setIsResolving(false)
+    }
+  }
+
+  const handlePhotoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    setUploadedPhotos(prev => [...prev, ...files])
+  }
+
+  const removePhoto = (index: number) => {
+    setUploadedPhotos(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // Fonction pour calculer les jours restants et l'échéance
+  const calculateDeadline = (reclamation: Reclamation) => {
+    const creationDateStr = reclamation.date_creation || reclamation.date_reclamation || reclamation.created_at
+    if (!creationDateStr) {
+      return {
+        deadlineDate: 'Date inconnue',
+        daysRemaining: 0,
+        isOverdue: false,
+        isUrgent: false,
+        deadlineDays: 0
+      }
+    }
+    
+    const creationDate = new Date(creationDateStr)
+    const now = new Date()
+    
+    // Délai selon le type de réclamation (7 jours pour client, 14 jours pour technique)
+    const deadlineDays = reclamation.type_reclamation === 'client' ? 7 : 14
+    const deadlineDate = new Date(creationDate)
+    deadlineDate.setDate(deadlineDate.getDate() + deadlineDays)
+    
+    const daysRemaining = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    const isOverdue = daysRemaining < 0
+    const isUrgent = daysRemaining <= 2 && daysRemaining >= 0
+    
+    return {
+      deadlineDate: deadlineDate.toLocaleDateString('fr-FR'),
+      daysRemaining,
+      isOverdue,
+      isUrgent,
+      deadlineDays
     }
   }
 
@@ -244,6 +401,8 @@ export default function TechnicienDashboard() {
       case 'terminée':
       case 'cloture':
       case 'clôturé':
+      case 'résolu':
+      case 'resolue':
         return 'bg-green-100 text-green-800'
       case 'en cours':
       case 'en_cours':
@@ -251,6 +410,8 @@ export default function TechnicienDashboard() {
       case 'en attente':
       case 'en_attente':
         return 'bg-yellow-100 text-yellow-800'
+      case 'ouverte':
+        return 'bg-orange-100 text-orange-800'
       case 'annulé':
       case 'annulee':
         return 'bg-red-100 text-red-800'
@@ -299,35 +460,31 @@ export default function TechnicienDashboard() {
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
-        <Alert variant="destructive" className="max-w-md">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            Session expirée. Redirection vers la page de connexion...
-          </AlertDescription>
-        </Alert>
-      </div>
-    )
+    return <SessionExpired onRetry={checkAuth} />
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white shadow-sm border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
+            {/* Logo et titre - Mobile */}
+            <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
                 <Wrench className="w-5 h-5 text-white" />
               </div>
-              <div>
+              <div className="hidden sm:block">
                 <h1 className="text-xl font-bold text-gray-900">Dashboard Technicien</h1>
                 <p className="text-sm text-gray-500">FinalFibre</p>
               </div>
+              <div className="sm:hidden">
+                <h1 className="text-lg font-bold text-gray-900">FinalFibre</h1>
+              </div>
             </div>
             
-            <div className="flex items-center space-x-4">
+            {/* Actions - Desktop */}
+            <div className="hidden lg:flex items-center space-x-4">
               <div className="text-right">
                 <p className="text-sm font-medium text-gray-900">
                   {user.prenom} {user.nom}
@@ -347,8 +504,6 @@ export default function TechnicienDashboard() {
                   </div>
                 )}
                 <NotificationCenter employeeId={user.id} />
-                <NotificationManager employeeId={user.id} />
-                <SimpleNotificationManager employeeId={user.id} />
                 <Button
                   variant="outline"
                   size="sm"
@@ -360,17 +515,66 @@ export default function TechnicienDashboard() {
                 </Button>
               </div>
             </div>
+
+            {/* Actions - Mobile */}
+            <div className="flex items-center space-x-2 lg:hidden">
+              {isUpdating && (
+                <div className="flex items-center space-x-1 text-xs text-blue-600">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                </div>
+              )}
+              <NotificationCenter employeeId={user.id} />
+              <MobileNotificationButton />
+              <MobilePushNotificationManager />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="p-2"
+              >
+                {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              </Button>
+            </div>
           </div>
+
+          {/* Menu mobile déroulant */}
+          {isMobileMenuOpen && (
+            <div className="lg:hidden border-t bg-white">
+              <div className="px-4 py-3 space-y-3">
+                <div className="text-sm">
+                  <p className="font-medium text-gray-900">
+                    {user.prenom} {user.nom}
+                  </p>
+                  <p className="text-gray-500">{user.matricule}</p>
+                  {lastUpdate && (
+                    <p className="text-xs text-gray-400">
+                      Mis à jour: {lastUpdate.toLocaleTimeString()}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                  className="w-full flex items-center justify-center space-x-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Déconnexion</span>
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
       {/* Navigation Tabs */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center justify-between">
             <nav className="flex space-x-8">
               <button
-                onClick={() => setActiveTab('overview')}
+                onClick={() => handleTabChange('overview')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'overview'
                     ? 'border-blue-500 text-blue-600'
@@ -381,7 +585,7 @@ export default function TechnicienDashboard() {
                 Vue d'ensemble
               </button>
               <button
-                onClick={() => setActiveTab('interventions')}
+                onClick={() => handleTabChange('interventions')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'interventions'
                     ? 'border-blue-500 text-blue-600'
@@ -392,7 +596,7 @@ export default function TechnicienDashboard() {
                 Mes Interventions
               </button>
               <button
-                onClick={() => setActiveTab('reclamations')}
+                onClick={() => handleTabChange('reclamations')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'reclamations'
                     ? 'border-blue-500 text-blue-600'
@@ -403,7 +607,7 @@ export default function TechnicienDashboard() {
                 Réclamations
               </button>
               <button
-                onClick={() => setActiveTab('penalites')}
+                onClick={() => handleTabChange('penalites')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'penalites'
                     ? 'border-blue-500 text-blue-600'
@@ -423,66 +627,132 @@ export default function TechnicienDashboard() {
               </span>
             </div>
           </div>
+
+          {/* Mobile Navigation */}
+          <div className="md:hidden">
+            <div className="flex items-center justify-between py-3">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {activeTab === 'overview' && 'Vue d\'ensemble'}
+                {activeTab === 'interventions' && 'Mes Interventions'}
+                {activeTab === 'reclamations' && 'Réclamations'}
+                {activeTab === 'penalites' && 'Pénalités'}
+              </h2>
+              <div className="flex items-center space-x-2 text-xs">
+                <div className={`w-2 h-2 rounded-full ${isUpdating ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
+                <span className="text-gray-500">
+                  {isUpdating ? 'Mise à jour...' : 'Temps réel'}
+                </span>
+              </div>
+            </div>
+            
+            {/* Navigation mobile avec scroll horizontal */}
+            <div className="flex space-x-1 overflow-x-auto pb-2">
+              <button
+                onClick={() => handleTabChange('overview')}
+                className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium ${
+                  activeTab === 'overview'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <Home className="w-4 h-4 inline mr-1" />
+                Vue d'ensemble
+              </button>
+              <button
+                onClick={() => handleTabChange('interventions')}
+                className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium ${
+                  activeTab === 'interventions'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <Calendar className="w-4 h-4 inline mr-1" />
+                Interventions
+              </button>
+              <button
+                onClick={() => handleTabChange('reclamations')}
+                className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium ${
+                  activeTab === 'reclamations'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <FileText className="w-4 h-4 inline mr-1" />
+                Réclamations
+              </button>
+              <button
+                onClick={() => handleTabChange('penalites')}
+                className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium ${
+                  activeTab === 'penalites'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <AlertCircle className="w-4 h-4 inline mr-1" />
+                Pénalités
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Statistiques */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
               <Card>
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center">
                     <div className="p-2 bg-blue-100 rounded-lg">
-                      <Calendar className="w-6 h-6 text-blue-600" />
+                      <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
                     </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-600">Total Interventions</p>
-                      <p className="text-2xl font-bold text-gray-900">{stats.totalInterventions}</p>
+                    <div className="ml-3 sm:ml-4">
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Total Interventions</p>
+                      <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.totalInterventions}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center">
                     <div className="p-2 bg-green-100 rounded-lg">
-                      <TrendingUp className="w-6 h-6 text-green-600" />
+                      <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
                     </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-600">Ce Mois</p>
-                      <p className="text-2xl font-bold text-gray-900">{stats.interventionsMois}</p>
+                    <div className="ml-3 sm:ml-4">
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Ce Mois</p>
+                      <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.interventionsMois}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center">
                     <div className="p-2 bg-yellow-100 rounded-lg">
-                      <DollarSign className="w-6 h-6 text-yellow-600" />
+                      <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600" />
                     </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-600">Chiffre d'Affaires</p>
-                      <p className="text-2xl font-bold text-gray-900">{stats.chiffreAffaire}€</p>
+                    <div className="ml-3 sm:ml-4">
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Chiffre d'Affaires</p>
+                      <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.chiffreAffaire}€</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center">
                     <div className="p-2 bg-red-100 rounded-lg">
-                      <AlertCircle className="w-6 h-6 text-red-600" />
+                      <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-red-600" />
                     </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-600">Pénalités</p>
-                      <p className="text-2xl font-bold text-gray-900">{stats.penalites}</p>
+                    <div className="ml-3 sm:ml-4">
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Pénalités</p>
+                      <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.penalites}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -492,7 +762,7 @@ export default function TechnicienDashboard() {
             {/* Interventions récentes */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+                <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <span className="flex items-center">
                     <Calendar className="w-5 h-5 mr-2" />
                     Interventions Récentes
@@ -500,7 +770,8 @@ export default function TechnicienDashboard() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setActiveTab('interventions')}
+                    onClick={() => handleTabChange('interventions')}
+                    className="w-full sm:w-auto"
                   >
                     Voir tout
                   </Button>
@@ -510,16 +781,16 @@ export default function TechnicienDashboard() {
                 {interventions.slice(0, 5).length > 0 ? (
                   <div className="space-y-3">
                     {interventions.slice(0, 5).map((intervention) => (
-                      <div key={intervention.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
-                          <p className="font-medium">{intervention.num_inter}</p>
-                          <p className="text-sm text-gray-600">{intervention.client}</p>
+                      <div key={intervention.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 bg-gray-50 rounded-lg gap-2">
+                        <div className="flex-1">
+                          <p className="font-medium text-sm sm:text-base">{intervention.num_inter}</p>
+                          <p className="text-xs sm:text-sm text-gray-600">{intervention.client}</p>
                         </div>
-                        <div className="text-right">
+                        <div className="flex flex-col sm:items-end gap-1">
                           <Badge className={getStatusColor(intervention.statut)}>
                             {intervention.statut}
                           </Badge>
-                          <p className="text-xs text-gray-500 mt-1">{intervention.date_rdv}</p>
+                          <p className="text-xs text-gray-500">{intervention.date_rdv}</p>
                         </div>
                       </div>
                     ))}
@@ -536,11 +807,11 @@ export default function TechnicienDashboard() {
         )}
 
         {activeTab === 'interventions' && (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* Recherche et filtres */}
             <Card>
-              <CardContent className="p-6">
-                <div className="flex flex-col sm:flex-row gap-4">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1">
                     <div className="relative">
                       <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
@@ -548,14 +819,14 @@ export default function TechnicienDashboard() {
                         placeholder="Rechercher par numéro, client ou type..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10"
+                        className="pl-10 text-sm sm:text-base"
                       />
                     </div>
                   </div>
                   <Button
                     variant="outline"
                     onClick={loadData}
-                    className="flex items-center"
+                    className="flex items-center justify-center w-full sm:w-auto"
                   >
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Actualiser
@@ -571,37 +842,37 @@ export default function TechnicienDashboard() {
               </CardHeader>
               <CardContent>
                 {paginatedInterventions.length > 0 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-3 sm:space-y-4">
                     {paginatedInterventions.map((intervention) => (
-                      <div key={intervention.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-3">
-                              <h3 className="font-semibold text-lg">{intervention.num_inter}</h3>
+                      <div key={intervention.id} className="border rounded-lg p-3 sm:p-4 hover:bg-gray-50">
+                        <div className="space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div className="flex items-center space-x-2 sm:space-x-3">
+                              <h3 className="font-semibold text-base sm:text-lg">{intervention.num_inter}</h3>
                               <Badge className={getStatusColor(intervention.statut)}>
                                 {intervention.statut}
                               </Badge>
                             </div>
-                            <p className="text-gray-600 mt-1">{intervention.client}</p>
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              <Badge variant="outline">{intervention.type_intervention}</Badge>
-                              <Badge variant="outline">{intervention.date_rdv}</Badge>
-                            </div>
-                            {intervention.articles && (
-                              <div className="mt-2">
-                                <p className="text-sm text-gray-500">Articles utilisés:</p>
-                                <p className="text-sm">{intervention.articles}</p>
-                              </div>
-                            )}
                           </div>
+                          <p className="text-sm sm:text-base text-gray-600">{intervention.client}</p>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant="outline" className="text-xs">{intervention.type_intervention}</Badge>
+                            <Badge variant="outline" className="text-xs">{intervention.date_rdv}</Badge>
+                          </div>
+                          {intervention.articles && (
+                            <div className="mt-2">
+                              <p className="text-xs sm:text-sm text-gray-500">Articles utilisés:</p>
+                              <p className="text-xs sm:text-sm">{intervention.articles}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
 
                     {/* Pagination */}
                     {totalPages > 1 && (
-                      <div className="flex items-center justify-between mt-6">
-                        <p className="text-sm text-gray-700">
+                      <div className="flex flex-col sm:flex-row items-center justify-between mt-4 sm:mt-6 gap-3">
+                        <p className="text-xs sm:text-sm text-gray-700">
                           Page {currentPage} sur {totalPages}
                         </p>
                         <div className="flex space-x-2">
@@ -610,6 +881,7 @@ export default function TechnicienDashboard() {
                             size="sm"
                             onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                             disabled={currentPage === 1}
+                            className="px-3"
                           >
                             <ChevronLeft className="w-4 h-4" />
                           </Button>
@@ -618,6 +890,7 @@ export default function TechnicienDashboard() {
                             size="sm"
                             onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                             disabled={currentPage === totalPages}
+                            className="px-3"
                           >
                             <ChevronRight className="w-4 h-4" />
                           </Button>
@@ -640,7 +913,7 @@ export default function TechnicienDashboard() {
         )}
 
         {activeTab === 'reclamations' && (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -650,33 +923,21 @@ export default function TechnicienDashboard() {
               </CardHeader>
               <CardContent>
                 {reclamations.length > 0 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-4 sm:space-y-6">
                     {reclamations.map((reclamation) => (
-                      <div key={reclamation.id} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-semibold">{reclamation.numero_reclamation}</h3>
-                          <div className="flex space-x-2">
-                            <Badge className={getPriorityColor(reclamation.priorite)}>
-                              {reclamation.priorite}
-                            </Badge>
-                            <Badge className={getStatusColor(reclamation.statut)}>
-                              {reclamation.statut}
-                            </Badge>
-                          </div>
-                        </div>
-                        <p className="text-gray-600 mb-2">{reclamation.client}</p>
-                        <div className="flex items-center justify-between text-sm text-gray-500">
-                          <span>Type: {reclamation.type_reclamation}</span>
-                          <span>Créée le: {reclamation.date_creation}</span>
-                        </div>
-                      </div>
+                      <ReclamationCard 
+                        key={reclamation.id} 
+                        reclamation={reclamation} 
+                        onResolve={handleReclamationResolve}
+                        calculateDeadline={calculateDeadline}
+                      />
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-12">
-                    <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune réclamation</h3>
-                    <p className="text-gray-500">Vous n'avez pas de réclamations assignées.</p>
+                  <div className="text-center py-8 sm:py-12">
+                    <FileText className="w-12 h-12 sm:w-16 sm:h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">Aucune réclamation</h3>
+                    <p className="text-sm sm:text-base text-gray-500">Vous n'avez pas de réclamations assignées.</p>
                   </div>
                 )}
               </CardContent>
@@ -685,7 +946,7 @@ export default function TechnicienDashboard() {
         )}
 
         {activeTab === 'penalites' && (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -695,37 +956,37 @@ export default function TechnicienDashboard() {
               </CardHeader>
               <CardContent>
                 {penalites.length > 0 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-3 sm:space-y-4">
                     {penalites.map((penalite) => (
-                      <div key={penalite.id} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-semibold">{penalite.numero_penalite}</h3>
+                      <div key={penalite.id} className="border rounded-lg p-3 sm:p-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 gap-2">
+                          <h3 className="font-semibold text-sm sm:text-base">{penalite.numero_penalite}</h3>
                           <Badge className={getStatusColor(penalite.statut)}>
                             {penalite.statut}
                           </Badge>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                           <div>
-                            <p className="text-sm text-gray-600">Montant</p>
-                            <p className="font-semibold text-red-600">{penalite.montant}€</p>
+                            <p className="text-xs sm:text-sm text-gray-600">Montant</p>
+                            <p className="font-semibold text-red-600 text-sm sm:text-base">{penalite.montant}€</p>
                           </div>
                           <div>
-                            <p className="text-sm text-gray-600">Motif</p>
-                            <p className="text-sm">{penalite.motif}</p>
+                            <p className="text-xs sm:text-sm text-gray-600">Motif</p>
+                            <p className="text-xs sm:text-sm">{penalite.motif}</p>
                           </div>
                           <div>
-                            <p className="text-sm text-gray-600">Échéance</p>
-                            <p className="text-sm">{penalite.date_echeance}</p>
+                            <p className="text-xs sm:text-sm text-gray-600">Échéance</p>
+                            <p className="text-xs sm:text-sm">{penalite.date_echeance}</p>
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-12">
-                    <AlertCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune pénalité</h3>
-                    <p className="text-gray-500">Vous n'avez pas de pénalités.</p>
+                  <div className="text-center py-8 sm:py-12">
+                    <AlertCircle className="w-12 h-12 sm:w-16 sm:h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">Aucune pénalité</h3>
+                    <p className="text-sm sm:text-base text-gray-500">Vous n'avez pas de pénalités.</p>
                   </div>
                 )}
               </CardContent>
@@ -735,14 +996,618 @@ export default function TechnicienDashboard() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="text-center text-sm text-gray-500">
+      <footer className="bg-white border-t mt-8 sm:mt-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+          <div className="text-center text-xs sm:text-sm text-gray-500">
             <p>© 2025 FinalFibre - Espace Technicien</p>
             <p className="mt-1">Connecté en tant que {user.prenom} {user.nom}</p>
           </div>
         </div>
       </footer>
+
+      {/* Modal de résolution de réclamation */}
+      {showReclamationModal && selectedReclamation && (
+        <ReclamationResolveModal
+          reclamation={selectedReclamation}
+          onClose={() => {
+            setShowReclamationModal(false)
+            setSelectedReclamation(null)
+            setUploadedPhotos([])
+          }}
+          onResolve={handleReclamationResolve}
+          uploadedPhotos={uploadedPhotos}
+          onPhotoUpload={handlePhotoUpload}
+          onRemovePhoto={removePhoto}
+          isResolving={isResolving}
+        />
+      )}
+    </div>
+  )
+}
+
+// Composant pour afficher une réclamation
+function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclamation: any, onResolve: (id: number, photos: File[], comment: string) => void, calculateDeadline: (reclamation: Reclamation) => any }) {
+  const [showDetails, setShowDetails] = useState(false)
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'résolu':
+      case 'resolue':
+        return 'bg-green-100 text-green-800'
+      case 'en cours':
+      case 'en_cours':
+        return 'bg-blue-100 text-blue-800'
+      case 'en attente':
+      case 'en_attente':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'ouverte':
+        return 'bg-orange-100 text-orange-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority.toLowerCase()) {
+      case 'critique':
+        return 'bg-red-100 text-red-800'
+      case 'haute':
+        return 'bg-orange-100 text-orange-800'
+      case 'moyenne':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'basse':
+        return 'bg-green-100 text-green-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  return (
+    <Card className="border-l-4 border-l-orange-500">
+      <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+              <div className="flex-1">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+                  <h3 className="font-semibold text-lg">{reclamation.numero_reclamation}</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge className={getPriorityColor(reclamation.priorite)}>
+                      {reclamation.priorite}
+                    </Badge>
+                    <Badge className={getStatusColor(reclamation.statut)}>
+                      {reclamation.statut === 'en_cours' ? 'En cours' : 
+                       reclamation.statut === 'résolu' || reclamation.statut === 'resolu' ? 'Résolu' :
+                       reclamation.statut}
+                    </Badge>
+                    {/* Indicateur de message admin */}
+                    {reclamation.commentaires_internes && (
+                      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                        📝 Message admin
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+            
+            <p className="text-gray-600 mb-2 font-medium">{reclamation.nom_client || reclamation.client}</p>
+            
+            {/* Informations de contact du client */}
+            {(reclamation.telephone_client || reclamation.email_client || reclamation.adresse_client) && (
+              <div className="mb-3 p-3 bg-gray-50 rounded border">
+                <span className="text-xs font-medium text-gray-500 uppercase block mb-2">Informations de contact:</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  {reclamation.telephone_client && (
+                    <div>
+                      <span className="font-medium text-gray-600">Téléphone:</span>
+                      <p className="text-gray-800">{reclamation.telephone_client}</p>
+                    </div>
+                  )}
+                  {reclamation.email_client && (
+                    <div>
+                      <span className="font-medium text-gray-600">Email:</span>
+                      <p className="text-gray-800">{reclamation.email_client}</p>
+                    </div>
+                  )}
+                  {reclamation.adresse_client && (
+                    <div className="sm:col-span-2">
+                      <span className="font-medium text-gray-600">Adresse:</span>
+                      <p className="text-gray-800">{reclamation.adresse_client}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Alerte pour réclamations rejetées */}
+            {reclamation.statut === 'ouverte' && reclamation.commentaires_internes && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-red-800">Réclamation rejetée</h4>
+                    <p className="text-sm text-red-700 mt-1">
+                      Cette réclamation a été rejetée par l'administration. Veuillez consulter les détails pour plus d'informations.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Alerte pour réclamations en retard - seulement pour les réclamations ouvertes */}
+            {reclamation.statut === 'ouverte' && (() => {
+              const deadline = calculateDeadline(reclamation)
+              if (deadline.isOverdue) {
+                return (
+                  <div className="mb-3 p-3 bg-red-100 border border-red-300 rounded-lg">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="ml-3">
+                        <h4 className="text-sm font-medium text-red-800">⚠️ RÉCLAMATION EN RETARD</h4>
+                        <p className="text-sm text-red-700 mt-1">
+                          Cette réclamation est en retard de {Math.abs(deadline.daysRemaining)} jours. 
+                          Elle sera automatiquement fermée si non traitée rapidement.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+              return null
+            })()}
+            
+            {/* Informations de base */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-500 mb-3">
+              <div>
+                <span className="font-medium">Type:</span> {reclamation.type_reclamation}
+              </div>
+              <div>
+                <span className="font-medium">Créée le:</span> {reclamation.date_creation || reclamation.date_reclamation}
+              </div>
+              <div>
+                <span className="font-medium">Priorité:</span> {reclamation.priorite}
+              </div>
+              <div>
+                <span className="font-medium">Statut:</span> {reclamation.statut}
+              </div>
+            </div>
+
+            {/* Calcul de l'échéance - seulement pour les réclamations non résolues */}
+            {reclamation.statut !== 'resolue' && reclamation.statut !== 'résolu' && reclamation.statut !== 'fermee' && reclamation.statut !== 'fermée' && (() => {
+              const deadline = calculateDeadline(reclamation)
+              return (
+                <div className="mb-3 p-3 rounded-lg border">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">Échéance de traitement</span>
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      deadline.isOverdue ? 'bg-red-100 text-red-800' :
+                      deadline.isUrgent ? 'bg-orange-100 text-orange-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {deadline.isOverdue ? 'EN RETARD' : 
+                       deadline.isUrgent ? 'URGENT' : 'EN COURS'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-600">Date d'échéance:</span>
+                      <p className="text-gray-800 font-mono">{deadline.deadlineDate}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">Jours restants:</span>
+                      <p className={`font-bold ${
+                        deadline.isOverdue ? 'text-red-600' :
+                        deadline.isUrgent ? 'text-orange-600' :
+                        'text-green-600'
+                      }`}>
+                        {deadline.daysRemaining < 0 ? `${Math.abs(deadline.daysRemaining)} jours de retard` :
+                         deadline.daysRemaining === 0 ? 'Dernier jour' :
+                         `${deadline.daysRemaining} jours restants`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500">
+                    Délai de traitement: {deadline.deadlineDays} jours ({reclamation.type_reclamation === 'client' ? 'Réclamation client' : 'Réclamation technique'})
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Section spéciale pour les réclamations résolues */}
+            {(reclamation.statut === 'resolue' || reclamation.statut === 'résolu') && (
+              <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-green-800">✅ Réclamation résolue</span>
+                  <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-800">
+                    TERMINÉE
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  {reclamation.date_resolution && (
+                    <div>
+                      <span className="font-medium text-green-700">Date de résolution:</span>
+                      <p className="text-green-800 font-mono">{new Date(reclamation.date_resolution).toLocaleDateString('fr-FR')}</p>
+                    </div>
+                  )}
+                  {reclamation.description_solution && (
+                    <div className="sm:col-span-2">
+                      <span className="font-medium text-green-700">Solution appliquée:</span>
+                      <p className="text-green-800 text-sm mt-1">{reclamation.description_solution}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Section spéciale pour les réclamations en cours de traitement */}
+            {(reclamation.statut === 'en_cours' || reclamation.statut === 'en cours') && (
+              <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-blue-800">🔄 En cours de traitement</span>
+                  <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">
+                    EN ATTENTE
+                  </span>
+                </div>
+                <div className="text-sm text-blue-700">
+                  <p className="mb-2">
+                    Cette réclamation a été marquée comme résolue et est en attente de validation par l'administration.
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-blue-600">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span>Photos envoyées - En attente de validation admin</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Informations d'intervention */}
+            {(reclamation.numero_intervention || reclamation.intervention_num) && (
+              <div className="mb-3">
+                <span className="text-xs font-medium text-gray-500 uppercase block mb-1">Intervention associée:</span>
+                <div className="bg-blue-50 p-3 rounded border">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="font-medium text-blue-800">Numéro:</span>
+                      <p className="font-mono text-blue-900">{reclamation.numero_intervention || reclamation.intervention_num}</p>
+                    </div>
+                    {reclamation.intervention_client && (
+                      <div>
+                        <span className="font-medium text-blue-800">Client:</span>
+                        <p className="text-blue-900">{reclamation.intervention_client}</p>
+                      </div>
+                    )}
+                    {reclamation.date_intervention && (
+                      <div>
+                        <span className="font-medium text-blue-800">Date:</span>
+                        <p className="text-blue-900">{reclamation.date_intervention}</p>
+                      </div>
+                    )}
+                    {reclamation.intervention_statut && (
+                      <div>
+                        <span className="font-medium text-blue-800">Statut:</span>
+                        <p className="text-blue-900">{reclamation.intervention_statut}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showDetails && (
+              <div className="mt-3 p-4 bg-gray-50 rounded-lg border">
+                <h4 className="font-medium mb-3 text-gray-900">Détails de la réclamation</h4>
+                
+                {/* Informations principales */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-500 uppercase">Numéro d'intervention:</span>
+                    </div>
+                    <p className="text-sm font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      {reclamation.numero_intervention || reclamation.intervention_num || 'Non spécifié'}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-500 uppercase">Client:</span>
+                    </div>
+                    <p className="text-sm font-medium text-gray-900">{reclamation.client}</p>
+                  </div>
+                </div>
+
+                {/* Description du problème */}
+                <div className="mb-3">
+                  <span className="text-xs font-medium text-gray-500 uppercase block mb-1">Description du problème:</span>
+                  <p className="text-sm text-gray-700 bg-white p-3 rounded border">
+                    {reclamation.description_probleme || reclamation.description || 'Aucune description disponible'}
+                  </p>
+                </div>
+
+                {/* Commentaires internes (messages de l'admin) */}
+                {reclamation.commentaires_internes && (
+                  <div className="mb-3">
+                    <span className="text-xs font-medium text-gray-500 uppercase block mb-1">Messages de l'administration:</span>
+                    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="ml-3">
+                          <p className="text-sm text-yellow-800 whitespace-pre-wrap">
+                            {reclamation.commentaires_internes}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Informations techniques */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  {reclamation.intervention_client && (
+                    <div>
+                      <span className="text-xs font-medium text-gray-500 uppercase block mb-1">Intervention Client:</span>
+                      <p className="text-sm text-gray-700">{reclamation.intervention_client}</p>
+                    </div>
+                  )}
+                  
+                  {reclamation.delai_resolution && (
+                    <div>
+                      <span className="text-xs font-medium text-gray-500 uppercase block mb-1">Délai de résolution:</span>
+                      <p className="text-sm text-gray-700">{reclamation.delai_resolution} jours</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Informations de suivi */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 uppercase block mb-1">Date de création:</span>
+                    <p className="text-sm text-gray-700">{reclamation.date_creation}</p>
+                  </div>
+                  
+                  {reclamation.date_resolution && (
+                    <div>
+                      <span className="text-xs font-medium text-gray-500 uppercase block mb-1">Date de résolution:</span>
+                      <p className="text-sm text-gray-700">{reclamation.date_resolution}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Commentaire de résolution si disponible */}
+                {reclamation.commentaire_resolution && (
+                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+                    <span className="text-xs font-medium text-green-700 uppercase block mb-1">Commentaire de résolution:</span>
+                    <p className="text-sm text-green-800">{reclamation.commentaire_resolution}</p>
+                  </div>
+                )}
+
+                {/* Photos justificatives si disponibles */}
+                {reclamation.photos && reclamation.photos.length > 0 && (
+                  <div className="mt-3">
+                    <span className="text-xs font-medium text-gray-500 uppercase block mb-2">Photos justificatives:</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {reclamation.photos.map((photo: any, index: number) => (
+                        <div key={photo.id} className="relative">
+                          <img
+                            src={photo.url}
+                            alt={`Photo justificative ${index + 1}`}
+                            className="w-full h-20 object-cover rounded border"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = '/placeholder.jpg'
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2 mt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDetails(!showDetails)}
+                className="flex items-center gap-1"
+              >
+                <Eye className="w-4 h-4" />
+                {showDetails ? 'Masquer' : 'Détails'}
+              </Button>
+              
+              {/* Bouton Résolu - seulement pour les réclamations ouvertes */}
+              {reclamation.statut === 'ouverte' && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    // Déclencher l'ouverture du modal depuis le composant parent
+                    window.dispatchEvent(new CustomEvent('openResolveModal', { detail: reclamation }))
+                  }}
+                  className="flex items-center gap-1 bg-green-600 hover:bg-green-700"
+                >
+                  <Check className="w-4 h-4" />
+                  Résolu
+                </Button>
+              )}
+
+              {/* Bouton désactivé pour les réclamations en cours */}
+              {(reclamation.statut === 'en_cours' || reclamation.statut === 'en cours') && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={true}
+                  className="flex items-center gap-1 bg-gray-400 hover:bg-gray-400 cursor-not-allowed opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  En cours de traitement
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Modal pour résoudre une réclamation
+function ReclamationResolveModal({ 
+  reclamation, 
+  onClose, 
+  onResolve, 
+  uploadedPhotos, 
+  onPhotoUpload, 
+  onRemovePhoto, 
+  isResolving 
+}: {
+  reclamation: any
+  onClose: () => void
+  onResolve: (id: number, photos: File[], comment: string) => void
+  uploadedPhotos: File[]
+  onPhotoUpload: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onRemovePhoto: (index: number) => void
+  isResolving: boolean
+}) {
+  const [comment, setComment] = useState('')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (uploadedPhotos.length === 0) {
+      alert('Veuillez ajouter au moins une photo justificative')
+      return
+    }
+    onResolve(reclamation.id, uploadedPhotos, comment)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Check className="w-5 h-5 text-green-600" />
+              Résoudre la réclamation
+            </span>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <XIcon className="w-4 h-4" />
+            </Button>
+          </CardTitle>
+          <CardDescription>
+            Marquer la réclamation {reclamation.numero_reclamation} comme résolue
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Informations de la réclamation */}
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <h4 className="font-medium mb-2">Réclamation</h4>
+              <p className="text-sm text-gray-600">{reclamation.client} - {reclamation.type_reclamation}</p>
+            </div>
+
+            {/* Photos justificatives */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Photos justificatives <span className="text-red-500">*</span>
+              </label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={onPhotoUpload}
+                  className="hidden"
+                  id="photo-upload"
+                />
+                <label
+                  htmlFor="photo-upload"
+                  className="flex flex-col items-center justify-center cursor-pointer"
+                >
+                  <Camera className="w-8 h-8 text-gray-400 mb-2" />
+                  <span className="text-sm text-gray-600">Cliquez pour ajouter des photos</span>
+                </label>
+              </div>
+              
+              {/* Aperçu des photos */}
+              {uploadedPhotos.length > 0 && (
+                <div className="mt-3">
+                  <h5 className="text-sm font-medium mb-2">Photos ajoutées ({uploadedPhotos.length})</h5>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {uploadedPhotos.map((photo, index) => (
+                      <div key={index} className="relative">
+                        <img
+                          src={URL.createObjectURL(photo)}
+                          alt={`Photo ${index + 1}`}
+                          className="w-full h-20 object-cover rounded border"
+                        />
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
+                          onClick={() => onRemovePhoto(index)}
+                        >
+                          <XIcon className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Commentaire */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Commentaire de résolution
+              </label>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Décrivez comment la réclamation a été résolue..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={3}
+              />
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="flex justify-end gap-3 pt-4">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Annuler
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={isResolving || uploadedPhotos.length === 0}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {isResolving ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Résolution en cours...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    Marquer comme résolu
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
+import { sendPenaliteNotification } from "@/lib/socketio"
+import webpush from 'web-push'
 
 export async function GET(request: NextRequest) {
   try {
@@ -263,6 +265,74 @@ export async function POST(request: NextRequest) {
       )
       WHERE id = $1
     `, [cleanedData.employe_id])
+    
+    // Envoyer une notification au technicien
+    if (cleanedData.employe_id) {
+      try {
+        const penaliteData = {
+          numero_penalite: numeroPenalite,
+          montant: cleanedData.montant,
+          motif: finalMotif,
+          type_penalite: type_penalite,
+          statut: statut || 'active',
+          date_echeance: cleanedData.date_echeance
+        }
+        
+        // 1. Notification Socket.IO (pour l'interface web)
+        const socketNotificationSent = sendPenaliteNotification(cleanedData.employe_id, penaliteData)
+        console.log(`📨 Notification Socket.IO pénalité: ${socketNotificationSent ? 'OUI' : 'NON'}`)
+        
+        // 2. Notification Push (pour l'écran de verrouillage mobile)
+        try {
+          const pushSubscriptions = await query(
+            'SELECT endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE employee_id = $1',
+            [cleanedData.employe_id]
+          )
+          
+          if (pushSubscriptions.rows.length > 0) {
+            const payload = JSON.stringify({
+              title: '💰 Nouvelle Pénalité',
+              body: `Pénalité de ${cleanedData.montant}€ - ${finalMotif}`,
+              icon: '/placeholder-logo.png',
+              badge: '/placeholder-logo.png',
+              tag: 'penalite-notification',
+              requireInteraction: true,
+              data: {
+                type: 'penalite',
+                numero_penalite: numeroPenalite,
+                montant: cleanedData.montant,
+                url: '/technicien/dashboard'
+              }
+            })
+            
+            // Envoyer à toutes les souscriptions de l'employé
+            for (const sub of pushSubscriptions.rows) {
+              try {
+                const pushSubscription = {
+                  endpoint: sub.endpoint,
+                  keys: {
+                    p256dh: sub.p256dh_key,
+                    auth: sub.auth_key
+                  }
+                }
+                
+                await webpush.sendNotification(pushSubscription, payload)
+                console.log(`📱 Notification push envoyée à ${sub.endpoint}`)
+              } catch (pushError) {
+                console.error(`❌ Erreur push notification:`, pushError)
+              }
+            }
+          } else {
+            console.log(`⚠️ Aucune souscription push trouvée pour l'employé ${cleanedData.employe_id}`)
+          }
+        } catch (pushError) {
+          console.error('❌ Erreur envoi notifications push:', pushError)
+        }
+        
+      } catch (notificationError) {
+        console.error('❌ Erreur envoi notification pénalité:', notificationError)
+      }
+    }
     
     return NextResponse.json({
       success: true,

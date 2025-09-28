@@ -1,107 +1,79 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { query } from "@/lib/database"
+import { NextRequest, NextResponse } from 'next/server'
+import { query } from '@/lib/database'
+import webpush from 'web-push'
 
-export const dynamic = 'force-dynamic'
+// Configuration VAPID (en production, utilisez des clés réelles)
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || 'BCTx_XKKl40Yl4_XmF9ltBjyADCSWWsrs3o6nOX65S90nB2qzR9JXTvkBCoOrtod_5e04azaMSAxAzOt9JJIYxg'
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '9HOWMXxtjsME2hAS3fJQu811blXmiq-PNyEQiQSAWls'
 
-// Interface pour les souscriptions push
-interface PushSubscription {
-  endpoint: string
-  keys: {
-    p256dh: string
-    auth: string
-  }
-}
+webpush.setVapidDetails(
+  'mailto:admin@finalfibre.com',
+  vapidPublicKey,
+  vapidPrivateKey
+)
 
 export async function POST(request: NextRequest) {
   try {
     const { subscription, employeeId } = await request.json()
 
     if (!subscription || !employeeId) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Données de souscription manquantes" 
-      }, { status: 400 })
+      return NextResponse.json({ error: 'Données manquantes' }, { status: 400 })
     }
 
-    // Vérifier que l'employé existe
-    const employeeCheck = await query(
-      'SELECT id FROM employes WHERE id = $1',
-      [employeeId]
-    )
+    // Enregistrer la souscription dans la base de données
+    await query(`
+      INSERT INTO push_subscriptions (employee_id, endpoint, p256dh_key, auth_key, created_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (endpoint) 
+      DO UPDATE SET 
+        employee_id = $1,
+        p256dh_key = $3,
+        auth_key = $4,
+        updated_at = NOW()
+    `, [
+      employeeId,
+      subscription.endpoint,
+      subscription.keys.p256dh,
+      subscription.keys.auth
+    ])
 
-    if (employeeCheck.rows.length === 0) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Employé non trouvé" 
-      }, { status: 404 })
-    }
+    console.log(`✅ Souscription push enregistrée pour l'employé ${employeeId}`)
 
-    // Supprimer l'ancienne souscription si elle existe
-    await query(
-      'DELETE FROM push_subscriptions WHERE employee_id = $1',
-      [employeeId]
-    )
-
-    // Insérer la nouvelle souscription
-    const result = await query(
-      `INSERT INTO push_subscriptions (employee_id, endpoint, p256dh_key, auth_key, created_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       RETURNING id`,
-      [
-        employeeId,
-        subscription.endpoint,
-        subscription.keys.p256dh,
-        subscription.keys.auth
-      ]
-    )
-
-    console.log(`✅ Souscription push créée pour l'employé ${employeeId}`)
-
-    return NextResponse.json({
-      success: true,
-      subscriptionId: result.rows[0].id,
-      message: "Souscription push enregistrée avec succès"
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Souscription enregistrée' 
     })
 
   } catch (error) {
-    console.error("Erreur API push-subscription POST:", error)
-    return NextResponse.json({ 
-      success: false, 
-      error: "Erreur serveur lors de l'enregistrement de la souscription" 
-    }, { status: 500 })
+    console.error('Erreur enregistrement souscription push:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { endpoint, employeeId } = await request.json()
+    const { employeeId } = await request.json()
 
-    if (!endpoint || !employeeId) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Endpoint ou ID employé manquant" 
-      }, { status: 400 })
+    if (!employeeId) {
+      return NextResponse.json({ error: 'ID employé requis' }, { status: 400 })
     }
 
-    // Supprimer la souscription
-    const result = await query(
-      'DELETE FROM push_subscriptions WHERE employee_id = $1 AND endpoint = $2',
-      [employeeId, endpoint]
+    // Supprimer toutes les souscriptions de l'employé
+    await query(
+      'DELETE FROM push_subscriptions WHERE employee_id = $1',
+      [employeeId]
     )
 
-    console.log(`✅ Souscription push supprimée pour l'employé ${employeeId}`)
+    console.log(`✅ Souscriptions push supprimées pour l'employé ${employeeId}`)
 
-    return NextResponse.json({
-      success: true,
-      message: "Souscription push supprimée avec succès"
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Souscriptions supprimées' 
     })
 
   } catch (error) {
-    console.error("Erreur API push-subscription DELETE:", error)
-    return NextResponse.json({ 
-      success: false, 
-      error: "Erreur serveur lors de la suppression de la souscription" 
-    }, { status: 500 })
+    console.error('Erreur suppression souscriptions push:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }
 
@@ -110,28 +82,22 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const employeeId = searchParams.get('employee_id')
 
-    let queryText = 'SELECT * FROM push_subscriptions'
-    const params = []
-
-    if (employeeId) {
-      queryText += ' WHERE employee_id = $1'
-      params.push(parseInt(employeeId))
+    if (!employeeId) {
+      return NextResponse.json({ error: 'ID employé requis' }, { status: 400 })
     }
 
-    queryText += ' ORDER BY created_at DESC'
+    const result = await query(
+      'SELECT * FROM push_subscriptions WHERE employee_id = $1',
+      [employeeId]
+    )
 
-    const result = await query(queryText, params)
-
-    return NextResponse.json({
-      success: true,
-      subscriptions: result.rows
+    return NextResponse.json({ 
+      subscriptions: result.rows,
+      count: result.rows.length 
     })
 
   } catch (error) {
-    console.error("Erreur API push-subscription GET:", error)
-    return NextResponse.json({ 
-      success: false, 
-      error: "Erreur serveur lors de la récupération des souscriptions" 
-    }, { status: 500 })
+    console.error('Erreur récupération souscriptions push:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }

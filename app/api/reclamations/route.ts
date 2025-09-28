@@ -9,7 +9,10 @@ export async function GET(request: NextRequest) {
     let queryText = `
       SELECT r.*, 
              e.nom as employe_nom, e.prenom as employe_prenom,
-             i.num_inter, i.client as intervention_client
+             i.num_inter as numero_intervention, 
+             i.client as intervention_client,
+             i.date_rdv as date_intervention,
+             i.statut as intervention_statut
       FROM reclamations r 
       LEFT JOIN employes e ON r.employe_id = e.id 
       LEFT JOIN interventions i ON r.intervention_id = i.id
@@ -24,7 +27,40 @@ export async function GET(request: NextRequest) {
     queryText += ' ORDER BY r.created_at DESC'
     
     const result = await query(queryText, params)
-    return NextResponse.json({ reclamations: result.rows })
+    
+    // Pour chaque réclamation, récupérer les photos
+    const reclamationsWithPhotos = await Promise.all(
+      result.rows.map(async (reclamation) => {
+        try {
+          const photosResult = await query(`
+            SELECT id, photo_name, photo_type, photo_size, uploaded_at
+            FROM reclamation_photos 
+            WHERE reclamation_id = $1
+            ORDER BY uploaded_at ASC
+          `, [reclamation.id])
+          
+          return {
+            ...reclamation,
+            photos: photosResult.rows.map(photo => ({
+              id: photo.id,
+              name: photo.photo_name,
+              type: photo.photo_type,
+              size: photo.photo_size,
+              uploadedAt: photo.uploaded_at,
+              url: `/api/reclamations/photos/${photo.id}`
+            }))
+          }
+        } catch (error) {
+          console.error(`Erreur récupération photos pour réclamation ${reclamation.id}:`, error)
+          return {
+            ...reclamation,
+            photos: []
+          }
+        }
+      })
+    )
+    
+    return NextResponse.json({ reclamations: reclamationsWithPhotos })
   } catch (error) {
     console.error("Erreur API réclamations GET:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })

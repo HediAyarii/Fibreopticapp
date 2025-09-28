@@ -10,13 +10,19 @@ export const metadata: Metadata = {
   description: 'Application de gestion des techniciens FinalFibre',
   generator: 'Next.js',
   manifest: '/manifest.json',
-  themeColor: '#3b82f6',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'FinalFibre'
   }
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#3b82f6'
 }
 
 export default function RootLayout({
@@ -27,7 +33,7 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <head>
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="stylesheet" href="/styles/mobile-responsive.css" />
         <meta name="theme-color" content="#3b82f6" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -65,6 +71,12 @@ export default function RootLayout({
               if ('Notification' in window) {
                 console.log('🔔 Permission actuelle: ' + Notification.permission);
               }
+              
+              // Charger le script de test de responsivité
+              const script = document.createElement('script');
+              script.src = '/test-responsiveness.js';
+              script.async = true;
+              document.head.appendChild(script);
             `,
           }}
         />

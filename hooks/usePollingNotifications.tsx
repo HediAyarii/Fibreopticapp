@@ -135,10 +135,24 @@ export function usePollingNotifications({ employeeId, onNotification }: UsePolli
       
       // Vérifier les réclamations
       const reclamationsResponse = await fetchWithAuth(`/api/reclamations?employe_id=${employeeId}`)
+      
+      // Si la session a expiré, ne pas continuer
+      if (!reclamationsResponse.ok) {
+        console.log('Session expirée détectée dans usePollingNotifications')
+        return
+      }
+      
       const reclamationsData = await reclamationsResponse.json()
       
       // Vérifier les pénalités
       const penalitesResponse = await fetchWithAuth(`/api/penalites?employe_id=${employeeId}`)
+      
+      // Si la session a expiré, ne pas continuer
+      if (!penalitesResponse.ok) {
+        console.log('Session expirée détectée dans usePollingNotifications')
+        return
+      }
+      
       const penalitesData = await penalitesResponse.json()
 
       console.log(`📊 Réclamations: ${reclamationsData.reclamations?.length || 0}, Pénalités: ${penalitesData.penalites?.length || 0}`)

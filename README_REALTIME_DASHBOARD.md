@@ -105,3 +105,9 @@
 - **Nettoyage automatique** : Intervalles supprimés à la déconnexion
 - **Gestion d'erreurs** : Fallbacks en cas d'échec des APIs
 
+
+
+
+
+
+

@@ -1,0 +1,215 @@
+/* Styles responsive pour le dashboard technicien */
+
+/* Améliorations pour mobile */
+@media (max-width: 640px) {
+  /* Réduire les espacements sur mobile */
+  .mobile-compact {
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+  }
+  
+  /* Améliorer la lisibilité des textes */
+  .mobile-text {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+  
+  /* Optimiser les boutons pour le tactile */
+  .mobile-button {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+  }
+  
+  /* Améliorer les cartes sur mobile */
+  .mobile-card {
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Optimiser les badges */
+  .mobile-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+  }
+  
+  /* Améliorer la navigation mobile */
+  .mobile-nav {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  .mobile-nav::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Optimiser les statistiques */
+  .mobile-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+  
+  /* Améliorer les listes */
+  .mobile-list-item {
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  /* Optimiser les modales */
+  .mobile-modal {
+    margin: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+}
+
+/* Améliorations pour tablette */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .tablet-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+  
+  .tablet-card {
+    padding: 1rem;
+  }
+  
+  .tablet-text {
+    font-size: 0.875rem;
+  }
+}
+
+/* Améliorations pour desktop */
+@media (min-width: 1025px) {
+  .desktop-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.5rem;
+  }
+  
+  .desktop-card {
+    padding: 1.5rem;
+  }
+  
+  .desktop-text {
+    font-size: 1rem;
+  }
+}
+
+/* Améliorations générales */
+.glass-card {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Animations fluides */
+.smooth-transition {
+  transition: all 0.3s ease-in-out;
+}
+
+/* Améliorer l'accessibilité */
+@media (prefers-reduced-motion: reduce) {
+  .smooth-transition {
+    transition: none;
+  }
+}
+
+/* Mode sombre (si implémenté plus tard) */
+@media (prefers-color-scheme: dark) {
+  .glass-card {
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Améliorer les notifications sur mobile */
+@media (max-width: 640px) {
+  .notification-card {
+    margin: 0.5rem;
+    border-radius: 0.75rem;
+  }
+  
+  .notification-content {
+    padding: 1rem;
+  }
+  
+  .notification-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .notification-buttons button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Optimiser les formulaires sur mobile */
+@media (max-width: 640px) {
+  .mobile-form {
+    padding: 1rem;
+  }
+  
+  .mobile-form input,
+  .mobile-form textarea,
+  .mobile-form select {
+    font-size: 16px; /* Évite le zoom automatique sur iOS */
+    padding: 0.75rem;
+  }
+  
+  .mobile-form label {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+}
+
+/* Améliorer la pagination sur mobile */
+@media (max-width: 640px) {
+  .mobile-pagination {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+  }
+  
+  .mobile-pagination-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+}
+
+/* Optimiser les tableaux sur mobile */
+@media (max-width: 640px) {
+  .mobile-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  
+  .mobile-table-row {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 1rem 0;
+  }
+  
+  .mobile-table-cell {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+  }
+  
+  .mobile-table-cell:before {
+    content: attr(data-label);
+    font-weight: 500;
+    color: #6b7280;
+  }
+}
+
+
+
+
+

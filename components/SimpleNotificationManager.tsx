@@ -116,36 +116,39 @@ export function SimpleNotificationManager({ employeeId }: SimpleNotificationMana
 
   return (
     <Card className="glass-card border border-white/20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bell className="w-5 h-5" />
-          Notifications Simples
-          <div className="flex gap-2 ml-auto">
-            <Badge variant={isOnline ? "default" : "destructive"} className="flex items-center gap-1">
+      <CardHeader className="p-3 sm:p-6">
+        <CardTitle className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm sm:text-base">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">Notifications Simples</span>
+            <span className="sm:hidden">Simples</span>
+          </div>
+          <div className="flex gap-2 sm:ml-auto">
+            <Badge variant={isOnline ? "default" : "destructive"} className="flex items-center gap-1 text-xs">
               {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-              {isOnline ? 'En ligne' : 'Hors ligne'}
+              <span className="hidden sm:inline">{isOnline ? 'En ligne' : 'Hors ligne'}</span>
             </Badge>
-            <Badge variant={permission === 'granted' ? "default" : "secondary"}>
+            <Badge variant={permission === 'granted' ? "default" : "secondary"} className="text-xs">
               {permission === 'granted' ? 'Activé' : 'Désactivé'}
             </Badge>
           </div>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6">
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Recevez des notifications pour les pénalités et réclamations.
           </p>
           
-          <div className="flex items-center gap-2 text-sm">
-            <Smartphone className="w-4 h-4" />
+          <div className="flex items-center gap-2 text-xs sm:text-sm">
+            <Smartphone className="w-3 h-3 sm:w-4 sm:h-4" />
             <span>Compatible avec tous les navigateurs modernes</span>
           </div>
         </div>
 
         <div className="space-y-3">
           {permission === 'default' && (
-            <Button onClick={requestPermission} className="w-full">
+            <Button onClick={requestPermission} className="w-full text-sm">
               <Bell className="w-4 h-4 mr-2" />
               Activer les Notifications
             </Button>
@@ -153,17 +156,17 @@ export function SimpleNotificationManager({ employeeId }: SimpleNotificationMana
 
           {permission === 'granted' && (
             <div className="space-y-2">
-              <Button onClick={testNotification} variant="outline" className="w-full">
+              <Button onClick={testNotification} variant="outline" className="w-full text-sm">
                 <Bell className="w-4 h-4 mr-2" />
                 Tester la Notification
               </Button>
               
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <Button 
                   onClick={() => sendReclamationNotification('Nouvelle Réclamation', 'Vous avez une nouvelle réclamation à traiter')} 
                   variant="outline" 
                   size="sm"
-                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  className="text-red-600 border-red-200 hover:bg-red-50 text-xs sm:text-sm"
                 >
                   <AlertCircle className="w-3 h-3 mr-1" />
                   Test Réclamation
@@ -173,7 +176,7 @@ export function SimpleNotificationManager({ employeeId }: SimpleNotificationMana
                   onClick={() => sendPenaltyNotification('Nouvelle Pénalité', 'Vous avez une nouvelle pénalité à traiter')} 
                   variant="outline" 
                   size="sm"
-                  className="text-orange-600 border-orange-200 hover:bg-orange-50"
+                  className="text-orange-600 border-orange-200 hover:bg-orange-50 text-xs sm:text-sm"
                 >
                   <AlertCircle className="w-3 h-3 mr-1" />
                   Test Pénalité
@@ -184,7 +187,7 @@ export function SimpleNotificationManager({ employeeId }: SimpleNotificationMana
 
           {permission === 'denied' && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-800">
+              <p className="text-xs sm:text-sm text-red-800">
                 Les notifications sont bloquées. Veuillez les autoriser dans les paramètres de votre navigateur.
               </p>
             </div>

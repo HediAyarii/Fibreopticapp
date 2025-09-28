@@ -115,3 +115,9 @@ Le système de notifications temps réel fonctionne maintenant **parfaitement** 
 
 Le système est maintenant **100% fonctionnel** et **prêt pour la production** ! Les techniciens recevront des notifications instantanées dès qu'une réclamation ou pénalité leur est assignée depuis l'espace admin.
 
+
+
+
+
+
+

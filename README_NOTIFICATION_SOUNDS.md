@@ -45,3 +45,9 @@ Une fois les fichiers ajoutés, vous pouvez tester les sons en :
 2. Créant une réclamation ou pénalité depuis l'espace admin
 3. Vérifiant que le son se joue automatiquement
 
+
+
+
+
+
+

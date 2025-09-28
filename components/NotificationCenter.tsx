@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { usePollingNotifications, NotificationData } from '@/hooks/usePollingNotifications'
+import { useSocketIO, NotificationData } from '@/hooks/useSocketIO'
 
 interface NotificationCenterProps {
   employeeId: number
@@ -21,7 +21,7 @@ export function NotificationCenter({ employeeId }: NotificationCenterProps) {
     removeNotification, 
     clearAllNotifications,
     permissionGranted 
-  } = usePollingNotifications({ 
+  } = useSocketIO({ 
     employeeId,
     onNotification: (notification) => {
       console.log('Nouvelle notification reçue:', notification)

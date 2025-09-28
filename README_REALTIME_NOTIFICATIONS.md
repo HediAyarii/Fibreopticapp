@@ -193,3 +193,9 @@ console.log('📨 Notification réclamation envoyée à l\'employé 123')
 - **Slack/Discord** : Intégration avec des plateformes de communication
 - **Webhooks** : Notifications vers des systèmes externes
 
+
+
+
+
+
+
