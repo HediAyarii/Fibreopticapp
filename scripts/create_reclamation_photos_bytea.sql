@@ -25,3 +25,5 @@ CREATE INDEX IF NOT EXISTS idx_reclamation_photos_uploaded_by ON reclamation_pho
 -- Créer un index sur uploaded_at pour les requêtes temporelles
 CREATE INDEX IF NOT EXISTS idx_reclamation_photos_uploaded_at ON reclamation_photos(uploaded_at);
 
+
+

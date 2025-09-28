@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/database'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
+import { addNoCacheHeaders } from '@/lib/cache-headers'
 
 export const dynamic = 'force-dynamic'
 
@@ -80,11 +81,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Réclamation ${reclamationId} marquée comme résolue par l'employé ${resolvedBy}`)
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: 'Réclamation marquée comme résolue avec succès',
       photos: photoIds
     })
+    
+    return addNoCacheHeaders(response)
 
   } catch (error) {
     console.error('Erreur résolution réclamation:', error)

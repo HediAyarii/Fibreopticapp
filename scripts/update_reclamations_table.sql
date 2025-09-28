@@ -23,3 +23,5 @@ WHERE statut IS NULL OR statut = '';
 -- Afficher un message de confirmation
 SELECT 'Table reclamations mise à jour avec succès' as message;
 
+
+

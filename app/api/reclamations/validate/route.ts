@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/database'
+import { addNoCacheHeaders } from '@/lib/cache-headers'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,11 +76,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Réclamation ${reclamationId} ${action === 'approve' ? 'validée' : 'rejetée'} par l'admin`)
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message,
       newStatus
     })
+    
+    return addNoCacheHeaders(response)
 
   } catch (error) {
     console.error('Erreur validation réclamation:', error)

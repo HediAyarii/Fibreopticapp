@@ -27,3 +27,5 @@ CREATE INDEX IF NOT EXISTS idx_reclamations_resolved_by ON reclamations(resolved
 CREATE INDEX IF NOT EXISTS idx_reclamations_statut ON reclamations(statut);
 CREATE INDEX IF NOT EXISTS idx_reclamations_date_resolution ON reclamations(date_resolution);
 
+
+

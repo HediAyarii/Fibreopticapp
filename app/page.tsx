@@ -49,6 +49,7 @@ import {
   UserPlus,
   FileText,
   Calculator,
+  BarChart3,
   TrendingUp,
   LogOut,
   Upload,
@@ -68,7 +69,6 @@ import {
   Package,
   AlertTriangle,
   CreditCard,
-  BarChart3,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
@@ -1780,6 +1780,19 @@ export default function EmployeeTracker() {
                 >
               <AlertTriangle className="w-5 h-5" />
               Pénalités
+                </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "statistics"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+              onClick={() => setActiveTab("statistics")}
+                >
+                  <BarChart3 className="w-5 h-5" />
+                  <span className="font-medium">Statistiques</span>
                 </Button>
 
                 <Button
@@ -3634,7 +3647,21 @@ export default function EmployeeTracker() {
           )}
 
            {/* Claims Section */}
-          {activeTab === "costs" && (
+          {activeTab === "statistics" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-3xl font-bold">Statistiques</h2>
+                <p className="text-muted-foreground">Analyses et graphiques des données</p>
+              </div>
+            </div>
+            
+            {/* Interface de statistiques */}
+            <StatisticsDashboard />
+          </div>
+        )}
+
+        {activeTab === "costs" && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
@@ -5214,5 +5241,441 @@ function CostModal({ isOpen, onClose, onSave, categories, editingCost, type }: {
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// Composant de tableau de bord des statistiques
+function StatisticsDashboard() {
+  const [statistics, setStatistics] = useState<any>({})
+  const [loading, setLoading] = useState(false)
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date()
+    date.setMonth(date.getMonth() - 3)
+    return date.toISOString().split('T')[0]
+  })
+  const [endDate, setEndDate] = useState(() => {
+    return new Date().toISOString().split('T')[0]
+  })
+  const [selectedType, setSelectedType] = useState('all')
+
+  const loadStatistics = async () => {
+    setLoading(true)
+    try {
+      console.log('🔄 Chargement des statistiques pour la période:', { startDate, endDate, selectedType })
+      const response = await fetch(`/api/statistics?startDate=${startDate}&endDate=${endDate}&type=${selectedType}`)
+      const data = await response.json()
+      console.log('📊 Données reçues:', data)
+      if (data.success) {
+        setStatistics(data.statistics)
+        console.log('✅ Statistiques mises à jour:', data.statistics)
+      } else {
+        console.error('❌ Erreur API:', data.error)
+      }
+    } catch (error) {
+      console.error('❌ Erreur chargement statistiques:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadStatistics()
+  }, [startDate, endDate, selectedType])
+
+  const COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6B7280']
+
+  return (
+    <div className="space-y-6">
+      {/* Contrôles de période */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Filtres de Période</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-4 items-end">
+            <div>
+              <Label htmlFor="startDate">Date de début</Label>
+              <Input
+                id="startDate"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="endDate">Date de fin</Label>
+              <Input
+                id="endDate"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="type">Type de statistiques</Label>
+              <Select value={selectedType} onValueChange={setSelectedType}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les statistiques</SelectItem>
+                  <SelectItem value="interventions">Interventions</SelectItem>
+                  <SelectItem value="fuel">Carburant</SelectItem>
+                  <SelectItem value="penalties">Pénalités</SelectItem>
+                  <SelectItem value="claims">Réclamations</SelectItem>
+                  <SelectItem value="revenue">Revenus</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={loadStatistics} disabled={loading}>
+              {loading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Chargement...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Actualiser
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Statistiques des interventions */}
+      {statistics.interventions && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="h-96 flex items-center justify-center">
+                  <div className="text-center">
+                    <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+                    <p>Chargement des données...</p>
+                  </div>
+                </div>
+              ) : statistics.interventions.byStatus.length > 0 ? (
+                <>
+                  <div className="h-96">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={statistics.interventions.byStatus}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={120}
+                          fill="#8884d8"
+                          dataKey="count"
+                          nameKey="statut"
+                        >
+                          {statistics.interventions.byStatus.map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="text-center mt-4">
+                    <p className="text-2xl font-bold">{statistics.interventions.total}</p>
+                    <p className="text-sm text-muted-foreground">Total des interventions</p>
+                  </div>
+                </>
+              ) : (
+                <div className="h-96 flex items-center justify-center">
+                  <div className="text-center">
+                    <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-muted-foreground">Aucune donnée pour cette période</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Répartition des Interventions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {statistics.interventions.byStatus.map((item: any, index: number) => (
+                  <div key={item.statut} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      />
+                      <span className="font-medium">{item.statut}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold">{item.count}</div>
+                      <div className="text-sm text-muted-foreground">{item.percentage}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Statistiques du carburant */}
+      {statistics.fuel && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Consommation de Carburant par Mois</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={statistics.fuel.monthly}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="month" 
+                      tickFormatter={(value) => new Date(value).toLocaleDateString('fr-FR', { month: 'short' })}
+                    />
+                    <YAxis />
+                    <ChartTooltip />
+                    <Line type="monotone" dataKey="total_liters" stroke="#3B82F6" strokeWidth={2} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Top 10 Employés - Consommation</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={statistics.fuel.byEmployee} layout="horizontal">
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis dataKey="nom" type="category" width={100} />
+                    <ChartTooltip />
+                    <Bar dataKey="total_cost" fill="#10B981" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Statistiques des pénalités */}
+      {statistics.penalties && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Pénalités par Statut</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={statistics.penalties.byStatus}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percentage }) => `${name}: ${percentage}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="count"
+                    >
+                      {statistics.penalties.byStatus.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <ChartTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Top 10 Employés - Pénalités</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {statistics.penalties.byEmployee.slice(0, 10).map((employee: any, index: number) => (
+                  <div key={employee.nom} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-sm font-bold">
+                        {index + 1}
+                      </div>
+                      <div>
+                        <div className="font-medium">{employee.prenom} {employee.nom}</div>
+                        <div className="text-sm text-muted-foreground">{employee.penalty_count} pénalité(s)</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-red-600">{parseFloat(employee.total_amount).toLocaleString('fr-FR')} €</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Statistiques des réclamations */}
+      {statistics.claims && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Réclamations par Statut</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={statistics.claims.byStatus}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percentage }) => `${name}: ${percentage}%`}
+                      outerRadius={60}
+                      fill="#8884d8"
+                      dataKey="count"
+                    >
+                      {statistics.claims.byStatus.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <ChartTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Réclamations par Type</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {statistics.claims.byType.map((item: any, index: number) => (
+                  <div key={item.type_reclamation} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      />
+                      <span className="text-sm">{item.type_reclamation}</span>
+                    </div>
+                    <div className="text-sm font-medium">{item.count}</div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Réclamations par Priorité</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {statistics.claims.byPriority.map((item: any, index: number) => (
+                  <div key={item.priorite} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      />
+                      <span className="text-sm">{item.priorite}</span>
+                    </div>
+                    <div className="text-sm font-medium">{item.count}</div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Statistiques des revenus */}
+      {statistics.revenue && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Évolution des Interventions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={statistics.revenue.monthly}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="month" 
+                      tickFormatter={(value) => new Date(value).toLocaleDateString('fr-FR', { month: 'short' })}
+                    />
+                    <YAxis />
+                    <ChartTooltip />
+                    <Line type="monotone" dataKey="intervention_count" stroke="#3B82F6" strokeWidth={2} name="Total" />
+                    <Line type="monotone" dataKey="completed_count" stroke="#10B981" strokeWidth={2} name="Terminées" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Interventions par Type</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {statistics.revenue.byType.map((item: any, index: number) => (
+                  <div key={item.type_intervention} className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium">{item.type_intervention}</span>
+                      <span className="text-sm text-muted-foreground">{item.completion_rate}% terminées</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="flex justify-between text-sm mb-1">
+                          <span>Total: {item.count}</span>
+                          <span>Terminées: {item.completed}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${item.completion_rate}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Message si aucune donnée */}
+      {Object.keys(statistics).length === 0 && !loading && (
+        <Card>
+          <CardContent className="text-center py-12">
+            <BarChart3 className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium mb-2">Aucune donnée disponible</h3>
+            <p className="text-muted-foreground">
+              Aucune donnée trouvée pour la période sélectionnée. Essayez de modifier les filtres.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }

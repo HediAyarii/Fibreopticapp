@@ -1,5 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
+import { addNoCacheHeaders } from "@/lib/cache-headers"
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,7 +63,8 @@ export async function GET(request: NextRequest) {
       })
     )
     
-    return NextResponse.json({ reclamations: reclamationsWithPhotos })
+    const response = NextResponse.json({ reclamations: reclamationsWithPhotos })
+    return addNoCacheHeaders(response)
   } catch (error) {
     console.error("Erreur API réclamations GET:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -193,10 +197,12 @@ export async function POST(request: NextRequest) {
 
     const result = await query(insertQuery, values)
     
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       reclamation: result.rows[0]
     })
+    
+    return addNoCacheHeaders(response)
   } catch (error) {
     console.error("Erreur API réclamations POST:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -264,10 +270,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Réclamation non trouvée" }, { status: 404 })
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       reclamation: result.rows[0]
     })
+    
+    return addNoCacheHeaders(response)
   } catch (error) {
     console.error("Erreur API réclamations PUT:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
