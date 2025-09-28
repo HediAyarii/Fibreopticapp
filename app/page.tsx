@@ -48,6 +48,7 @@ import {
   Users,
   UserPlus,
   FileText,
+  Calculator,
   TrendingUp,
   LogOut,
   Upload,
@@ -1779,6 +1780,19 @@ export default function EmployeeTracker() {
                 >
               <AlertTriangle className="w-5 h-5" />
               Pénalités
+                </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "costs"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+              onClick={() => setActiveTab("costs")}
+                >
+                  <Calculator className="w-5 h-5" />
+                  <span className="font-medium">Coûts</span>
                 </Button>
 
                 <Button
@@ -3620,7 +3634,42 @@ export default function EmployeeTracker() {
           )}
 
            {/* Claims Section */}
-          {activeTab === "claims" && (
+          {activeTab === "costs" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-3xl font-bold">Calcul des Coûts</h2>
+                <p className="text-muted-foreground">Gestion des coûts fixes et variables</p>
+              </div>
+              <Button 
+                onClick={async () => {
+                  try {
+                    const response = await fetch('/api/setup-costs', { method: 'POST' })
+                    if (response.ok) {
+                      alert('✅ Tables de coûts initialisées avec succès')
+                      window.location.reload()
+                    } else {
+                      alert('❌ Erreur lors de l\'initialisation')
+                    }
+                  } catch (error) {
+                    console.error('Erreur:', error)
+                    alert('❌ Erreur lors de l\'initialisation')
+                  }
+                }}
+                variant="outline"
+                className="bg-blue-500/20 border-blue-500/50 text-blue-400 hover:bg-blue-500/30"
+              >
+                <Calculator className="w-4 h-4 mr-2" />
+                Initialiser les tables
+              </Button>
+            </div>
+            
+            {/* Interface de gestion des coûts */}
+            <CostsManagement />
+          </div>
+        )}
+
+        {activeTab === "claims" && (
              <div className="space-y-6">
                <div className="flex justify-between items-center">
                   <div>
@@ -4758,5 +4807,412 @@ export default function EmployeeTracker() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+// Composant de gestion des coûts
+function CostsManagement() {
+  const [fixedCosts, setFixedCosts] = useState<any[]>([])
+  const [variableCosts, setVariableCosts] = useState<any[]>([])
+  const [categories, setCategories] = useState<any[]>([])
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [loading, setLoading] = useState(false)
+  const [showFixedModal, setShowFixedModal] = useState(false)
+  const [showVariableModal, setShowVariableModal] = useState(false)
+  const [editingCost, setEditingCost] = useState<any>(null)
+
+  // Charger les données
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [fixedRes, variableRes, categoriesRes] = await Promise.all([
+        fetch('/api/costs?type=fixed'),
+        fetch(`/api/costs?type=variable&month=${selectedMonth}&year=${selectedYear}`),
+        fetch('/api/cost-categories')
+      ])
+
+      const fixedData = await fixedRes.json()
+      const variableData = await variableRes.json()
+      const categoriesData = await categoriesRes.json()
+
+      setFixedCosts(fixedData.costs || [])
+      setVariableCosts(variableData.costs || [])
+      setCategories(categoriesData.categories || [])
+    } catch (error) {
+      console.error('Erreur chargement coûts:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [selectedMonth, selectedYear])
+
+  const handleSaveCost = async (costData: any, type: 'fixed' | 'variable') => {
+    try {
+      const url = '/api/costs'
+      const method = editingCost ? 'PUT' : 'POST'
+      
+      const payload = {
+        ...costData,
+        type,
+        month: selectedMonth,
+        year: selectedYear
+      }
+
+      if (editingCost) {
+        payload.id = editingCost.id
+      }
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (response.ok) {
+        await loadData()
+        setShowFixedModal(false)
+        setShowVariableModal(false)
+        setEditingCost(null)
+      }
+    } catch (error) {
+      console.error('Erreur sauvegarde coût:', error)
+    }
+  }
+
+  const handleDeleteCost = async (id: number, type: 'fixed' | 'variable') => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer ce coût ?')) return
+
+    try {
+      const response = await fetch(`/api/costs?id=${id}&type=${type}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        await loadData()
+      }
+    } catch (error) {
+      console.error('Erreur suppression coût:', error)
+    }
+  }
+
+  const totalFixed = fixedCosts.reduce((sum, cost) => sum + parseFloat(cost.amount), 0)
+  const totalVariable = variableCosts.reduce((sum, cost) => sum + parseFloat(cost.amount), 0)
+  const totalCosts = totalFixed + totalVariable
+
+  return (
+    <div className="space-y-6">
+      {/* Sélecteur de mois/année */}
+      <div className="flex gap-4 items-center">
+        <div className="flex gap-2">
+          <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(parseInt(value))}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 12 }, (_, i) => (
+                <SelectItem key={i + 1} value={(i + 1).toString()}>
+                  {new Date(0, i).toLocaleString('fr-FR', { month: 'long' })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(parseInt(value))}>
+            <SelectTrigger className="w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 5 }, (_, i) => {
+                const year = new Date().getFullYear() - 2 + i
+                return (
+                  <SelectItem key={year} value={year.toString()}>
+                    {year}
+                  </SelectItem>
+                )
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Résumé des coûts */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Coûts Fixes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">{totalFixed.toLocaleString('fr-FR')} €</div>
+            <p className="text-xs text-muted-foreground">Récurrents chaque mois</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Coûts Variables</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">{totalVariable.toLocaleString('fr-FR')} €</div>
+            <p className="text-xs text-muted-foreground">Spécifiques à ce mois</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Total</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{totalCosts.toLocaleString('fr-FR')} €</div>
+            <p className="text-xs text-muted-foreground">Coûts totaux</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Coûts fixes */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Coûts Fixes</CardTitle>
+              <CardDescription>Coûts récurrents chaque mois</CardDescription>
+            </div>
+            <Button onClick={() => setShowFixedModal(true)}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Ajouter
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {fixedCosts.map((cost) => (
+              <div key={cost.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex-1">
+                  <div className="font-medium">{cost.name}</div>
+                  <div className="text-sm text-muted-foreground">{cost.description}</div>
+                  <div className="text-sm text-blue-600">{cost.category_name}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-lg font-bold">{parseFloat(cost.amount).toLocaleString('fr-FR')} €</div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEditingCost(cost)
+                      setShowFixedModal(true)
+                    }}
+                  >
+                    Modifier
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDeleteCost(cost.id, 'fixed')}
+                  >
+                    Supprimer
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Coûts variables */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Coûts Variables</CardTitle>
+              <CardDescription>Coûts spécifiques à {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}</CardDescription>
+            </div>
+            <Button onClick={() => setShowVariableModal(true)}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Ajouter
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {variableCosts.map((cost) => (
+              <div key={cost.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex-1">
+                  <div className="font-medium">{cost.name}</div>
+                  <div className="text-sm text-muted-foreground">{cost.description}</div>
+                  <div className="text-sm text-orange-600">{cost.category_name}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-lg font-bold">{parseFloat(cost.amount).toLocaleString('fr-FR')} €</div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEditingCost(cost)
+                      setShowVariableModal(true)
+                    }}
+                  >
+                    Modifier
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDeleteCost(cost.id, 'variable')}
+                  >
+                    Supprimer
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Modals pour ajouter/modifier les coûts */}
+      <CostModal
+        isOpen={showFixedModal}
+        onClose={() => {
+          setShowFixedModal(false)
+          setEditingCost(null)
+        }}
+        onSave={(data) => handleSaveCost(data, 'fixed')}
+        categories={categories}
+        editingCost={editingCost}
+        type="fixed"
+      />
+
+      <CostModal
+        isOpen={showVariableModal}
+        onClose={() => {
+          setShowVariableModal(false)
+          setEditingCost(null)
+        }}
+        onSave={(data) => handleSaveCost(data, 'variable')}
+        categories={categories}
+        editingCost={editingCost}
+        type="variable"
+      />
+    </div>
+  )
+}
+
+// Modal pour ajouter/modifier un coût
+function CostModal({ isOpen, onClose, onSave, categories, editingCost, type }: {
+  isOpen: boolean
+  onClose: () => void
+  onSave: (data: any) => void
+  categories: any[]
+  editingCost: any
+  type: 'fixed' | 'variable'
+}) {
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    amount: '',
+    category: ''
+  })
+
+  useEffect(() => {
+    if (editingCost) {
+      setFormData({
+        name: editingCost.name || '',
+        description: editingCost.description || '',
+        amount: editingCost.amount?.toString() || '',
+        category: editingCost.category || ''
+      })
+    } else {
+      setFormData({
+        name: '',
+        description: '',
+        amount: '',
+        category: categories[0]?.name || ''
+      })
+    }
+  }, [editingCost, categories])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onSave(formData)
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {editingCost ? 'Modifier' : 'Ajouter'} un coût {type === 'fixed' ? 'fixe' : 'variable'}
+          </DialogTitle>
+          <DialogDescription>
+            {type === 'fixed' 
+              ? 'Les coûts fixes sont récurrents chaque mois'
+              : 'Les coûts variables sont spécifiques au mois sélectionné'
+            }
+          </DialogDescription>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="name">Nom du coût</Label>
+            <Input
+              id="name"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="amount">Montant (€)</Label>
+            <Input
+              id="amount"
+              type="number"
+              step="0.01"
+              value={formData.amount}
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="category">Catégorie</Label>
+            <Select
+              value={formData.category}
+              onValueChange={(value) => setFormData({ ...formData, category: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.name}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Annuler
+            </Button>
+            <Button type="submit">
+              {editingCost ? 'Modifier' : 'Ajouter'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
