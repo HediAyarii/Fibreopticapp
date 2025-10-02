@@ -317,5 +317,245 @@ CREATE INDEX IF NOT EXISTS idx_affectations_employe ON affectations_materiel(emp
 CREATE INDEX IF NOT EXISTS idx_affectations_statut ON affectations_materiel(statut);
 CREATE INDEX IF NOT EXISTS idx_affectations_date ON affectations_materiel(date_affectation);
 
--- Unique constraint for interventions: Num Inter + Date RDV combination
-CREATE UNIQUE INDEX IF NOT EXISTS interventions_num_inter_date_rdv_key ON interventions (num_inter, date_rdv);
+-- Table des comptes techniciens
+CREATE TABLE IF NOT EXISTS technicien_accounts (
+    id SERIAL PRIMARY KEY,
+    technicien_id INTEGER NOT NULL REFERENCES employes(id) ON DELETE CASCADE,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    is_locked BOOLEAN DEFAULT false,
+    login_attempts INTEGER DEFAULT 0,
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des sessions techniciens
+CREATE TABLE IF NOT EXISTS technicien_sessions (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES technicien_accounts(id) ON DELETE CASCADE,
+    session_token VARCHAR(255) NOT NULL,
+    ip_address INET,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Table pour les souscriptions push
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employes(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh_key TEXT NOT NULL,
+    auth_key TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table pour les photos justificatives des réclamations
+CREATE TABLE IF NOT EXISTS reclamation_photos (
+    id SERIAL PRIMARY KEY,
+    reclamation_id INTEGER REFERENCES reclamations(id) ON DELETE CASCADE,
+    photo_path TEXT NOT NULL,
+    photo_name TEXT,
+    uploaded_by INTEGER REFERENCES employes(id),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    file_size INTEGER,
+    mime_type TEXT
+);
+
+-- Ajouter les colonnes manquantes à la table reclamations
+ALTER TABLE reclamations 
+ADD COLUMN IF NOT EXISTS date_resolution TIMESTAMP,
+ADD COLUMN IF NOT EXISTS commentaire_resolution TEXT,
+ADD COLUMN IF NOT EXISTS resolved_by INTEGER REFERENCES employes(id);
+
+-- Index pour les nouvelles tables
+CREATE INDEX IF NOT EXISTS idx_technicien_accounts_username ON technicien_accounts(username);
+CREATE INDEX IF NOT EXISTS idx_technicien_accounts_technicien_id ON technicien_accounts(technicien_id);
+CREATE INDEX IF NOT EXISTS idx_technicien_sessions_account_id ON technicien_sessions(account_id);
+CREATE INDEX IF NOT EXISTS idx_technicien_sessions_token ON technicien_sessions(session_token);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_employee_id ON push_subscriptions(employee_id);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON push_subscriptions(endpoint);
+
+CREATE INDEX IF NOT EXISTS idx_reclamation_photos_reclamation_id ON reclamation_photos(reclamation_id);
+CREATE INDEX IF NOT EXISTS idx_reclamations_resolved_by ON reclamations(resolved_by);
+CREATE INDEX IF NOT EXISTS idx_reclamations_date_resolution ON reclamations(date_resolution);
+
+-- Vue pour faciliter les requêtes sur les comptes techniciens
+CREATE OR REPLACE VIEW technicien_accounts_view AS
+SELECT 
+    ta.id,
+    ta.technicien_id,
+    ta.username,
+    ta.is_active,
+    ta.is_locked,
+    ta.login_attempts,
+    ta.last_login,
+    ta.created_at,
+    ta.updated_at,
+    e.prenom as technicien_prenom,
+    e.nom as technicien_nom,
+    e.matricule as technicien_matricule,
+    e.email as technicien_email,
+    e.telephone as technicien_telephone,
+    e.niveau_acces as technicien_niveau_acces,
+    e.statut as technicien_statut
+FROM technicien_accounts ta
+JOIN employes e ON ta.technicien_id = e.id;
+
+-- Fonction pour nettoyer les sessions expirées
+CREATE OR REPLACE FUNCTION cleanup_expired_sessions()
+RETURNS void AS $$
+BEGIN
+    DELETE FROM technicien_sessions 
+    WHERE expires_at < CURRENT_TIMESTAMP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger pour mettre à jour updated_at automatiquement
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_technicien_accounts_updated_at
+    BEFORE UPDATE ON technicien_accounts
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Commentaires sur les tables
+COMMENT ON TABLE technicien_accounts IS 'Comptes de connexion pour les techniciens';
+COMMENT ON TABLE technicien_sessions IS 'Sessions actives des techniciens';
+COMMENT ON TABLE push_subscriptions IS 'Souscriptions push pour les notifications';
+COMMENT ON TABLE reclamation_photos IS 'Photos justificatives des réclamations';
+COMMENT ON VIEW technicien_accounts_view IS 'Vue combinant les comptes techniciens avec les informations des employés';
+
+-- Note: Pas de contrainte unique sur (num_inter, date_rdv) pour permettre l'import de toutes les lignes
+-- Les doublons seront gérés via le bouton "Vérifier Doublons" dans l'interface
+
+-- Table des tarifs par entreprise (ERT OUEST, AXECOM)
+CREATE TABLE IF NOT EXISTS company_pricing (
+    id SERIAL PRIMARY KEY,
+    company_name TEXT NOT NULL, -- AXECOM, ERT OUEST
+    service_code TEXT NOT NULL, -- CLEM, CABLE_PAV_1, RACPRO_S, etc.
+    category TEXT NOT NULL, -- SAV, RACC
+    prix_base DECIMAL(10,2) NOT NULL, -- Prix de base
+    prix_tech DECIMAL(10,2) NOT NULL DEFAULT 0, -- Prix technicien/supplément
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(company_name, service_code, category)
+);
+
+-- Index pour les tarifs
+CREATE INDEX IF NOT EXISTS idx_company_pricing_company ON company_pricing(company_name);
+CREATE INDEX IF NOT EXISTS idx_company_pricing_category ON company_pricing(category);
+CREATE INDEX IF NOT EXISTS idx_company_pricing_service ON company_pricing(service_code);
+CREATE INDEX IF NOT EXISTS idx_company_pricing_company_category ON company_pricing(company_name, category);
+
+-- Table pour les frais d'entreprise
+CREATE TABLE IF NOT EXISTS frais_entreprise (
+    id SERIAL PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    service_code TEXT NOT NULL,
+    category TEXT NOT NULL,
+    numero_facture TEXT UNIQUE NOT NULL,
+    date_facture DATE NOT NULL,
+    fournisseur TEXT NOT NULL,
+    type_frais TEXT NOT NULL,
+    montant_ht DECIMAL(10,2) NOT NULL,
+    montant_ttc DECIMAL(10,2) NOT NULL,
+    tva DECIMAL(5,2) DEFAULT 20.00,
+    description TEXT,
+    statut TEXT DEFAULT 'en_attente',
+    employe_id INTEGER REFERENCES employes(id),
+    projet_reference TEXT,
+    justificatifs TEXT[],
+    commentaires TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index pour les frais d'entreprise
+CREATE INDEX IF NOT EXISTS idx_frais_entreprise_company ON frais_entreprise(company_name);
+CREATE INDEX IF NOT EXISTS idx_frais_entreprise_employe ON frais_entreprise(employe_id);
+CREATE INDEX IF NOT EXISTS idx_frais_entreprise_date ON frais_entreprise(date_facture);
+
+-- Commentaires sur les tables de tarifs
+COMMENT ON TABLE company_pricing IS 'Tarifs par entreprise et type de service';
+COMMENT ON TABLE frais_entreprise IS 'Frais et dépenses par entreprise';
+
+-- Tables pour le système de carburant
+-- 1. Table carburant (cartes carburant)
+CREATE TABLE IF NOT EXISTS carburant (
+    id SERIAL PRIMARY KEY,
+    numero_carte VARCHAR(50) UNIQUE NOT NULL,
+    montant DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    date_livraison DATE NOT NULL,
+    statut VARCHAR(20) DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Table carburant_assignations (assignation des cartes aux employés)
+CREATE TABLE IF NOT EXISTS carburant_assignations (
+    id SERIAL PRIMARY KEY,
+    numero_carte VARCHAR(50) NOT NULL,
+    employe_id INTEGER NOT NULL,
+    employe_nom VARCHAR(255) NOT NULL,
+    date_assignation DATE NOT NULL DEFAULT CURRENT_DATE,
+    date_fin DATE NULL,
+    statut VARCHAR(20) DEFAULT 'active',
+    commentaires TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employe_id) REFERENCES employes(id) ON DELETE CASCADE
+);
+
+-- 3. Table carburant_consommation (historique des consommations)
+CREATE TABLE IF NOT EXISTS carburant_consommation (
+    id SERIAL PRIMARY KEY,
+    numero_carte VARCHAR(50) NOT NULL,
+    employe_id INTEGER,
+    date_livraison DATE NOT NULL,
+    heure_livraison TIME,
+    immat_vehicule VARCHAR(20),
+    km INTEGER,
+    poste1 VARCHAR(100),
+    poste2 VARCHAR(100),
+    pays VARCHAR(10),
+    numero_station VARCHAR(50),
+    point_acceptation VARCHAR(200),
+    identifiant_autoroute VARCHAR(100),
+    cp VARCHAR(10),
+    type_marchandises VARCHAR(100),
+    quantite DECIMAL(10,2),
+    taux_tva DECIMAL(5,2),
+    ca_ht DECIMAL(10,2),
+    tva DECIMAL(10,2),
+    ca_ttc DECIMAL(10,2),
+    numero_justificatif VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employe_id) REFERENCES employes(id) ON DELETE SET NULL
+);
+
+-- Index pour les tables carburant
+CREATE INDEX IF NOT EXISTS idx_carburant_numero_carte ON carburant(numero_carte);
+CREATE INDEX IF NOT EXISTS idx_carburant_assignations_carte ON carburant_assignations(numero_carte);
+CREATE INDEX IF NOT EXISTS idx_carburant_assignations_employe ON carburant_assignations(employe_id);
+CREATE INDEX IF NOT EXISTS idx_carburant_assignations_statut ON carburant_assignations(statut);
+CREATE INDEX IF NOT EXISTS idx_carburant_consommation_carte ON carburant_consommation(numero_carte);
+CREATE INDEX IF NOT EXISTS idx_carburant_consommation_employe ON carburant_consommation(employe_id);
+CREATE INDEX IF NOT EXISTS idx_carburant_consommation_date ON carburant_consommation(date_livraison);
+
+-- Commentaires sur les tables carburant
+COMMENT ON TABLE carburant IS 'Cartes carburant disponibles dans le système';
+COMMENT ON TABLE carburant_assignations IS 'Assignations des cartes carburant aux employés';
+COMMENT ON TABLE carburant_consommation IS 'Historique des consommations de carburant';

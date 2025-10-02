@@ -1,0 +1,46 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { query } from '@/lib/database'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: NextRequest) {
+  try {
+    // Requête pour obtenir les statistiques des interventions CLOTURE TERMINEE
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_cloture_terminee,
+        COUNT(CASE 
+          WHEN articles IS NOT NULL 
+            AND articles != '' 
+            AND UPPER(articles) NOT IN ('NAN', 'N/A')
+          THEN 1 
+        END) as avec_articles,
+        COUNT(CASE 
+          WHEN articles IS NULL 
+            OR articles = '' 
+            OR UPPER(articles) IN ('NAN', 'N/A')
+          THEN 1 
+        END) as sans_articles
+      FROM interventions 
+      WHERE statut = 'CLOTURE TERMINEE'
+    `
+
+    const result = await query(statsQuery)
+    const stats = result.rows[0]
+
+    return NextResponse.json({
+      success: true,
+      stats: {
+        total_cloture_terminee: parseInt(stats.total_cloture_terminee),
+        avec_articles: parseInt(stats.avec_articles),
+        sans_articles: parseInt(stats.sans_articles)
+      }
+    })
+
+  } catch (error) {
+    console.error('Erreur lors de la récupération des statistiques:', error)
+    return NextResponse.json({
+      error: 'Erreur lors de la récupération des statistiques'
+    }, { status: 500 })
+  }
+}

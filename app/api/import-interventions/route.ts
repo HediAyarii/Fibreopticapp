@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
     await writeFile(tempFilePath, buffer)
     
     try {
-      // Exécuter le script d'import intelligent
-      const scriptPath = join(process.cwd(), 'scripts', 'smart_import_interventions.py')
+        // Exécuter le script d'import pour toutes les lignes
+        const scriptPath = join(process.cwd(), 'scripts', 'smart_import_interventions_all_lines.py')
       const command = `python "${scriptPath}" --file "${tempFilePath}"`
       
       console.log('Exécution de la commande:', command)

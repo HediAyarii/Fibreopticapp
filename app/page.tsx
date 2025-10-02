@@ -53,6 +53,8 @@ import {
   TrendingUp,
   LogOut,
   Upload,
+  Search,
+  Loader2,
   Eye,
   EyeOff,
   Plus,
@@ -78,6 +80,7 @@ import {
   Timer,
   Minus,
   Camera,
+  AlertCircle,
 } from "lucide-react"
 
 // User authentication data
@@ -216,9 +219,14 @@ export default function EmployeeTracker() {
     statut: '',
     dateRdvStart: '',
     dateRdvEnd: '',
-    numInter: ''
+    numInter: '',
+    client: '',
+    grille: '',
+    sansArticles: false
   })
   const [filteredInterventions, setFilteredInterventions] = useState<any[]>([])
+  const [duplicates, setDuplicates] = useState<any[]>([])
+  const [loadingDuplicates, setLoadingDuplicates] = useState(false)
   const [showCardAssignmentModal, setShowCardAssignmentModal] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
   const [availableCards, setAvailableCards] = useState<any[]>([])
@@ -327,23 +335,38 @@ export default function EmployeeTracker() {
   // Articles management functions
   const handleEditArticles = (intervention: any) => {
     setEditingIntervention(intervention)
-    setArticlesText(intervention.articles || "")
+    // Nettoyer les articles pour l'édition (remplacer "nan" par chaîne vide)
+    const cleanArticles = intervention.articles && intervention.articles.toString().toLowerCase() !== 'nan' 
+      ? intervention.articles 
+      : ""
+    setArticlesText(cleanArticles)
     setShowArticlesModal(true)
   }
 
-  const handleSaveArticles = async () => {
-    if (!editingIntervention) return
+  const handleSaveArticles = async (id?: number, articles?: string) => {
+    const interventionId = id || editingIntervention?.id
+    const articlesToSave = articles || articlesText
+
+    if (!interventionId) return
+
+    console.log('🔍 Debug - Articles à sauvegarder:', articlesToSave)
+    console.log('🔍 Debug - Intervention ID:', interventionId)
 
     setSavingArticles(true)
     try {
+      // Nettoyer les articles (supprimer "nan" et valeurs vides)
+      const cleanArticles = articlesToSave.trim() === '' || articlesToSave.toLowerCase() === 'nan' ? '' : articlesToSave.trim()
+      
+      console.log('🔍 Debug - Articles nettoyés:', cleanArticles)
+
       const response = await fetch('/api/interventions', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: editingIntervention.id,
-          articles: articlesText
+          id: interventionId,
+          articles: cleanArticles
         })
       })
 
@@ -353,8 +376,8 @@ export default function EmployeeTracker() {
         // Update the intervention in the local state
         setInterventions(prev => 
           prev.map(intervention => 
-            intervention.id === editingIntervention.id 
-              ? { ...intervention, articles: articlesText }
+            intervention.id === interventionId 
+              ? { ...intervention, articles: cleanArticles }
               : intervention
           )
         )
@@ -363,12 +386,23 @@ export default function EmployeeTracker() {
         setEditingIntervention(null)
         setArticlesText("")
         
+        // Recharger les données pour mettre à jour les recettes
+        await loadDataFromDatabase()
+        
+        // Forcer le rechargement des recettes avec un délai
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('reloadRevenueData'))
+        }, 500)
+        
         console.log("Articles sauvegardés avec succès:", data)
+        alert('Articles mis à jour avec succès! Les recettes seront actualisées automatiquement.')
       } else {
         console.error("Erreur lors de la sauvegarde des articles")
+        alert('Erreur lors de la sauvegarde des articles')
       }
     } catch (error) {
       console.error("Erreur lors de la sauvegarde des articles:", error)
+      alert('Erreur lors de la sauvegarde des articles')
     } finally {
       setSavingArticles(false)
     }
@@ -431,10 +465,44 @@ export default function EmployeeTracker() {
       })
     }
 
+    // Filter by client (ERT, AXECOM)
+    if (interventionFilters.client) {
+      filtered = filtered.filter(intervention => 
+        intervention.client && 
+        intervention.client.toString().toLowerCase().includes(interventionFilters.client.toLowerCase())
+      )
+    }
+
+    // Filter by grille (AXECOM MANCHE vs ERT)
+    if (interventionFilters.grille) {
+      filtered = filtered.filter(intervention => {
+        const grille = intervention.grille ? intervention.grille.toString().toUpperCase() : ''
+        
+        if (interventionFilters.grille === 'AXECOM MANCHE') {
+          return grille.includes('AXECOM MANCHE')
+        } else if (interventionFilters.grille === 'ERT') {
+          return !grille.includes('AXECOM MANCHE') && grille.trim() !== ''
+        }
+        
+        return true
+      })
+    }
+
+    // Filter by interventions without articles (CLOTURE TERMINEE sans articles)
+    if (interventionFilters.sansArticles) {
+      filtered = filtered.filter(intervention => {
+        const statut = intervention.statut ? intervention.statut.toString().toUpperCase() : ''
+        const articles = intervention.articles ? intervention.articles.toString().trim() : ''
+        
+        // Vérifier si c'est CLOTURE TERMINEE sans articles
+        return statut === 'CLOTURE TERMINEE' && (articles === '' || articles === 'nan' || articles === null)
+      })
+    }
+
     setFilteredInterventions(filtered)
   }
 
-  const handleFilterChange = (filterType: string, value: string) => {
+  const handleFilterChange = (filterType: string, value: string | boolean) => {
     setInterventionFilters(prev => ({
       ...prev,
       [filterType]: value
@@ -446,7 +514,10 @@ export default function EmployeeTracker() {
       statut: '',
       dateRdvStart: '',
       dateRdvEnd: '',
-      numInter: ''
+      numInter: '',
+      client: '',
+      grille: '',
+      sansArticles: false
     })
     setFilteredInterventions([])
   }
@@ -459,6 +530,83 @@ export default function EmployeeTracker() {
       .map(statut => statut.toString())
     
     return [...new Set(statuts)].sort()
+  }
+
+  // Get unique clients for filter dropdown
+  const getUniqueClients = () => {
+    const clients = interventions
+      .map(intervention => intervention.client)
+      .filter(client => client && client.trim() !== '')
+      .map(client => client.toString())
+    
+    return [...new Set(clients)].sort()
+  }
+
+  // Check and remove duplicates
+  const handleCheckDuplicates = async () => {
+    setLoadingDuplicates(true)
+    try {
+      const response = await fetch('/api/duplicates-check', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la vérification des doublons')
+      }
+
+      const data = await response.json()
+      
+      // Afficher un message de confirmation
+      alert(`Vérification des doublons terminée !\n\n${data.message}\n\n- ${data.totalDuplicates} groupes de doublons trouvés\n- ${data.deletedCount} lignes supprimées`)
+      
+      console.log('Résultat de la vérification des doublons:', data)
+      
+      // Recharger les données
+      await loadDataFromDatabase()
+      
+    } catch (error) {
+      console.error('Erreur lors de la vérification des doublons:', error)
+      alert('Erreur lors de la vérification des doublons')
+    } finally {
+      setLoadingDuplicates(false)
+    }
+  }
+
+  // Supprimer toutes les interventions
+  const handleClearAllInterventions = async () => {
+    if (!confirm('⚠️ ATTENTION: Cette action va supprimer TOUTES les interventions de la base de données.\n\nÊtes-vous sûr de vouloir continuer ?')) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/clear-all-interventions', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la suppression des interventions')
+      }
+
+      const data = await response.json()
+      
+      // Afficher un message de confirmation
+      alert(`✅ Suppression terminée !\n\n${data.message}`)
+      
+      console.log('Résultat de la suppression:', data)
+      
+      // Recharger les données
+      await loadDataFromDatabase()
+      
+    } catch (error) {
+      console.error('Erreur lors de la suppression des interventions:', error)
+      alert('Erreur lors de la suppression des interventions')
+    }
   }
 
   // Load fuel consumption by employee
@@ -1841,7 +1989,13 @@ export default function EmployeeTracker() {
                       ? "gradient-primary text-white shadow-lg animate-pulse-glow"
                       : "glass-card border border-white/20 hover:bg-primary/5"
                   }`}
-              onClick={() => setActiveTab("recette-generer")}
+              onClick={() => {
+                setActiveTab("recette-generer")
+                // Recharger les recettes quand on change d'onglet
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent('reloadRevenueData'))
+                }, 100)
+              }}
                 >
                   <TrendingUp className="w-5 h-5" />
                   Recette Générée
@@ -2279,6 +2433,7 @@ export default function EmployeeTracker() {
                       Importez et gérez vos interventions techniques
                     </p>
                       </div>
+                  <div className="flex gap-2">
                   <Dialog>
                     <DialogTrigger asChild>
                      <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
@@ -2315,6 +2470,33 @@ export default function EmployeeTracker() {
                       </div>
                     </DialogContent>
                   </Dialog>
+                  
+                  <Button 
+                    onClick={handleCheckDuplicates}
+                    disabled={loadingDuplicates}
+                    className="bg-orange-500/90 border border-orange-300/30 hover:bg-orange-600 text-white font-medium"
+                  >
+                    {loadingDuplicates ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Vérification...
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="h-4 w-4 mr-2" />
+                        Vérifier Doublons
+                      </>
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    onClick={handleClearAllInterventions}
+                    className="bg-red-500/90 border border-red-300/30 hover:bg-red-600 text-white font-medium"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Supprimer Tout
+                  </Button>
+                  </div>
               </div>
 
                <Card className="glass-card border border-white/20 hover-lift">
@@ -2342,7 +2524,7 @@ export default function EmployeeTracker() {
                       </Button>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
                       {/* Filtre par statut */}
                       <div>
                         <Label htmlFor="filter-statut" className="text-sm font-medium">
@@ -2408,11 +2590,72 @@ export default function EmployeeTracker() {
                           className="mt-1"
                         />
                       </div>
+
+                      {/* Filtre par client */}
+                      <div>
+                        <Label htmlFor="filter-client" className="text-sm font-medium">
+                          Client
+                        </Label>
+                        <Select
+                          value={interventionFilters.client || "all"}
+                          onValueChange={(value) => handleFilterChange('client', value === "all" ? "" : value)}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Tous les clients" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Tous les clients</SelectItem>
+                            {getUniqueClients().map((client) => (
+                              <SelectItem key={client} value={client}>
+                                {client}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Filtre par grille */}
+                      <div>
+                        <Label htmlFor="filter-grille" className="text-sm font-medium">
+                          Grille
+                        </Label>
+                        <Select
+                          value={interventionFilters.grille || "all"}
+                          onValueChange={(value) => handleFilterChange('grille', value === "all" ? "" : value)}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Toutes les grilles" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Toutes les grilles</SelectItem>
+                            <SelectItem value="AXECOM MANCHE">AXECOM MANCHE</SelectItem>
+                            <SelectItem value="ERT">ERT (Autres)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Filtre par interventions sans articles */}
+                      <div>
+                        <Label htmlFor="filter-sans-articles" className="text-sm font-medium">
+                          Sans Articles
+                        </Label>
+                        <div className="mt-1 flex items-center space-x-2">
+                          <Checkbox
+                            id="filter-sans-articles"
+                            checked={interventionFilters.sansArticles}
+                            onCheckedChange={(checked) => handleFilterChange('sansArticles', !!checked)}
+                          />
+                          <Label htmlFor="filter-sans-articles" className="text-sm text-gray-600">
+                            CLOTURE TERMINEE sans articles
+                          </Label>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Résumé des filtres actifs */}
                     {(interventionFilters.statut || interventionFilters.numInter || 
-                      interventionFilters.dateRdvStart || interventionFilters.dateRdvEnd) && (
+                      interventionFilters.dateRdvStart || interventionFilters.dateRdvEnd || 
+                      interventionFilters.client || interventionFilters.grille || interventionFilters.sansArticles) && (
                       <div className="mt-4 p-3 bg-blue-50/20 rounded-lg border border-blue-200/30">
                         <div className="flex items-center gap-2 text-sm text-blue-700">
                           <span className="font-medium">Filtres actifs:</span>
@@ -2424,6 +2667,21 @@ export default function EmployeeTracker() {
                           {interventionFilters.numInter && (
                             <Badge variant="secondary" className="text-xs">
                               Num: {interventionFilters.numInter}
+                            </Badge>
+                          )}
+                          {interventionFilters.client && (
+                            <Badge variant="secondary" className="text-xs">
+                              Client: {interventionFilters.client}
+                            </Badge>
+                          )}
+                          {interventionFilters.grille && (
+                            <Badge variant="secondary" className="text-xs">
+                              Grille: {interventionFilters.grille}
+                            </Badge>
+                          )}
+                          {interventionFilters.sansArticles && (
+                            <Badge variant="secondary" className="text-xs">
+                              Sans Articles
                             </Badge>
                           )}
                           {interventionFilters.dateRdvStart && (
@@ -2501,7 +2759,7 @@ export default function EmployeeTracker() {
                             <td className="p-4">
                                 <div className="max-w-xs flex items-center gap-2">
                                   <span className={`text-sm ${needsArticlesFlag ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
-                                    {intervention.articles || 'N/A'}
+                                    {intervention.articles && intervention.articles.toString().toLowerCase() !== 'nan' ? intervention.articles : 'N/A'}
                                   </span>
                                   {needsArticlesFlag && (
                                     <Button

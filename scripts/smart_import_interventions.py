@@ -36,7 +36,7 @@ def import_interventions_smart(csv_file_path):
     try:
         # Vider la table d'abord
         print("[INFO] Vidage de la table interventions...")
-        cursor.execute("DELETE FROM interventions;")
+        # cursor.execute("DELETE FROM interventions;")  # Commenté pour éviter les contraintes de clé étrangère
         conn.commit()
         
         # Préparer les données avec gestion intelligente des doublons

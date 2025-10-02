@@ -15,7 +15,7 @@ def connect_to_database():
             port="5432",
             database="finalfibre_db",
             user="finalfibre_user",
-            password="finalfibre_password",
+            password="finalfibre_password_2024",
             sslmode="disable"
         )
         return conn

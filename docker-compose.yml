@@ -13,6 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/create_database_schema.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./scripts/insert_pricing_data.sql:/docker-entrypoint-initdb.d/02-pricing.sql
     networks:
       - finalfibre-network
     healthcheck:

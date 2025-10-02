@@ -1,0 +1,3 @@
+Num Inter;Date de rdv;Client;Rue;Type;Statut;Nom Technicien;Region;Plaque;Societe
+INT003;2025-01-15;Client Test;123 Rue Test;Installation;TerminÃ©;Technicien Test;OUEST;MANCHE;TEST COM
+INT004;2025-01-16;Client Test 2;456 Rue Test 2;Maintenance;En cours;Technicien Test 2;EST;PARIS;TEST COM 2

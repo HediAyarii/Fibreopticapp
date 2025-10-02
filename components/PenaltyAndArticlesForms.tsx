@@ -428,10 +428,11 @@ export function ArticlesEditModal({
   }, [intervention])
 
   const handleSave = async () => {
-    if (!intervention?.id || !articlesText.trim()) return
+    if (!intervention?.id) return
     
     setSaving(true)
     try {
+      // Permettre la sauvegarde même si articlesText est vide (pour effacer les articles)
       await onSave(intervention.id, articlesText.trim())
       onClose()
     } catch (error) {

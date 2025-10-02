@@ -236,7 +236,7 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    queryText += ' ORDER BY created_at DESC LIMIT 1000'
+    queryText += ' ORDER BY created_at DESC'
     
     const result = await query(queryText, params)
     

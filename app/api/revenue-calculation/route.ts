@@ -25,10 +25,10 @@ export async function GET(request: NextRequest) {
           i.articles,
           i.statut,
           i.type_intervention,
-          e.id as employe_id,
-          e.nom as employe_nom,
-          e.prenom as employe_prenom,
-          e.matricule,
+          emp.id as employe_id,
+          emp.nom as employe_nom,
+          emp.prenom as employe_prenom,
+          emp.matricule,
           -- Calculer les recettes basées sur les articles
           CASE 
             WHEN i.statut = 'CLOTURE TERMINEE' THEN
@@ -71,6 +71,14 @@ export async function GET(request: NextRequest) {
           LOWER(e.prenom) = LOWER(i.prenom_technicien) AND 
           LOWER(e.nom) = LOWER(i.nom_technicien)
         )
+        -- Créer un employé fictif si aucun employé n'est trouvé
+        LEFT JOIN LATERAL (
+          SELECT 
+            COALESCE(e.id, -1) as id,
+            COALESCE(e.nom, i.nom_technicien) as nom,
+            COALESCE(e.prenom, i.prenom_technicien) as prenom,
+            COALESCE(e.matricule, CONCAT('TECH_', UPPER(SUBSTRING(i.nom_technicien, 1, 3)), UPPER(SUBSTRING(i.prenom_technicien, 1, 2)))) as matricule
+        ) emp ON true
         WHERE i.statut = 'CLOTURE TERMINEE'
           AND i.articles IS NOT NULL 
           AND i.articles != ''
@@ -80,17 +88,17 @@ export async function GET(request: NextRequest) {
     const conditions = []
 
     if (employeId) {
-      conditions.push(`e.id = $${params.length + 1}`)
+      conditions.push(`emp.id = $${params.length + 1}`)
       params.push(parseInt(employeId))
     }
 
     if (dateFrom) {
-      conditions.push(`i.date_rdv >= $${params.length + 1}`)
+      conditions.push(`(i.cloture_tech >= $${params.length + 1} OR i.cloture_hotline >= $${params.length + 1})`)
       params.push(dateFrom)
     }
 
     if (dateTo) {
-      conditions.push(`i.date_rdv <= $${params.length + 1}`)
+      conditions.push(`(i.cloture_tech <= $${params.length + 1} OR i.cloture_hotline <= $${params.length + 1})`)
       params.push(dateTo)
     }
 
@@ -125,7 +133,6 @@ export async function GET(request: NextRequest) {
           ) ORDER BY date_rdv DESC
         ) as interventions_detail
       FROM intervention_revenue
-      WHERE employe_id IS NOT NULL
       GROUP BY employe_id, employe_nom, employe_prenom, matricule
       ORDER BY total_recette_generale DESC
     `
@@ -135,10 +142,10 @@ export async function GET(request: NextRequest) {
 
     // Calculer les totaux globaux
     const totalStats = {
-      total_interventions: result.rows.reduce((sum, row) => sum + parseInt(row.nombre_interventions), 0),
-      total_recette_technicien: result.rows.reduce((sum, row) => sum + parseFloat(row.total_recette_technicien || 0), 0),
-      total_recette_entreprise: result.rows.reduce((sum, row) => sum + parseFloat(row.total_recette_entreprise || 0), 0),
-      total_recette_generale: result.rows.reduce((sum, row) => sum + parseFloat(row.total_recette_generale || 0), 0)
+      total_interventions: result.rows.reduce((sum: number, row: any) => sum + parseInt(row.nombre_interventions), 0),
+      total_recette_technicien: result.rows.reduce((sum: number, row: any) => sum + parseFloat(row.total_recette_technicien || 0), 0),
+      total_recette_entreprise: result.rows.reduce((sum: number, row: any) => sum + parseFloat(row.total_recette_entreprise || 0), 0),
+      total_recette_generale: result.rows.reduce((sum: number, row: any) => sum + parseFloat(row.total_recette_generale || 0), 0)
     }
 
     return NextResponse.json({
