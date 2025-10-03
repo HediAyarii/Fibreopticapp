@@ -10,8 +10,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { RefreshCw, CheckCircle, Plus, Edit, Trash2, Search } from "lucide-react"
 
-// AffectationForm component
-export function AffectationForm({ affectation, employees, materials, onSave, onCancel }: { 
+// AffectationForm component - Importé depuis AffectationForm.tsx
+export { AffectationForm } from "./AffectationForm"
+
+function OldAffectationForm({ affectation, employees, materials, onSave, onCancel }: { 
   affectation: any, 
   employees: any[], 
   materials: any[], 

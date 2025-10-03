@@ -17,14 +17,15 @@ export function MaterialForm({ material, onSave, onCancel }: {
   onCancel: () => void 
 }) {
   const [formData, setFormData] = useState({
-    nom: material?.nom || '',
-    type: material?.type || '',
+    nom_equipement: material?.nom_equipement || '',
+    type_materiel: material?.type_materiel || '',
     quantite: material?.quantite || '',
     prix_unitaire: material?.prix_unitaire || '',
-    fournisseur: material?.fournisseur || '',
-    date_achat: material?.date_achat || '',
+    marque: material?.marque || '',
+    modele: material?.modele || '',
+    date_acquisition: material?.date_acquisition || '',
     statut: material?.statut || 'disponible',
-    description: material?.description || ''
+    notes_maintenance: material?.notes_maintenance || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -50,26 +51,27 @@ export function MaterialForm({ material, onSave, onCancel }: {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="nom">Nom du Matériel *</Label>
+            <Label htmlFor="nom_equipement">Nom du Matériel *</Label>
             <Input
-              id="nom"
-              value={formData.nom}
-              onChange={(e) => handleChange('nom', e.target.value)}
+              id="nom_equipement"
+              value={formData.nom_equipement}
+              onChange={(e) => handleChange('nom_equipement', e.target.value)}
               placeholder="Ex: Câble fibre optique"
               required
             />
           </div>
           <div>
-            <Label htmlFor="type">Type *</Label>
-            <Select value={formData.type} onValueChange={(value) => handleChange('type', value)}>
+            <Label htmlFor="type_materiel">Type *</Label>
+            <Select value={formData.type_materiel} onValueChange={(value) => handleChange('type_materiel', value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Sélectionnez un type" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="routeur">Routeur</SelectItem>
+                <SelectItem value="modem">Modem</SelectItem>
                 <SelectItem value="cable">Câble</SelectItem>
-                <SelectItem value="connecteur">Connecteur</SelectItem>
                 <SelectItem value="outil">Outil</SelectItem>
-                <SelectItem value="equipement">Équipement</SelectItem>
+                <SelectItem value="vehicule">Véhicule</SelectItem>
                 <SelectItem value="autre">Autre</SelectItem>
               </SelectContent>
             </Select>
@@ -105,23 +107,33 @@ export function MaterialForm({ material, onSave, onCancel }: {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="fournisseur">Fournisseur</Label>
+            <Label htmlFor="marque">Marque</Label>
             <Input
-              id="fournisseur"
-              value={formData.fournisseur}
-              onChange={(e) => handleChange('fournisseur', e.target.value)}
-              placeholder="Nom du fournisseur"
+              id="marque"
+              value={formData.marque}
+              onChange={(e) => handleChange('marque', e.target.value)}
+              placeholder="Nom de la marque"
             />
           </div>
           <div>
-            <Label htmlFor="date_achat">Date d'Achat</Label>
+            <Label htmlFor="modele">Modèle</Label>
             <Input
-              id="date_achat"
-              type="date"
-              value={formData.date_achat}
-              onChange={(e) => handleChange('date_achat', e.target.value)}
+              id="modele"
+              value={formData.modele}
+              onChange={(e) => handleChange('modele', e.target.value)}
+              placeholder="Modèle du matériel"
             />
           </div>
+        </div>
+
+        <div>
+          <Label htmlFor="date_acquisition">Date d'Acquisition</Label>
+          <Input
+            id="date_acquisition"
+            type="date"
+            value={formData.date_acquisition}
+            onChange={(e) => handleChange('date_acquisition', e.target.value)}
+          />
         </div>
 
         <div>
@@ -140,12 +152,12 @@ export function MaterialForm({ material, onSave, onCancel }: {
         </div>
 
         <div>
-          <Label htmlFor="description">Description</Label>
+          <Label htmlFor="notes_maintenance">Notes de Maintenance</Label>
           <Textarea
-            id="description"
-            value={formData.description}
-            onChange={(e) => handleChange('description', e.target.value)}
-            placeholder="Description détaillée du matériel..."
+            id="notes_maintenance"
+            value={formData.notes_maintenance}
+            onChange={(e) => handleChange('notes_maintenance', e.target.value)}
+            placeholder="Notes de maintenance et description du matériel..."
             rows={3}
           />
         </div>
@@ -336,3 +348,4 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
     </DialogContent>
   )
 }
+

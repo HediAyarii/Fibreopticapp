@@ -21,7 +21,7 @@ function processValue(value: any, fieldType: 'date' | 'numeric' | 'text'): any {
 
 export async function GET() {
   try {
-    // Récupérer les employés directement depuis les interventions
+    // Récupérer les employés directement depuis les interventions avec leurs assignations de cartes
     const result = await query(`
       SELECT DISTINCT
         ROW_NUMBER() OVER (ORDER BY nom_technicien, prenom_technicien) as id,
@@ -50,9 +50,55 @@ export async function GET() {
       ORDER BY nb_interventions DESC, nom_technicien, prenom_technicien
     `)
 
+    // Enrichir avec les informations d'assignation de cartes
+    const employesWithCards = await Promise.all(
+      result.rows.map(async (employee: any) => {
+        try {
+          // Récupérer l'assignation active de cet employé
+          const cardResult = await query(`
+            SELECT 
+              ca.numero_carte,
+              ca.date_debut,
+              ca.date_fin_prevue,
+              ca.date_fin_reelle,
+              ca.statut,
+              c.montant as montant_carte
+            FROM carburant_assignations ca
+            LEFT JOIN carburant c ON ca.numero_carte = c.numero_carte
+            WHERE ca.employe_id = $1 
+              AND ca.statut = 'active'
+              AND (ca.date_fin_reelle IS NULL OR ca.date_fin_reelle > CURRENT_DATE)
+            ORDER BY ca.date_debut DESC
+            LIMIT 1
+          `, [employee.id])
+
+          const activeCard = cardResult.rows[0]
+          
+          return {
+            ...employee,
+            numero_carte_actuelle: activeCard?.numero_carte || null,
+            date_debut_assignation: activeCard?.date_debut || null,
+            date_fin_prevue_assignation: activeCard?.date_fin_prevue || null,
+            montant_carte_actuelle: activeCard?.montant_carte || null,
+            statut_assignation: activeCard?.statut || null
+          }
+        } catch (cardError) {
+          console.error(`Erreur récupération carte pour employé ${employee.id}:`, cardError)
+          return {
+            ...employee,
+            numero_carte_actuelle: null,
+            date_debut_assignation: null,
+            date_fin_prevue_assignation: null,
+            montant_carte_actuelle: null,
+            statut_assignation: null
+          }
+        }
+      })
+    )
+
     return NextResponse.json({
       success: true,
-      employes: result.rows
+      employes: employesWithCards
     })
   } catch (error) {
     console.error('Erreur GET employes:', error)
@@ -132,8 +178,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
     }
 
-    const updateFields = []
-    const params = []
+    const updateFields: string[] = []
+    const params: any[] = []
     let paramIndex = 1
 
     // Définir les types de champs

@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { MaterialForm, EmployeeForm } from "@/components/Forms"
 import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
+import { AffectationTest } from "@/components/AffectationTest"
 import { ReclamationForm } from "@/components/ReclamationForm"
 import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesForms"
 import { PricingTable } from "@/components/PricingTable"
@@ -81,6 +82,9 @@ import {
   Minus,
   Camera,
   AlertCircle,
+  History,
+  Filter,
+  RotateCcw,
 } from "lucide-react"
 
 // User authentication data
@@ -232,12 +236,32 @@ export default function EmployeeTracker() {
   const [availableCards, setAvailableCards] = useState<any[]>([])
   const [selectedCardNumber, setSelectedCardNumber] = useState('')
   const [assignmentStartDate, setAssignmentStartDate] = useState('')
+  const [assignmentEndDate, setAssignmentEndDate] = useState('')
   const [assignmentComments, setAssignmentComments] = useState('')
+  const [assignmentType, setAssignmentType] = useState<'permanent' | 'temporary'>('temporary')
   const [showUnassignModal, setShowUnassignModal] = useState(false)
   const [unassignComments, setUnassignComments] = useState('')
   const [showCardHistoryModal, setShowCardHistoryModal] = useState(false)
   const [selectedEmployeeHistory, setSelectedEmployeeHistory] = useState<any>(null)
+  
+  // États pour les filtres de consommation carburant
+  const [consumptionFilters, setConsumptionFilters] = useState({
+    date_debut: '',
+    date_fin: '',
+    employe_id: 'all',
+    numero_carte: 'all'
+  })
+  const [consumptionData, setConsumptionData] = useState<any>({
+    consommations: [],
+    stats: {},
+    parEmploye: [],
+    parCarte: []
+  })
+  const [loadingConsumption, setLoadingConsumption] = useState(false)
   const [cardHistory, setCardHistory] = useState<any[]>([])
+  const [showAssignmentHistoryModal, setShowAssignmentHistoryModal] = useState(false)
+  const [assignmentHistory, setAssignmentHistory] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Fuel consumption grouped data
   const [fuelGroupedData, setFuelGroupedData] = useState<any[]>([])
@@ -1619,61 +1643,170 @@ export default function EmployeeTracker() {
     setShowCardAssignmentModal(true)
   }
 
-  // Function to assign card to employee
-  const assignCardToEmployee = async (numeroCarte: string) => {
+  // Function to assign card to employee with period
+  const assignCardToEmployee = async () => {
     try {
-      if (!selectedEmployee) {
-        alert("Aucun employé sélectionné")
+      if (!selectedEmployee || !selectedCardNumber) {
+        alert("Veuillez sélectionner un employé et une carte")
         return
       }
 
-      const response = await fetch('/api/carburant-assignation', {
+      if (!assignmentStartDate) {
+        alert("Veuillez sélectionner une date de début")
+        return
+      }
+
+      if (assignmentType === 'temporary' && !assignmentEndDate) {
+        alert("Veuillez sélectionner une date de fin pour une assignation temporaire")
+        return
+      }
+
+      if (assignmentEndDate && assignmentEndDate <= assignmentStartDate) {
+        alert("La date de fin doit être postérieure à la date de début")
+        return
+      }
+
+      const response = await fetch('/api/carburant-assignation-periode', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          numero_carte: numeroCarte,
+          numero_carte: selectedCardNumber,
           employe_id: selectedEmployee.id,
           employe_nom: `${selectedEmployee.prenom} ${selectedEmployee.nom}`,
-          date_assignation: assignmentStartDate || new Date().toISOString().split('T')[0],
-          statut: 'active',
+          date_debut: assignmentStartDate,
+          date_fin_prevue: assignmentType === 'permanent' ? null : assignmentEndDate,
           commentaires: assignmentComments
         })
       })
 
       if (!response.ok) {
         const errorData = await response.json()
+        if (response.status === 409) {
+          // Conflit détecté
+          const conflictMessage = `Conflit détecté !\n\n${errorData.message}\n\nConflits existants:\n${
+            errorData.conflits.map((c: any) => 
+              `- ${c.employe_nom}: ${c.date_debut_conflit} → ${c.date_fin_conflit}`
+            ).join('\n')
+          }\n\nVoulez-vous continuer malgré le conflit ?`
+          
+          if (!confirm(conflictMessage)) {
+            return
+          }
+          // Si l'utilisateur confirme, on pourrait implémenter une logique pour forcer l'assignation
+          alert("Fonctionnalité de forçage d'assignation à implémenter")
+          return
+        }
         throw new Error(errorData.error || 'Erreur lors de l\'assignation')
       }
 
       const result = await response.json()
-      alert(`Carte ${numeroCarte} assignée à ${selectedEmployee.prenom} ${selectedEmployee.nom}`)
+      const periodText = assignmentType === 'permanent' 
+        ? `à partir du ${assignmentStartDate}` 
+        : `du ${assignmentStartDate} au ${assignmentEndDate}`
+      
+      alert(`✅ Carte ${selectedCardNumber} assignée à ${selectedEmployee.prenom} ${selectedEmployee.nom} ${periodText}`)
       
       // Fermer le modal et réinitialiser les champs
       setShowCardAssignmentModal(false)
       setSelectedEmployee(null)
       setSelectedCardNumber('')
       setAssignmentStartDate('')
+      setAssignmentEndDate('')
       setAssignmentComments('')
+      setAssignmentType('temporary')
       
-      // Recharger les données avec gestion d'erreur et délai pour éviter les conflits
+      // Recharger les données
       setTimeout(async () => {
         try {
           await loadAllCRUDData()
           await loadDataFromDatabase()
         } catch (reloadError) {
           console.error('Erreur lors du rechargement des données:', reloadError)
-          // Ne pas afficher d'erreur à l'utilisateur car l'assignation a réussi
-          // Juste recharger la page pour être sûr
           window.location.reload()
         }
       }, 500)
     } catch (error) {
       console.error('Erreur assignation carte:', error)
-      alert(`Erreur lors de l'assignation de la carte: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
+      alert(`❌ Erreur lors de l'assignation de la carte: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
     }
   }
+
+  // Function to show assignment history for an employee
+  const showAssignmentHistory = async (employee: any) => {
+    try {
+      setLoadingHistory(true)
+      setSelectedEmployeeHistory(employee)
+      setShowAssignmentHistoryModal(true)
+
+      const response = await fetch(`/api/carburant-historique?type=employe&employe_id=${employee.id}`)
+      
+      if (!response.ok) {
+        throw new Error('Erreur lors du chargement de l\'historique')
+      }
+
+      const data = await response.json()
+      setAssignmentHistory(data.historique || [])
+    } catch (error) {
+      console.error('Erreur chargement historique:', error)
+      alert('Erreur lors du chargement de l\'historique des assignations')
+      setAssignmentHistory([])
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
+
+  // Fonction pour charger les données de consommation avec filtres
+  const loadConsumptionData = async () => {
+    try {
+      setLoadingConsumption(true)
+      
+      const params = new URLSearchParams()
+      if (consumptionFilters.date_debut) params.append('date_debut', consumptionFilters.date_debut)
+      if (consumptionFilters.date_fin) params.append('date_fin', consumptionFilters.date_fin)
+      if (consumptionFilters.employe_id && consumptionFilters.employe_id !== 'all') params.append('employe_id', consumptionFilters.employe_id)
+      if (consumptionFilters.numero_carte && consumptionFilters.numero_carte !== 'all') params.append('numero_carte', consumptionFilters.numero_carte)
+
+      const response = await fetch(`/api/consommation-carburant-historique?${params.toString()}`)
+      
+      if (!response.ok) {
+        throw new Error('Erreur lors du chargement des consommations')
+      }
+
+      const data = await response.json()
+      setConsumptionData(data)
+    } catch (error) {
+      console.error('Erreur chargement consommations:', error)
+      alert('Erreur lors du chargement des données de consommation')
+    } finally {
+      setLoadingConsumption(false)
+    }
+  }
+
+  // Fonction pour réinitialiser les filtres
+  const resetConsumptionFilters = () => {
+    setConsumptionFilters({
+      date_debut: '',
+      date_fin: '',
+      employe_id: 'all',
+      numero_carte: 'all'
+    })
+  }
+
+  // Charger les données de consommation au montage du composant
+  useEffect(() => {
+    if (activeTab === 'fuel-consumption') {
+      loadConsumptionData()
+    }
+  }, [activeTab])
+
+  // Recharger quand les filtres changent
+  useEffect(() => {
+    if (activeTab === 'fuel-consumption') {
+      loadConsumptionData()
+    }
+  }, [consumptionFilters])
 
   // Function to unassign card from employee
   const unassignCardFromEmployee = async () => {
@@ -2263,11 +2396,21 @@ export default function EmployeeTracker() {
                               </div>
                             </td>
                             <td className="p-4">
-                              <div className="flex items-center gap-2">
-                                <CreditCard className="w-4 h-4 text-primary" />
-                                <span className="text-sm font-mono">
-                                  {employee.numero_carte_actuelle || 'Non assignée'}
-                                </span>
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  <CreditCard className="w-4 h-4 text-primary" />
+                                  <span className="text-sm font-mono font-semibold">
+                                    {employee.numero_carte_actuelle || 'Non assignée'}
+                                  </span>
+                                </div>
+                                {employee.numero_carte_actuelle && employee.date_debut_assignation && (
+                                  <div className="text-xs text-gray-500">
+                                    📅 Depuis le {new Date(employee.date_debut_assignation).toLocaleDateString('fr-FR')}
+                                    {employee.date_fin_prevue_assignation && (
+                                      <span> → {new Date(employee.date_fin_prevue_assignation).toLocaleDateString('fr-FR')}</span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td className="p-4">
@@ -2297,6 +2440,15 @@ export default function EmployeeTracker() {
                                   title="Affecter carte carburant"
                                 >
                                   <CreditCard className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => showAssignmentHistory(employee)}
+                                  className="glass-card border border-white/20 hover:bg-white/10"
+                                  title="Historique des assignations carburant"
+                                >
+                                  <History className="w-4 h-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -2377,7 +2529,7 @@ export default function EmployeeTracker() {
               <div className="flex justify-between items-center">
                 <div>
                   <h2 className="text-3xl font-bold">Consommation Carburant</h2>
-                  <p className="text-muted-foreground">Suivi de la consommation carburant par employé</p>
+                  <p className="text-muted-foreground">Suivi de la consommation carburant avec historique des assignations</p>
                 </div>
                 <Button variant="outline">
                   <Upload className="w-4 h-4 mr-2" />
@@ -2385,39 +2537,305 @@ export default function EmployeeTracker() {
                 </Button>
               </div>
 
-              <Card className="glass-card border border-white/20 hover-lift">
+              {/* Filtres de consommation */}
+              <Card className="glass-card border border-white/20">
                 <CardHeader>
-                  <CardTitle>Données de Consommation</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Filter className="w-5 h-5" />
+                    Filtres de Consommation
+                  </CardTitle>
                   <CardDescription>
-                    Données chargées depuis la base de données
+                    Filtrer les consommations par date, employé ou carte
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {fuelData.slice(0, 5).map((item, index) => (
-                      <div key={index} className="flex items-center justify-between p-4 glass-card border border-white/10 rounded-xl">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-chart-3 to-chart-4 flex items-center justify-center text-white font-semibold">
-                            <Fuel className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{item.numero_carte || 'Carte inconnue'}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {item.date_livraison} - {item.montant} €
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">{item.lieu || 'Lieu non spécifié'}</p>
-                          <Badge variant="outline" className="mt-1">
-                            {item.type_carburant || 'Type inconnu'}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Date de début</Label>
+                      <Input
+                        type="date"
+                        value={consumptionFilters.date_debut}
+                        onChange={(e) => setConsumptionFilters(prev => ({ ...prev, date_debut: e.target.value }))}
+                        className="glass-card border border-white/20"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label className="text-sm font-medium">Date de fin</Label>
+                      <Input
+                        type="date"
+                        value={consumptionFilters.date_fin}
+                        onChange={(e) => setConsumptionFilters(prev => ({ ...prev, date_fin: e.target.value }))}
+                        className="glass-card border border-white/20"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium">Employé</Label>
+                      <Select 
+                        value={consumptionFilters.employe_id} 
+                        onValueChange={(value) => setConsumptionFilters(prev => ({ ...prev, employe_id: value }))}
+                        defaultValue="all"
+                      >
+                        <SelectTrigger className="glass-card border border-white/20">
+                          <SelectValue placeholder="Tous les employés" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Tous les employés</SelectItem>
+                          {employees.map((emp) => (
+                            <SelectItem key={emp.id} value={emp.id.toString()}>
+                              {emp.prenom} {emp.nom}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium">Numéro de carte</Label>
+                      <Select 
+                        value={consumptionFilters.numero_carte} 
+                        onValueChange={(value) => setConsumptionFilters(prev => ({ ...prev, numero_carte: value }))}
+                        defaultValue="all"
+                      >
+                        <SelectTrigger className="glass-card border border-white/20">
+                          <SelectValue placeholder="Toutes les cartes" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Toutes les cartes</SelectItem>
+                          {fuelData.map((card: any) => (
+                            <SelectItem key={card.numero_carte} value={card.numero_carte}>
+                              Carte {card.numero_carte} ({card.montant}€)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
+
+                  <div className="flex gap-2 mt-4">
+                    <Button 
+                      onClick={loadConsumptionData}
+                      disabled={loadingConsumption}
+                      className="gradient-primary text-white"
+                    >
+                      {loadingConsumption ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Chargement...
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-4 h-4 mr-2" />
+                          Rechercher
+                        </>
+                      )}
+                    </Button>
+                    
+                    <Button 
+                      variant="outline" 
+                      onClick={resetConsumptionFilters}
+                      className="glass-card border border-white/20 hover:bg-white/10"
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Réinitialiser
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Statistiques de consommation */}
+              {consumptionData.stats && Object.keys(consumptionData.stats).length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {consumptionData.stats.total_consommations || 0}
+                      </div>
+                      <div className="text-sm text-gray-600">Total Consommations</div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        {(consumptionData.stats.total_montant_ttc || 0).toFixed(2)}€
+                      </div>
+                      <div className="text-sm text-gray-600">Montant Total TTC</div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-orange-600">
+                        {(consumptionData.stats.total_quantite || 0).toFixed(1)}L
+                      </div>
+                      <div className="text-sm text-gray-600">Quantité Totale</div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        {consumptionData.stats.consommations_avec_assignation || 0}
+                      </div>
+                      <div className="text-sm text-gray-600">Avec Assignation</div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-red-600">
+                        {consumptionData.stats.consommations_sans_assignation || 0}
+                      </div>
+                      <div className="text-sm text-gray-600">Sans Assignation</div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Tableau des consommations */}
+              <Card className="glass-card border border-white/20">
+                <CardHeader>
+                  <CardTitle>Détail des Consommations</CardTitle>
+                  <CardDescription>
+                    Consommations avec historique des assignations
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingConsumption ? (
+                    <div className="flex items-center justify-center p-8">
+                      <Loader2 className="w-8 h-8 animate-spin mr-2" />
+                      <span>Chargement des consommations...</span>
+                    </div>
+                  ) : consumptionData.consommations && consumptionData.consommations.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-white/20">
+                            <th className="text-left p-3">Date</th>
+                            <th className="text-left p-3">Carte</th>
+                            <th className="text-left p-3">Employé Assigné</th>
+                            <th className="text-left p-3">Lieu</th>
+                            <th className="text-left p-3">Quantité</th>
+                            <th className="text-left p-3">Montant TTC</th>
+                            <th className="text-left p-3">Statut</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {consumptionData.consommations.slice(0, 50).map((consommation: any, index: number) => (
+                            <tr key={index} className="border-b border-white/10 hover:bg-white/5">
+                              <td className="p-3">
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{consommation.date_livraison}</span>
+                                  {consommation.heure_livraison && (
+                                    <span className="text-sm text-gray-500">{consommation.heure_livraison}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <Badge variant="outline" className="glass-card border border-white/20">
+                                  {consommation.numero_carte}
+                                </Badge>
+                              </td>
+                              <td className="p-3">
+                                {consommation.assignation_valide ? (
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{consommation.employe_nom}</span>
+                                    <span className="text-sm text-gray-500">
+                                      {consommation.assignation_debut} → {consommation.assignation_fin_effective !== '2099-12-31' ? consommation.assignation_fin_effective : 'Permanente'}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <Badge variant="destructive">Non assignée</Badge>
+                                )}
+                              </td>
+                              <td className="p-3">
+                                <div className="flex flex-col">
+                                  <span className="text-sm">{consommation.point_acceptation || 'Non spécifié'}</span>
+                                  {consommation.cp && (
+                                    <span className="text-xs text-gray-500">{consommation.cp}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <span className="font-medium">{consommation.quantite?.toFixed(2) || '0'}L</span>
+                              </td>
+                              <td className="p-3">
+                                <span className="font-medium text-green-600">{consommation.ca_ttc?.toFixed(2) || '0'}€</span>
+                              </td>
+                              <td className="p-3">
+                                {consommation.assignation_valide ? (
+                                  <Badge variant="default" className="bg-green-100 text-green-800">
+                                    ✓ Valide
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="destructive">
+                                    ⚠ Sans assignation
+                                  </Badge>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      
+                      {consumptionData.consommations.length > 50 && (
+                        <div className="text-center p-4 text-sm text-gray-500">
+                          Affichage des 50 premières consommations sur {consumptionData.consommations.length} au total
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center p-8">
+                      <Fuel className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+                      <p className="text-gray-600 text-lg">Aucune consommation trouvée</p>
+                      <p className="text-gray-500 text-sm mt-2">
+                        Modifiez les filtres pour voir d'autres résultats
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Résumé par employé */}
+              {consumptionData.parEmploye && consumptionData.parEmploye.length > 0 && (
+                <Card className="glass-card border border-white/20">
+                  <CardHeader>
+                    <CardTitle>Résumé par Employé</CardTitle>
+                    <CardDescription>
+                      Consommation totale par employé sur la période sélectionnée
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {consumptionData.parEmploye.map((employe: any, index: number) => (
+                        <div key={index} className="p-4 glass-card border border-white/10 rounded-xl">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                              <User className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <div className="font-semibold">{employe.employe_nom}</div>
+                              <div className="text-sm text-gray-500">{employe.consommations.length} transactions</div>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <span className="text-sm">Montant total:</span>
+                              <span className="font-medium text-green-600">{employe.total_montant.toFixed(2)}€</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm">Quantité totale:</span>
+                              <span className="font-medium">{employe.total_quantite.toFixed(1)}L</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
+              )}
             </div>
           )}
 
@@ -3613,6 +4031,7 @@ export default function EmployeeTracker() {
                                <th className="text-left p-4 font-semibold">Marque</th>
                                <th className="text-left p-4 font-semibold">Modèle</th>
                                <th className="text-left p-4 font-semibold">Numéro Série</th>
+                               <th className="text-left p-4 font-semibold">Stock</th>
                             <th className="text-left p-4 font-semibold">Statut</th>
                             <th className="text-left p-4 font-semibold">Actions</th>
                         </tr>
@@ -3625,6 +4044,12 @@ export default function EmployeeTracker() {
                                  <td className="p-4">{material.marque}</td>
                                  <td className="p-4">{material.modele}</td>
                                  <td className="p-4">{material.numero_serie}</td>
+                                 <td className="p-4">
+                                   <div className="flex items-center gap-2">
+                                     <Package className="w-4 h-4 text-primary" />
+                                     <span className="font-medium">{material.quantite || 0}</span>
+                                   </div>
+                                 </td>
                               <td className="p-4">
                                 <Badge 
                                   variant={material.statut === 'disponible' ? 'default' : 'secondary'}
@@ -3702,82 +4127,7 @@ export default function EmployeeTracker() {
                       </div>
                    </CardHeader>
                    <CardContent>
-                  {loadingAffectations ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Chargement des affectations...</p>
-                    </div>
-                  ) : affectations.length === 0 ? (
-                       <div className="text-center py-8 text-muted-foreground">
-                         <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                         <h3 className="text-lg font-semibold mb-2">Aucune affectation trouvée</h3>
-                         <p>Créez des affectations pour assigner du matériel aux employés.</p>
-                    </div>
-                  ) : (
-                            <div className="overflow-x-auto">
-                         <table className="w-full border-collapse">
-                                <thead>
-                                  <tr className="border-b border-white/10">
-                               <th className="text-left p-4 font-semibold">Employé</th>
-                               <th className="text-left p-4 font-semibold">Matériel</th>
-                               <th className="text-left p-4 font-semibold">Date Affectation</th>
-                               <th className="text-left p-4 font-semibold">Statut</th>
-                               <th className="text-left p-4 font-semibold">Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                             {affectations.slice(0, 50).map((affectation, index) => (
-                               <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                 <td className="p-4">
-                                   <div className="flex items-center gap-2">
-                                     <User className="w-4 h-4 text-primary" />
-                                     <span>{affectation.nom_employe}</span>
-                      </div>
-                                 </td>
-                                 <td className="p-4">
-                                   <div className="flex items-center gap-2">
-                                     <Package className="w-4 h-4 text-chart-3" />
-                                     <span>{affectation.nom_equipement}</span>
-                                        </div>
-                                      </td>
-                                 <td className="p-4">{affectation.date_affectation}</td>
-                                 <td className="p-4">
-                                        <Badge
-                                          variant={affectation.statut === 'active' ? 'default' : 'secondary'}
-                                     className={affectation.statut === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}
-                                        >
-                                          {affectation.statut}
-                                        </Badge>
-                                      </td>
-                                 <td className="p-4">
-                                        <div className="flex gap-2">
-                        <Button
-                                       variant="outline"
-                                            size="sm"
-                          onClick={() => {
-                                              setEditingItem(affectation)
-                                              setShowAffectationModal(true)
-                                            }}
-                                       className="glass-card border border-white/20"
-                                          >
-                                       <Edit className="w-4 h-4" />
-                                          </Button>
-                                          <Button
-                                       variant="outline"
-                                            size="sm"
-                                       onClick={() => handleDelete('affectation', affectation.id)}
-                                       className="glass-card border border-white/20 text-red-400 hover:text-red-300"
-                                     >
-                                       <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                    </div>
-                  )}
+                  <AffectationTest />
                     </CardContent>
                   </Card>
                </div>
@@ -4657,17 +5007,83 @@ export default function EmployeeTracker() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div>
-              <Label className="text-sm font-medium">Date de début d'assignation</Label>
-              <Input
-                type="date"
-                value={assignmentStartDate}
-                onChange={(e) => setAssignmentStartDate(e.target.value)}
-                className="glass-card border border-white/20"
-                min={new Date().toISOString().split('T')[0]}
-              />
+              <Label className="text-sm font-medium">Type d'assignation</Label>
+              <Select onValueChange={(value: 'permanent' | 'temporary') => setAssignmentType(value)} defaultValue="temporary">
+                <SelectTrigger className="glass-card border border-white/20">
+                  <SelectValue placeholder="Choisir le type d'assignation" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="temporary">🕐 Temporaire (avec date de fin)</SelectItem>
+                  <SelectItem value="permanent">♾️ Permanente (sans date de fin)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium">Date de début *</Label>
+                <Input
+                  type="date"
+                  value={assignmentStartDate}
+                  onChange={(e) => setAssignmentStartDate(e.target.value)}
+                  className="glass-card border border-white/20"
+                  required
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  💡 Vous pouvez sélectionner une date passée pour les assignations rétroactives
+                </div>
+              </div>
+              
+              {assignmentType === 'temporary' && (
+                <div>
+                  <Label className="text-sm font-medium">Date de fin *</Label>
+                  <Input
+                    type="date"
+                    value={assignmentEndDate}
+                    onChange={(e) => setAssignmentEndDate(e.target.value)}
+                    className="glass-card border border-white/20"
+                    min={assignmentStartDate}
+                    required
+                  />
+                  <div className="text-xs text-gray-500 mt-1">
+                    📅 Doit être postérieure à la date de début
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {assignmentStartDate && (
+              <div className={`p-3 rounded-lg border ${
+                new Date(assignmentStartDate).getTime() < new Date().setHours(0,0,0,0) 
+                  ? 'bg-orange-50/20 border-orange-200/30' 
+                  : 'bg-blue-50/20 border-blue-200/30'
+              }`}>
+                {new Date(assignmentStartDate).getTime() < new Date().setHours(0,0,0,0) && (
+                  <div className="flex items-center gap-2 text-sm text-blue-700 mb-2">
+                    <span className="font-medium">📅 Assignation historique</span>
+                  </div>
+                )}
+                
+                {assignmentType === 'temporary' && assignmentEndDate ? (
+                  <>
+                    <div className="flex items-center gap-2 text-sm text-blue-700">
+                      <span className="font-medium">📅 Période d'assignation:</span>
+                      <span>{assignmentStartDate} → {assignmentEndDate}</span>
+                    </div>
+                    <div className="text-xs text-blue-600 mt-1">
+                      Durée: {Math.ceil((new Date(assignmentEndDate).getTime() - new Date(assignmentStartDate).getTime()) / (1000 * 60 * 60 * 24))} jours
+                    </div>
+                  </>
+                ) : assignmentType === 'permanent' ? (
+                  <div className="flex items-center gap-2 text-sm text-green-700">
+                    <span className="font-medium">♾️ Assignation permanente:</span>
+                    <span>À partir du {assignmentStartDate}</span>
+                  </div>
+                ) : null}
+              </div>
+            )}
             
             <div>
               <Label className="text-sm font-medium">Commentaires (optionnel)</Label>
@@ -4700,19 +5116,21 @@ export default function EmployeeTracker() {
                 setShowCardAssignmentModal(false)
                 setSelectedCardNumber('')
                 setAssignmentStartDate('')
+                setAssignmentEndDate('')
                 setAssignmentComments('')
+                setAssignmentType('temporary')
               }}
               className="glass-card border border-white/20 hover:bg-white/10"
             >
               Annuler
             </Button>
             <Button
-              onClick={() => assignCardToEmployee(selectedCardNumber)}
-              disabled={!selectedCardNumber}
-              className="glass-card border border-white/20 hover:bg-white/10"
+              onClick={assignCardToEmployee}
+              disabled={!selectedCardNumber || !assignmentStartDate || (assignmentType === 'temporary' && !assignmentEndDate)}
+              className="gradient-primary text-white"
             >
               <CreditCard className="w-4 h-4 mr-2" />
-              Assigner la carte
+              {assignmentType === 'permanent' ? 'Assigner définitivement' : 'Assigner pour la période'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4972,6 +5390,200 @@ export default function EmployeeTracker() {
             <Button 
               variant="outline" 
               onClick={() => setShowCardHistoryModal(false)}
+              className="glass-card border border-white/20 hover:bg-white/10"
+            >
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assignment History Modal */}
+      <Dialog open={showAssignmentHistoryModal} onOpenChange={setShowAssignmentHistoryModal}>
+        <DialogContent className="glass-card border border-white/20 max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Historique des Assignations Carburant
+            </DialogTitle>
+            <DialogDescription>
+              Historique complet des assignations de cartes pour {selectedEmployeeHistory?.prenom} {selectedEmployeeHistory?.nom}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {loadingHistory ? (
+              <div className="flex items-center justify-center p-8">
+                <Loader2 className="w-8 h-8 animate-spin" />
+                <span className="ml-2">Chargement de l'historique...</span>
+              </div>
+            ) : assignmentHistory.length > 0 ? (
+              <div className="space-y-4">
+                {/* Résumé */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {assignmentHistory.length}
+                      </div>
+                      <div className="text-sm text-gray-600">Total Assignations</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        {assignmentHistory.filter(h => h.statut_reel === 'active').length}
+                      </div>
+                      <div className="text-sm text-gray-600">Actives</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-red-600">
+                        {assignmentHistory.filter(h => h.statut_reel === 'terminee').length}
+                      </div>
+                      <div className="text-sm text-gray-600">Terminées</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="glass-card border border-white/20">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-orange-600">
+                        {assignmentHistory.filter(h => h.statut_reel === 'expiree').length}
+                      </div>
+                      <div className="text-sm text-gray-600">Expirées</div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Liste des assignations avec détails */}
+                <div className="space-y-3">
+                  <h4 className="text-lg font-semibold flex items-center gap-2">
+                    <CreditCard className="w-4 h-4" />
+                    Assignations de Cartes Carburant
+                  </h4>
+                  
+                  <div className="space-y-3">
+                    {assignmentHistory.map((assignment, index) => (
+                      <div key={index} className="p-4 glass-card border border-white/20 rounded-lg">
+                        {/* En-tête avec carte et statut */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                              <CreditCard className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-lg">
+                                Carte {assignment.numero_carte}
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                Montant: {assignment.montant_carte}€
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <Badge 
+                            variant={assignment.statut_reel === 'active' ? 'default' : 
+                                   assignment.statut_reel === 'terminee' ? 'destructive' : 'secondary'}
+                            className="glass-card border border-white/20"
+                          >
+                            {assignment.statut_reel === 'active' ? '🟢 Active' : 
+                             assignment.statut_reel === 'terminee' ? '🔴 Terminée' : 
+                             assignment.statut_reel === 'expiree' ? '🟠 Expirée' : 
+                             '🟡 ' + assignment.statut_reel}
+                          </Badge>
+                        </div>
+
+                        {/* Période d'assignation */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                          <div className="p-3 bg-green-50/20 rounded-lg border border-green-200/30">
+                            <div className="text-sm font-medium text-green-700 mb-1">
+                              📅 Date de début
+                            </div>
+                            <div className="text-green-800">
+                              {new Date(assignment.date_debut).toLocaleDateString('fr-FR', {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                              })}
+                            </div>
+                          </div>
+                          
+                          <div className="p-3 bg-red-50/20 rounded-lg border border-red-200/30">
+                            <div className="text-sm font-medium text-red-700 mb-1">
+                              {assignment.date_fin_reelle ? '🏁 Date de fin réelle' : 
+                               assignment.date_fin_prevue ? '📅 Date de fin prévue' : '♾️ Assignation permanente'}
+                            </div>
+                            <div className="text-red-800">
+                              {assignment.date_fin_reelle ? 
+                                new Date(assignment.date_fin_reelle).toLocaleDateString('fr-FR', {
+                                  weekday: 'long',
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric'
+                                }) :
+                               assignment.date_fin_prevue ?
+                                new Date(assignment.date_fin_prevue).toLocaleDateString('fr-FR', {
+                                  weekday: 'long',
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric'
+                                }) :
+                               'Aucune date de fin'
+                              }
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Durée et informations supplémentaires */}
+                        <div className="flex items-center justify-between text-sm text-gray-600">
+                          <div className="flex items-center gap-4">
+                            {assignment.date_fin_prevue && (
+                              <div className="flex items-center gap-1">
+                                <Timer className="w-4 h-4" />
+                                <span>
+                                  Durée: {Math.ceil((new Date(assignment.date_fin_prevue).getTime() - new Date(assignment.date_debut).getTime()) / (1000 * 60 * 60 * 24))} jours
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-4 h-4" />
+                              <span>
+                                Créée le {new Date(assignment.created_at).toLocaleDateString('fr-FR')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Commentaires */}
+                        {assignment.commentaires && (
+                          <div className="mt-3 p-2 bg-gray-50/20 rounded border border-gray-200/30">
+                            <div className="text-sm font-medium text-gray-700 mb-1">💬 Commentaires</div>
+                            <div className="text-sm text-gray-600">{assignment.commentaires}</div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center p-8">
+                <History className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+                <p className="text-gray-600 text-lg">
+                  Aucun historique d'assignation trouvé pour cet employé
+                </p>
+                <p className="text-gray-500 text-sm mt-2">
+                  Les assignations apparaîtront ici une fois qu'elles auront été créées
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowAssignmentHistoryModal(false)}
               className="glass-card border border-white/20 hover:bg-white/10"
             >
               Fermer

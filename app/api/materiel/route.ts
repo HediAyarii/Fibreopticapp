@@ -56,6 +56,15 @@ export async function POST(request: NextRequest) {
       photos
     } = await request.json()
 
+    // Validation des champs obligatoires
+    if (!nom_equipement || nom_equipement.trim() === '') {
+      return NextResponse.json({ error: "Le nom de l'équipement est obligatoire" }, { status: 400 })
+    }
+    
+    if (!type_materiel || type_materiel.trim() === '') {
+      return NextResponse.json({ error: "Le type de matériel est obligatoire" }, { status: 400 })
+    }
+
     // Vérifier si le matériel existe déjà (par numéro de série)
     if (numero_serie) {
       const existing = await query(
