@@ -198,6 +198,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Synchronisation automatique des employés après l'ajout d'interventions
+    if (saved > 0) {
+      console.log('🔄 Synchronisation automatique des employés après ajout d\'interventions...')
+      try {
+        const syncResponse = await fetch('http://localhost:3000/api/sync/employees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        
+        if (syncResponse.ok) {
+          const syncData = await syncResponse.json()
+          console.log(`✅ Synchronisation réussie: ${syncData.data.employes_crees} employés créés`)
+        } else {
+          console.log('⚠️ Erreur lors de la synchronisation des employés')
+        }
+      } catch (syncError) {
+        console.log('⚠️ Erreur lors de la synchronisation des employés:', syncError)
+      }
+    }
+
     // Get total count
     const totalResult = await query('SELECT COUNT(*) as total FROM interventions')
     const total = totalResult.rows[0].total
@@ -207,6 +227,7 @@ export async function POST(request: NextRequest) {
       saved,
       duplicates,
       total: parseInt(total),
+      syncMessage: saved > 0 ? 'Synchronisation automatique des employés effectuée' : null
     })
   } catch (error) {
     console.error("Erreur API interventions:", error)

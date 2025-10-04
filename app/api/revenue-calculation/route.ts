@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const employeId = searchParams.get('employe_id')
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
+    const grille = searchParams.get('grille')
 
     // Construire la requête SQL pour calculer les recettes
     let queryText = `
@@ -100,6 +101,14 @@ export async function GET(request: NextRequest) {
     if (dateTo) {
       conditions.push(`(i.cloture_tech <= $${params.length + 1} OR i.cloture_hotline <= $${params.length + 1})`)
       params.push(dateTo)
+    }
+
+    if (grille) {
+      if (grille === 'AXECOM MANCHE') {
+        conditions.push(`i.grille LIKE '%AXECOM MANCHE%'`)
+      } else if (grille === 'ERT') {
+        conditions.push(`(i.grille IS NOT NULL AND i.grille != '' AND i.grille NOT LIKE '%AXECOM MANCHE%')`)
+      }
     }
 
     if (conditions.length > 0) {

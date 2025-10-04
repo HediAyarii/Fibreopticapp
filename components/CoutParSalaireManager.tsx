@@ -1,0 +1,1455 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { 
+  Upload, 
+  Download, 
+  Edit, 
+  Save, 
+  X, 
+  Filter,
+  DollarSign,
+  Users,
+  Calendar,
+  FileText,
+  CreditCard,
+  History,
+  Plus,
+  Eye,
+  RefreshCw
+} from 'lucide-react'
+
+interface CoutParSalaire {
+  id: number
+  nom: string
+  prenom: string
+  salaire_net: number
+  salaire_brut: number
+  cout_total: number
+  charge: number
+  mois: number
+  annee: number
+  matricule?: string | null
+  taxe?: number
+  impot?: number
+  penalite?: number
+  total_genere?: number
+  rap?: number
+  total_paiements?: number
+  created_at: string
+  updated_at: string
+}
+
+interface Paiement {
+  id: number
+  cout_par_salaire_id: number
+  employe_id: number
+  montant_verse: number
+  date_paiement: string
+  methode_paiement: string
+  reference_paiement?: string
+  commentaires?: string
+  statut: string
+  employe_nom: string
+  employe_prenom: string
+  employe_matricule: string
+  cout_nom: string
+  cout_prenom: string
+  mois: number
+  annee: number
+  total_paiements: number
+  rap_actuel: number
+  created_at: string
+  updated_at: string
+}
+
+interface CoutParSalaireManagerProps {
+  onClose?: () => void
+}
+
+export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
+  const [couts, setCouts] = useState<CoutParSalaire[]>([])
+  const [loading, setLoading] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [editingField, setEditingField] = useState<{id: number, field: string} | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResults, setImportResults] = useState<{
+    matched: number,
+    unmatched: number,
+    total: number
+  } | null>(null)
+  
+  // États pour l'attribution manuelle
+  const [showManualAssignment, setShowManualAssignment] = useState(false)
+  const [selectedCout, setSelectedCout] = useState<CoutParSalaire | null>(null)
+  const [availableEmployees, setAvailableEmployees] = useState<any[]>([])
+  const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null)
+  const [assigning, setAssigning] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  
+  // États pour les paiements
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [showPaymentHistory, setShowPaymentHistory] = useState(false)
+  const [selectedCoutForPayment, setSelectedCoutForPayment] = useState<CoutParSalaire | null>(null)
+  const [paiements, setPaiements] = useState<Paiement[]>([])
+  const [paymentForm, setPaymentForm] = useState({
+    montant_verse: '',
+    date_paiement: new Date().toISOString().split('T')[0],
+    methode_paiement: 'virement',
+    reference_paiement: '',
+    commentaires: ''
+  })
+  const [paymentLoading, setPaymentLoading] = useState(false)
+
+  // Fonction utilitaire pour formater l'impôt
+  const formatImpot = (impot: any): string => {
+    if (!impot) return '0.00€'
+    const num = parseFloat(impot)
+    return isNaN(num) ? '0.00€' : `${num.toFixed(2)}€`
+  }
+
+  // Fonction utilitaire pour vérifier si l'impôt est > 0
+  const hasImpot = (impot: any): boolean => {
+    if (!impot) return false
+    const num = parseFloat(impot)
+    return !isNaN(num) && num > 0
+  }
+
+  // Charger les données
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      console.log('🔄 Chargement des données avec calcul du total généré...')
+      const response = await fetch(`/api/cout-par-salaire?mois=${selectedMonth}&annee=${selectedYear}`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setCouts(data.couts || [])
+        console.log(`✅ ${data.couts.length} enregistrements chargés avec totaux générés`)
+        
+        // Afficher les statistiques des totaux générés
+        const withRevenue = data.couts.filter((cout: any) => cout.total_genere && cout.total_genere > 0)
+        const withoutRevenue = data.couts.filter((cout: any) => !cout.total_genere || cout.total_genere === 0)
+        
+        console.log(`📊 Statistiques: ${withRevenue.length} avec recettes, ${withoutRevenue.length} sans recettes`)
+      } else {
+        console.error('❌ Erreur chargement données:', data.error)
+        alert(`Erreur lors du chargement: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Erreur chargement:', error)
+      alert('Erreur lors du chargement des données. Vérifiez votre connexion.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Fonction pour charger les employés disponibles
+  const loadAvailableEmployees = async () => {
+    try {
+      const response = await fetch('/api/employes')
+      const data = await response.json()
+      
+      if (data.success && data.employes) {
+        setAvailableEmployees(data.employes)
+        console.log(`✅ ${data.employes.length} employés chargés pour attribution manuelle`)
+      }
+    } catch (error) {
+      console.error('❌ Erreur chargement employés:', error)
+    }
+  }
+
+  // Fonction pour ouvrir la modal d'attribution manuelle
+  const openManualAssignment = (cout: CoutParSalaire) => {
+    setSelectedCout(cout)
+    setSelectedEmployee(null)
+    setShowManualAssignment(true)
+    loadAvailableEmployees()
+  }
+
+  // Fonction pour attribuer manuellement un employé
+  const assignEmployeeManually = async () => {
+    if (!selectedCout || !selectedEmployee) return
+
+    setAssigning(true)
+    try {
+      console.log('🔗 Attribution manuelle:', {
+        cout: selectedCout,
+        employee: selectedEmployee
+      })
+
+      const response = await fetch('/api/cout-par-salaire/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coutId: selectedCout.id,
+          employeeId: selectedEmployee.id,
+          matricule: selectedEmployee.matricule,
+          taxe: selectedEmployee.pourcentage_taxe
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Attribution manuelle réussie:', result)
+        alert(`Employé ${selectedEmployee.nom} ${selectedEmployee.prenom} attribué avec succès !`)
+        
+        // Recharger les données pour refléter les changements
+        await loadData()
+        setShowManualAssignment(false)
+        setSelectedCout(null)
+        setSelectedEmployee(null)
+      } else {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors de l\'attribution')
+      }
+    } catch (error) {
+      console.error('❌ Erreur attribution manuelle:', error)
+      alert(error instanceof Error ? error.message : 'Erreur lors de l\'attribution')
+    } finally {
+      setAssigning(false)
+    }
+  }
+
+  // Fonctions pour la gestion des paiements
+  const openPaymentModal = (cout: CoutParSalaire) => {
+    setSelectedCoutForPayment(cout)
+    setPaymentForm({
+      montant_verse: '',
+      date_paiement: new Date().toISOString().split('T')[0],
+      methode_paiement: 'virement',
+      reference_paiement: '',
+      commentaires: ''
+    })
+    setShowPaymentModal(true)
+  }
+
+  const openPaymentHistory = async (cout: CoutParSalaire) => {
+    setSelectedCoutForPayment(cout)
+    setPaymentLoading(true)
+    
+    try {
+      const response = await fetch(`/api/paiements-employes?cout_id=${cout.id}`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setPaiements(data.paiements)
+        setShowPaymentHistory(true)
+      } else {
+        alert('Erreur lors du chargement de l\'historique des paiements')
+      }
+    } catch (error) {
+      console.error('Erreur chargement historique:', error)
+      alert('Erreur lors du chargement de l\'historique des paiements')
+    } finally {
+      setPaymentLoading(false)
+    }
+  }
+
+  const handlePaymentSubmit = async () => {
+    if (!selectedCoutForPayment || !paymentForm.montant_verse) {
+      alert('Veuillez remplir le montant versé')
+      return
+    }
+
+    setPaymentLoading(true)
+    try {
+      // Trouver l'employé correspondant
+      const employe = employeesCache.find(emp => 
+        emp.matricule === selectedCoutForPayment.matricule
+      )
+
+      if (!employe) {
+        alert('Employé non trouvé pour ce coût')
+        return
+      }
+
+      const response = await fetch('/api/paiements-employes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cout_par_salaire_id: selectedCoutForPayment.id,
+          employe_id: employe.id,
+          montant_verse: parseFloat(paymentForm.montant_verse),
+          date_paiement: paymentForm.date_paiement,
+          methode_paiement: paymentForm.methode_paiement,
+          reference_paiement: paymentForm.reference_paiement,
+          commentaires: paymentForm.commentaires
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        alert(`Paiement de ${paymentForm.montant_verse}€ enregistré avec succès !`)
+        
+        // Recharger les données pour mettre à jour le RAP
+        await loadData()
+        setShowPaymentModal(false)
+        setSelectedCoutForPayment(null)
+      } else {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors de l\'enregistrement du paiement')
+      }
+    } catch (error) {
+      console.error('Erreur paiement:', error)
+      alert(error instanceof Error ? error.message : 'Erreur lors de l\'enregistrement du paiement')
+    } finally {
+      setPaymentLoading(false)
+    }
+  }
+
+  const deletePayment = async (paymentId: number) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer ce paiement ?')) return
+
+    try {
+      const response = await fetch(`/api/paiements-employes?id=${paymentId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        alert('Paiement supprimé avec succès !')
+        
+        // Recharger les données et l'historique
+        await loadData()
+        if (selectedCoutForPayment) {
+          await openPaymentHistory(selectedCoutForPayment)
+        }
+      } else {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors de la suppression')
+      }
+    } catch (error) {
+      console.error('Erreur suppression paiement:', error)
+      alert(error instanceof Error ? error.message : 'Erreur lors de la suppression du paiement')
+    }
+  }
+
+  // Fonction pour synchroniser les pénalités
+  const syncPenalites = async () => {
+    setSyncing(true)
+    
+    try {
+      const response = await fetch('/api/sync/penalites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        alert(`✅ Synchronisation terminée !
+📊 ${result.data.couts_synchronises} coûts synchronisés
+🔧 ${result.data.deductions_creees} déductions créées
+🆕 ${result.data.couts_crees} coûts créés`)
+        
+        // Recharger les données
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(`❌ Erreur synchronisation: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Erreur synchronisation:', error)
+      alert('❌ Erreur lors de la synchronisation des pénalités')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [selectedMonth, selectedYear])
+
+  // Gestion de l'édition en double-clic
+  const handleDoubleClick = (id: number, field: string, currentValue: any) => {
+    setEditingField({ id, field })
+    setEditValue(currentValue.toString())
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingField) return
+
+    try {
+      const response = await fetch('/api/cout-par-salaire', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingField.id,
+          [editingField.field]: parseFloat(editValue) || 0
+        })
+      })
+
+      if (response.ok) {
+        await loadData()
+        setEditingField(null)
+        setEditValue('')
+      }
+    } catch (error) {
+      console.error('Erreur sauvegarde:', error)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditingField(null)
+    setEditValue('')
+  }
+
+  // Gestion de l'import CSV
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      setImportFile(file)
+    }
+  }
+
+  // Fonction de normalisation des noms pour la correspondance intelligente
+  const normalizeName = (name: string): string => {
+    return name
+      .toLowerCase()
+      .replace(/[àáâãäå]/g, 'a')
+      .replace(/[èéêë]/g, 'e')
+      .replace(/[ìíîï]/g, 'i')
+      .replace(/[òóôõö]/g, 'o')
+      .replace(/[ùúûü]/g, 'u')
+      .replace(/[ç]/g, 'c')
+      .replace(/[^a-z]/g, '') // Supprimer tout sauf lettres
+  }
+
+  // Fonction de correspondance avancée
+  const findNameMatch = (csvNom: string, csvPrenom: string, dbNom: string, dbPrenom: string): boolean => {
+    const csvNomNorm = normalizeName(csvNom)
+    const csvPrenomNorm = normalizeName(csvPrenom)
+    const dbNomNorm = normalizeName(dbNom)
+    const dbPrenomNorm = normalizeName(dbPrenom)
+    
+    // Correspondance directe
+    if (csvNomNorm === dbNomNorm && csvPrenomNorm === dbPrenomNorm) return true
+    
+    // Correspondance inversée (nom/prénom échangés)
+    if (csvNomNorm === dbPrenomNorm && csvPrenomNorm === dbNomNorm) return true
+    
+    // Correspondance partielle - vérifier si les éléments du CSV sont dans la DB
+    const csvElements = [csvNomNorm, csvPrenomNorm]
+    const dbElements = [dbNomNorm, dbPrenomNorm]
+    
+    // Vérifier si tous les éléments du CSV sont présents dans la DB
+    const allElementsMatch = csvElements.every(csvEl => 
+      dbElements.some(dbEl => dbEl.includes(csvEl) || csvEl.includes(dbEl))
+    )
+    
+    if (allElementsMatch) return true
+    
+    // Correspondance avec tirets (ex: "Mohamed-Bechir" -> "BECHIR" + "MOHAMED")
+    const dbNomParts = dbNomNorm.split('-')
+    if (dbNomParts.length > 1) {
+      const dbAllParts = [...dbNomParts, dbPrenomNorm]
+      const csvAllParts = [csvNomNorm, csvPrenomNorm]
+      
+      const allPartsMatch = csvAllParts.every(csvPart => 
+        dbAllParts.some(dbPart => dbPart.includes(csvPart) || csvPart.includes(dbPart))
+      )
+      
+      if (allPartsMatch) return true
+    }
+    
+    return false
+  }
+
+  // Cache des employés pour éviter les appels répétés
+  const [employeesCache, setEmployeesCache] = useState<any[]>([])
+
+  // Charger les employés une seule fois
+  const loadEmployees = async () => {
+    if (employeesCache.length > 0) return employeesCache
+    
+    try {
+      const response = await fetch('/api/employes')
+      const data = await response.json()
+      
+      if (data.success && data.employes) {
+        setEmployeesCache(data.employes)
+        return data.employes
+      }
+      return []
+    } catch (error) {
+      console.error('Erreur chargement employés:', error)
+      return []
+    }
+  }
+
+  // Fonction de correspondance intelligente avec les employés
+  const findEmployeeMatch = async (nom: string, prenom: string) => {
+    try {
+      const normalizedNom = normalizeName(nom)
+      const normalizedPrenom = normalizeName(prenom)
+      
+      console.log(`🔍 Recherche correspondance: "${nom}" "${prenom}" → "${normalizedNom}" "${normalizedPrenom}"`)
+      
+      const employees = await loadEmployees()
+      
+      // Recherche intelligente dans le cache avec la nouvelle logique
+      const match = employees.find((emp: any) => {
+        return findNameMatch(nom, prenom, emp.nom, emp.prenom)
+      })
+      
+      if (match) {
+        console.log(`✅ Correspondance trouvée: ${match.nom} ${match.prenom} (${match.matricule})`)
+        return {
+          matricule: match.matricule,
+          nom: match.nom,
+          prenom: match.prenom,
+          pourcentage_taxe: match.pourcentage_taxe || 0
+        }
+      } else {
+        console.log(`❌ Aucune correspondance trouvée pour: ${nom} ${prenom}`)
+        return null
+      }
+    } catch (error) {
+      console.error('Erreur recherche employé:', error)
+      return null
+    }
+  }
+
+  const handleImport = async () => {
+    if (!importFile) return
+
+    setImporting(true)
+    try {
+      const text = await importFile.text()
+      const lines = text.split('\n').filter(line => line.trim())
+      
+      // Détecter le séparateur (virgule ou tabulation)
+      const firstLine = lines[0]
+      const isCommaSeparated = firstLine.includes(',') && !firstLine.includes('\t')
+      const separator = isCommaSeparated ? ',' : '\t'
+      
+      const headers = firstLine.split(separator)
+      console.log('Headers détectés:', headers)
+      
+      const data = await Promise.all(lines.slice(1).map(async (line, index) => {
+        // Parser CSV avec gestion des guillemets
+        const parseCSVLine = (line: string, separator: string) => {
+          const result = []
+          let current = ''
+          let inQuotes = false
+          
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i]
+            
+            if (char === '"') {
+              inQuotes = !inQuotes
+            } else if (char === separator && !inQuotes) {
+              result.push(current.trim())
+              current = ''
+            } else {
+              current += char
+            }
+          }
+          result.push(current.trim())
+          return result
+        }
+        
+        const values = parseCSVLine(line, separator)
+        const obj: any = {}
+        
+        headers.forEach((header, headerIndex) => {
+          // Mapping des headers vers les clés de base de données
+          const headerMapping: { [key: string]: string } = {
+            'nom': 'nom',
+            'prénom': 'prenom', 
+            'pr_nom': 'prenom',
+            'salaire_net': 'salaire_net',
+            'salaire_brut': 'salaire_brut',
+            'coût_total': 'cout_total',
+            'co_t_total': 'cout_total',
+            'charge': 'charge',
+            'mois': 'mois'
+          }
+          
+          // Nettoyer le header pour le mapping
+          let cleanHeader = header.toLowerCase().replace(/[^a-z]/g, '_')
+          
+          // Gérer les cas spéciaux avec plusieurs underscores
+          cleanHeader = cleanHeader.replace(/_+/g, '_').replace(/^_|_$/g, '')
+          
+          // Mapping spécial pour les headers problématiques
+          if (cleanHeader.includes('pr_nom') || cleanHeader.includes('prenom')) cleanHeader = 'prenom'
+          if (cleanHeader.includes('salaire_net')) cleanHeader = 'salaire_net'
+          if (cleanHeader.includes('salaire_brut')) cleanHeader = 'salaire_brut'
+          if (cleanHeader.includes('co_t_total') || cleanHeader.includes('cout_total')) cleanHeader = 'cout_total'
+          if (cleanHeader.includes('charge')) cleanHeader = 'charge'
+          if (cleanHeader.includes('mois')) cleanHeader = 'mois'
+          
+          const key = headerMapping[cleanHeader] || cleanHeader
+          
+          console.log(`Header original: "${header}" → Clean: "${cleanHeader}" → Key: "${key}"`)
+          let value = values[headerIndex]?.trim() || ''
+          
+          // Traitement spécial pour les dates (avant nettoyage)
+          if (key === 'mois' && value.includes('/')) {
+            const dateParts = value.split('/')
+            if (dateParts.length === 2) {
+              obj.mois = parseInt(dateParts[0])
+              obj.annee = parseInt(dateParts[1])
+              console.log(`Date: "${values[headerIndex]}" → Mois: ${obj.mois}, Année: ${obj.annee}`)
+            }
+          } else {
+            // Nettoyage avancé : supprimer tous types d'espaces et guillemets
+            value = value.replace(/[\s\u00A0\u2000-\u200B\u2028\u2029\u202F\u205F\u3000]/g, '') // Tous types d'espaces
+            value = value.replace(/["""]/g, '') // Guillemets simples et doubles
+            
+            // Traitement spécial pour les valeurs numériques
+            if (['salaire_net', 'salaire_brut', 'cout_total', 'charge'].includes(key)) {
+              // Remplacer virgule par point pour les décimales
+              value = value.replace(',', '.')
+              // Convertir en nombre
+              const numericValue = parseFloat(value) || 0
+              obj[key] = numericValue
+              console.log(`Champ ${key}: "${values[headerIndex]}" → ${numericValue}`)
+            }
+            // Détection automatique des champs numériques par contenu
+            else if (value && !isNaN(parseFloat(value.replace(',', '.')))) {
+              const numericValue = parseFloat(value.replace(',', '.')) || 0
+              obj[key] = numericValue
+              console.log(`Champ numérique détecté ${key}: "${values[headerIndex]}" → ${numericValue}`)
+            } else {
+              obj[key] = value
+            }
+          }
+        })
+        
+        console.log(`Ligne ${index + 1} parsée:`, obj)
+        
+        // Rechercher la correspondance avec un employé
+        if (obj.nom && obj.prenom) {
+          const employeeMatch = await findEmployeeMatch(obj.nom, obj.prenom)
+          if (employeeMatch) {
+            obj.matricule = employeeMatch.matricule
+            obj.taxe = employeeMatch.pourcentage_taxe
+            console.log(`✅ Employé trouvé: ${employeeMatch.matricule} (taxe: ${employeeMatch.pourcentage_taxe}%)`)
+          } else {
+            console.log(`⚠️ Aucun employé trouvé pour: ${obj.nom} ${obj.prenom}`)
+            obj.matricule = null
+            obj.taxe = 0
+          }
+        }
+        
+        return obj
+      }))
+      
+      // Filtrer les éléments valides
+      const validData = data.filter(item => item.nom && item.prenom)
+      
+      // Calculer les statistiques de correspondance
+      const matched = validData.filter(item => item.matricule).length
+      const unmatched = validData.filter(item => !item.matricule).length
+      const total = validData.length
+      
+      setImportResults({ matched, unmatched, total })
+      
+      console.log('Données finales à importer:', validData)
+      console.log(`📊 Correspondances: ${matched}/${total} trouvées`)
+
+      const response = await fetch('/api/cout-par-salaire', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ importData: validData })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        alert(`Import réussi: ${result.inserted} nouveaux, ${result.updated} mis à jour\nCorrespondances: ${matched}/${total} employés trouvés`)
+        await loadData()
+        setImportFile(null)
+      }
+    } catch (error) {
+      console.error('Erreur import:', error)
+      alert('Erreur lors de l\'import')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  // Export CSV
+  const handleExport = () => {
+    const csvContent = [
+      'Nom\tPrénom\tSalaire net (€)\tSalaire brut (€)\tCoût total (€)\tCharge\tMOIS',
+      ...couts.map(cout => 
+        `${cout.nom}\t${cout.prenom}\t${cout.salaire_net}\t${cout.salaire_brut}\t${cout.cout_total}\t${cout.charge}\t${cout.mois}/${cout.annee}`
+      )
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `couts_salaires_${selectedMonth}_${selectedYear}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const totalCout = couts.reduce((sum, cout) => sum + cout.cout_total, 0)
+  const totalCharge = couts.reduce((sum, cout) => sum + cout.charge, 0)
+
+  return (
+    <div className="space-y-6">
+      {/* En-tête avec filtres et actions */}
+      <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+          <h3 className="text-2xl font-bold">Coûts par Salarié</h3>
+          
+          {/* Filtres mois/année */}
+          <div className="flex gap-2 items-center">
+            <Filter className="w-4 h-4" />
+            <select 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+              className="px-3 py-2 border rounded-md"
+            >
+              {Array.from({length: 12}, (_, i) => (
+                <option key={i+1} value={i+1}>
+                  {new Date(0, i).toLocaleString('fr-FR', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+            <select 
+              value={selectedYear} 
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="px-3 py-2 border rounded-md"
+            >
+              {Array.from({length: 5}, (_, i) => {
+                const year = new Date().getFullYear() - 2 + i
+                return <option key={year} value={year}>{year}</option>
+              })}
+            </select>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <div className="relative">
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileChange}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <Button variant="outline" className="cursor-pointer">
+              <Upload className="w-4 h-4 mr-2" />
+              Import CSV
+            </Button>
+          </div>
+          
+          {importFile && (
+            <Button 
+              onClick={handleImport} 
+              disabled={importing}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {importing ? 'Import...' : 'Importer'}
+            </Button>
+          )}
+          
+          <Button onClick={handleExport} variant="outline">
+            <Download className="w-4 h-4 mr-2" />
+            Export CSV
+          </Button>
+          
+          <Button 
+            onClick={syncPenalites} 
+            variant="outline" 
+            disabled={syncing}
+            className="bg-orange-100 hover:bg-orange-200 border-orange-300 text-orange-800"
+          >
+            {syncing ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600 mr-2"></div>
+                Synchronisation...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Sync Pénalités
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Résultats de correspondance */}
+      {importResults && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Résultats de correspondance
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">{importResults.matched}</div>
+                <div className="text-sm text-gray-600">Employés trouvés</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">{importResults.unmatched}</div>
+                <div className="text-sm text-gray-600">Non trouvés</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{importResults.total}</div>
+                <div className="text-sm text-gray-600">Total</div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(importResults.matched / importResults.total) * 100}%` }}
+                ></div>
+              </div>
+              <div className="text-sm text-gray-600 mt-2 text-center">
+                Taux de correspondance: {Math.round((importResults.matched / importResults.total) * 100)}%
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Statistiques */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-500" />
+              <div>
+                <p className="text-sm text-gray-600">Salariés</p>
+                <p className="text-2xl font-bold">{couts.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-green-500" />
+              <div>
+                <p className="text-sm text-gray-600">Coût Total</p>
+                <p className="text-2xl font-bold">{totalCout.toLocaleString('fr-FR')}€</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-orange-500" />
+              <div>
+                <p className="text-sm text-gray-600">Charges</p>
+                <p className="text-2xl font-bold">{totalCharge.toLocaleString('fr-FR')}€</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Table des coûts */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="w-5 h-5" />
+            Coûts pour {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8">Chargement...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-3">Nom</th>
+                    <th className="text-left p-3">Prénom</th>
+                    <th className="text-center p-3">Matricule</th>
+                <th className="text-right p-3">Taxe (%)</th>
+                <th className="text-right p-3">Impôt (€)</th>
+                <th className="text-right p-3">Pénalité (€)</th>
+                <th className="text-right p-3">Total Généré (€)</th>
+                <th className="text-right p-3">RAP (€)</th>
+                <th className="text-right p-3">Paiements (€)</th>
+                <th className="text-right p-3">Salaire Net</th>
+                <th className="text-right p-3">Salaire Brut</th>
+                <th className="text-right p-3">Coût Total</th>
+                <th className="text-right p-3">Charge</th>
+                <th className="text-center p-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {couts.map((cout) => (
+                    <tr key={cout.id} className="border-b hover:bg-gray-50">
+                      <td className="p-3 font-medium">{cout.nom}</td>
+                      <td className="p-3">{cout.prenom}</td>
+                      
+                      <td className="p-3 text-center">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          cout.matricule 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {cout.matricule || 'Non trouvé'}
+                        </span>
+                        {cout.matricule && (
+                          <div className="text-xs text-green-600 mt-1">✓ Correspondance</div>
+                        )}
+                        {!cout.matricule && (
+                          <div className="mt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openManualAssignment(cout)}
+                              className="h-6 px-2 text-xs bg-blue-100 hover:bg-blue-200 border-blue-300 text-blue-800"
+                            >
+                              Attribuer manuellement
+                            </Button>
+                          </div>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        <span className={`font-medium ${cout.taxe && cout.taxe > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                          {cout.taxe ? `${cout.taxe}%` : '0%'}
+                        </span>
+                        {cout.taxe && cout.taxe > 0 && (
+                          <div className="text-xs text-blue-600 mt-1">✓ Taxe assignée</div>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        <span className={`font-medium ${hasImpot(cout.impot) ? 'text-red-600' : 'text-gray-400'}`}>
+                          {formatImpot(cout.impot)}
+                        </span>
+                        {hasImpot(cout.impot) && (
+                          <div className="text-xs text-red-600 mt-1">✓ Impôt calculé</div>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        <span className={`font-medium ${cout.penalite && Number(cout.penalite) > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                          {cout.penalite ? `${Number(cout.penalite).toFixed(2)}€` : '0.00€'}
+                        </span>
+                        {cout.penalite && Number(cout.penalite) > 0 && (
+                          <div className="text-xs text-orange-600 mt-1">✓ Pénalités</div>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        <span className={`font-medium ${cout.total_genere && Number(cout.total_genere) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {cout.total_genere ? `${Number(cout.total_genere).toFixed(2)}€` : '0.00€'}
+                        </span>
+                        {cout.total_genere && Number(cout.total_genere) > 0 && (
+                          <div className="text-xs text-green-600 mt-1">✓ Recettes générées</div>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        <span className={`font-medium ${cout.rap && Number(cout.rap) > 0 ? 'text-blue-600' : cout.rap && Number(cout.rap) < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                          {cout.rap ? `${Number(cout.rap).toFixed(2)}€` : '0.00€'}
+                        </span>
+                        {cout.rap && Number(cout.rap) > 0 && (
+                          <div className="text-xs text-blue-600 mt-1">✓ Reste à payer</div>
+                        )}
+                        {cout.rap && Number(cout.rap) < 0 && (
+                          <div className="text-xs text-red-600 mt-1">⚠️ Déficit</div>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        <span className={`font-medium ${cout.total_paiements && Number(cout.total_paiements) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {cout.total_paiements ? `${Number(cout.total_paiements).toFixed(2)}€` : '0.00€'}
+                        </span>
+                        {cout.total_paiements && Number(cout.total_paiements) > 0 && (
+                          <div className="text-xs text-green-600 mt-1">✓ Paiements reçus</div>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        {editingField?.id === cout.id && editingField?.field === 'salaire_net' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-24"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSaveEdit}>
+                              <Save className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span 
+                            className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                            onDoubleClick={() => handleDoubleClick(cout.id, 'salaire_net', cout.salaire_net)}
+                            title="Double-clic pour modifier"
+                          >
+                            {cout.salaire_net.toLocaleString('fr-FR')}€
+                          </span>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        {editingField?.id === cout.id && editingField?.field === 'salaire_brut' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-24"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSaveEdit}>
+                              <Save className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span 
+                            className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                            onDoubleClick={() => handleDoubleClick(cout.id, 'salaire_brut', cout.salaire_brut)}
+                            title="Double-clic pour modifier"
+                          >
+                            {cout.salaire_brut.toLocaleString('fr-FR')}€
+                          </span>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        {editingField?.id === cout.id && editingField?.field === 'cout_total' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-24"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSaveEdit}>
+                              <Save className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span 
+                            className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                            onDoubleClick={() => handleDoubleClick(cout.id, 'cout_total', cout.cout_total)}
+                            title="Double-clic pour modifier"
+                          >
+                            {cout.cout_total.toLocaleString('fr-FR')}€
+                          </span>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        {editingField?.id === cout.id && editingField?.field === 'charge' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-24"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSaveEdit}>
+                              <Save className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span 
+                            className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                            onDoubleClick={() => handleDoubleClick(cout.id, 'charge', cout.charge)}
+                            title="Double-clic pour modifier"
+                          >
+                            {cout.charge.toLocaleString('fr-FR')}€
+                          </span>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-center">
+                        <div className="flex gap-1 justify-center">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openPaymentModal(cout)}
+                            className="h-7 px-2 text-xs bg-green-100 hover:bg-green-200 border-green-300 text-green-800"
+                            title="Ajouter un paiement"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openPaymentHistory(cout)}
+                            className="h-7 px-2 text-xs bg-blue-100 hover:bg-blue-200 border-blue-300 text-blue-800"
+                            title="Voir l'historique des paiements"
+                          >
+                            <History className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              
+              {couts.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  Aucun coût trouvé pour cette période
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Modal d'attribution manuelle */}
+      {showManualAssignment && selectedCout && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Attribution manuelle d'employé</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowManualAssignment(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </Button>
+            </div>
+            
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+              <h4 className="font-medium text-gray-800 mb-2">Salaire à attribuer :</h4>
+              <p className="text-sm text-gray-600">
+                <strong>{selectedCout.nom} {selectedCout.prenom}</strong> - 
+                Salaire Net: {selectedCout.salaire_net}€ - 
+                Mois: {selectedCout.mois}/{selectedCout.annee}
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Sélectionner un employé :
+              </label>
+              <div className="max-h-60 overflow-y-auto border rounded-lg">
+                {availableEmployees.map((employee) => (
+                  <div
+                    key={employee.id}
+                    className={`p-3 border-b cursor-pointer hover:bg-gray-50 ${
+                      selectedEmployee?.id === employee.id ? 'bg-blue-50 border-blue-200' : ''
+                    }`}
+                    onClick={() => setSelectedEmployee(employee)}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium">{employee.nom} {employee.prenom}</p>
+                        <p className="text-sm text-gray-600">Matricule: {employee.matricule}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">Taxe: {employee.pourcentage_taxe || 0}%</p>
+                        <p className="text-sm text-gray-600">Email: {employee.email}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {selectedEmployee && (
+              <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-medium text-blue-800 mb-2">Employé sélectionné :</h4>
+                <p className="text-sm text-blue-700">
+                  <strong>{selectedEmployee.nom} {selectedEmployee.prenom}</strong> 
+                  (Matricule: {selectedEmployee.matricule}, Taxe: {selectedEmployee.pourcentage_taxe || 0}%)
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowManualAssignment(false)}
+                disabled={assigning}
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={assignEmployeeManually}
+                disabled={!selectedEmployee || assigning}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {assigning ? 'Attribution...' : 'Attribuer'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal d'ajout de paiement */}
+      {showPaymentModal && selectedCoutForPayment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Ajouter un Paiement</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowPaymentModal(false)}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Employé</label>
+                <p className="text-sm text-gray-600">
+                  {selectedCoutForPayment.nom} {selectedCoutForPayment.prenom}
+                  {selectedCoutForPayment.matricule && ` (${selectedCoutForPayment.matricule})`}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">RAP Actuel</label>
+                <p className="text-sm text-gray-600">
+                  {selectedCoutForPayment.rap ? `${Number(selectedCoutForPayment.rap).toFixed(2)}€` : '0.00€'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Montant versé *</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={paymentForm.montant_verse}
+                  onChange={(e) => setPaymentForm({...paymentForm, montant_verse: e.target.value})}
+                  placeholder="0.00"
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Date de paiement *</label>
+                <Input
+                  type="date"
+                  value={paymentForm.date_paiement}
+                  onChange={(e) => setPaymentForm({...paymentForm, date_paiement: e.target.value})}
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Méthode de paiement</label>
+                <select
+                  value={paymentForm.methode_paiement}
+                  onChange={(e) => setPaymentForm({...paymentForm, methode_paiement: e.target.value})}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                >
+                  <option value="virement">Virement</option>
+                  <option value="cheque">Chèque</option>
+                  <option value="especes">Espèces</option>
+                  <option value="autre">Autre</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Référence</label>
+                <Input
+                  value={paymentForm.reference_paiement}
+                  onChange={(e) => setPaymentForm({...paymentForm, reference_paiement: e.target.value})}
+                  placeholder="Référence du paiement"
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Commentaires</label>
+                <textarea
+                  value={paymentForm.commentaires}
+                  onChange={(e) => setPaymentForm({...paymentForm, commentaires: e.target.value})}
+                  placeholder="Commentaires sur le paiement"
+                  className="w-full p-2 border border-gray-300 rounded-md h-20"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setShowPaymentModal(false)}
+                disabled={paymentLoading}
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={handlePaymentSubmit}
+                disabled={!paymentForm.montant_verse || paymentLoading}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {paymentLoading ? 'Enregistrement...' : 'Enregistrer le paiement'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal d'historique des paiements */}
+      {showPaymentHistory && selectedCoutForPayment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Historique des Paiements</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowPaymentHistory(false)}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+              <h4 className="font-medium text-blue-800 mb-2">
+                {selectedCoutForPayment.nom} {selectedCoutForPayment.prenom}
+                {selectedCoutForPayment.matricule && ` (${selectedCoutForPayment.matricule})`}
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600">RAP Actuel:</span>
+                  <p className="font-medium">{selectedCoutForPayment.rap ? `${Number(selectedCoutForPayment.rap).toFixed(2)}€` : '0.00€'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Total Paiements:</span>
+                  <p className="font-medium">{selectedCoutForPayment.total_paiements ? `${Number(selectedCoutForPayment.total_paiements).toFixed(2)}€` : '0.00€'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Total Généré:</span>
+                  <p className="font-medium">{selectedCoutForPayment.total_genere ? `${Number(selectedCoutForPayment.total_genere).toFixed(2)}€` : '0.00€'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Période:</span>
+                  <p className="font-medium">{selectedCoutForPayment.mois}/{selectedCoutForPayment.annee}</p>
+                </div>
+              </div>
+            </div>
+
+            {paymentLoading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-2 text-gray-600">Chargement de l'historique...</p>
+              </div>
+            ) : paiements.length > 0 ? (
+              <div className="space-y-3">
+                {paiements.map((paiement) => (
+                  <div key={paiement.id} className={`border rounded-lg p-4 ${paiement.montant_verse < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`font-medium text-lg ${paiement.montant_verse < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {paiement.montant_verse < 0 ? '-' : '+'}{Math.abs(paiement.montant_verse).toFixed(2)}€
+                          </span>
+                          {paiement.montant_verse < 0 && (
+                            <span className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full">
+                              DÉDUCTION
+                            </span>
+                          )}
+                          {paiement.methode_paiement === 'deduction_penalite' && (
+                            <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
+                              PÉNALITÉ
+                            </span>
+                          )}
+                          <Badge variant={paiement.statut === 'confirme' ? 'default' : 'secondary'}>
+                            {paiement.statut}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-600">
+                          <div>
+                            <span className="font-medium">Date:</span> {new Date(paiement.date_paiement).toLocaleDateString('fr-FR')}
+                          </div>
+                          <div>
+                            <span className="font-medium">Méthode:</span> {paiement.methode_paiement}
+                          </div>
+                          <div>
+                            <span className="font-medium">Référence:</span> {paiement.reference_paiement || 'N/A'}
+                          </div>
+                          <div>
+                            <span className="font-medium">Créé:</span> {new Date(paiement.created_at).toLocaleDateString('fr-FR')}
+                          </div>
+                        </div>
+                        {paiement.commentaires && (
+                          <div className="mt-2 text-sm text-gray-600">
+                            <span className="font-medium">Commentaires:</span> {paiement.commentaires}
+                          </div>
+                        )}
+                      </div>
+                      <div className="ml-4">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => deletePayment(paiement.id)}
+                          className="text-red-600 hover:bg-red-50"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                Aucun paiement enregistré pour cet employé
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setShowPaymentHistory(false)}
+              >
+                Fermer
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowPaymentHistory(false)
+                  openPaymentModal(selectedCoutForPayment)
+                }}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Ajouter un paiement
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

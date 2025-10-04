@@ -256,16 +256,12 @@ CREATE TABLE IF NOT EXISTS penalites (
     type_penalite TEXT NOT NULL, -- retard, absence, erreur_technique, comportement, autre
     motif TEXT NOT NULL,
     montant DECIMAL(8,2) NOT NULL,
-    statut TEXT DEFAULT 'active', -- active, annulee, remboursee
-    date_echeance DATE,
-    date_paiement TIMESTAMP,
-    methode_paiement TEXT, -- prelevement, virement, especes
-    reference_paiement TEXT,
     manager_approbateur TEXT,
     commentaires TEXT,
     intervention_concernee INTEGER REFERENCES interventions(id),
     reclamation_concernee INTEGER REFERENCES reclamations(id),
     materiel_concerne INTEGER REFERENCES materiel(id),
+    date_attribution TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -508,19 +504,14 @@ CREATE TABLE IF NOT EXISTS carburant (
 -- 2. Table carburant_assignations (assignation des cartes aux employés avec périodes)
 CREATE TABLE IF NOT EXISTS carburant_assignations (
     id SERIAL PRIMARY KEY,
-    numero_carte VARCHAR(50) NOT NULL,
-        employe_id INTEGER NOT NULL,
-        employe_nom VARCHAR(255) NOT NULL,
-        date_debut DATE NOT NULL DEFAULT CURRENT_DATE,
-        date_fin_prevue DATE NULL,
-        date_fin_reelle DATE NULL,
-        statut VARCHAR(20) DEFAULT 'active',
-        motif_fin TEXT,
-        assignee_par INTEGER,
-    commentaires TEXT,
-    notes TEXT,
+    employe_id INTEGER NOT NULL,
+    carte_id VARCHAR(255) NOT NULL,
+    date_assignation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    date_fin TIMESTAMP,
+    statut VARCHAR(50) DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employe_id) REFERENCES employes(id) ON DELETE CASCADE
 );
 
 -- 4. Table carburant_mouvements (historique des mouvements)
@@ -582,11 +573,11 @@ CREATE TABLE IF NOT EXISTS carburant_consommation (
 
 -- Index pour les tables carburant
 CREATE INDEX IF NOT EXISTS idx_carburant_numero_carte ON carburant(numero_carte);
-CREATE INDEX IF NOT EXISTS idx_carburant_assignations_carte ON carburant_assignations(numero_carte);
+CREATE INDEX IF NOT EXISTS idx_carburant_assignations_carte ON carburant_assignations(carte_id);
 CREATE INDEX IF NOT EXISTS idx_carburant_assignations_employe ON carburant_assignations(employe_id);
 CREATE INDEX IF NOT EXISTS idx_carburant_assignations_statut ON carburant_assignations(statut);
-CREATE INDEX IF NOT EXISTS idx_carburant_assignations_periode ON carburant_assignations(date_debut, date_fin_prevue);
-CREATE INDEX IF NOT EXISTS idx_carburant_assignations_carte_periode ON carburant_assignations(numero_carte, date_debut, date_fin_prevue);
+CREATE INDEX IF NOT EXISTS idx_carburant_assignations_periode ON carburant_assignations(date_assignation, date_fin);
+CREATE INDEX IF NOT EXISTS idx_carburant_assignations_carte_periode ON carburant_assignations(carte_id, date_assignation, date_fin);
 CREATE INDEX IF NOT EXISTS idx_carburant_mouvements_carte ON carburant_mouvements(numero_carte);
 CREATE INDEX IF NOT EXISTS idx_carburant_mouvements_date ON carburant_mouvements(date_mouvement);
 CREATE INDEX IF NOT EXISTS idx_carburant_mouvements_employe ON carburant_mouvements(employe_id_nouveau);
@@ -608,14 +599,15 @@ BEGIN
     RETURN QUERY
     SELECT 
         ca.id,
-        ca.employe_nom,
-        ca.date_debut,
-        COALESCE(ca.date_fin_reelle, ca.date_fin_prevue, '2099-12-31'::DATE) as date_fin
+        e.nom || ' ' || e.prenom as employe_nom,
+        ca.date_assignation::DATE as date_debut,
+        COALESCE(ca.date_fin::DATE, '2099-12-31'::DATE) as date_fin
     FROM carburant_assignations ca
-    WHERE ca.numero_carte = p_numero_carte
+    LEFT JOIN employes e ON e.id = ca.employe_id
+    WHERE ca.carte_id = p_numero_carte
     AND ca.statut = 'active'
     AND (
-        (ca.date_debut <= p_date_fin AND COALESCE(ca.date_fin_reelle, ca.date_fin_prevue, '2099-12-31'::DATE) >= p_date_debut)
+        (ca.date_assignation::DATE <= p_date_fin AND COALESCE(ca.date_fin::DATE, '2099-12-31'::DATE) >= p_date_debut)
     );
 END;
 $$ LANGUAGE plpgsql;
@@ -633,14 +625,15 @@ RETURNS TABLE(
 BEGIN
     RETURN QUERY
     SELECT 
-        CONCAT(ca.date_debut, ' -> ', COALESCE(ca.date_fin_reelle::TEXT, ca.date_fin_prevue::TEXT, 'En cours')) as periode,
-        ca.employe_nom,
+        CONCAT(ca.date_assignation::DATE, ' -> ', COALESCE(ca.date_fin::DATE::TEXT, 'En cours')) as periode,
+        e.nom || ' ' || e.prenom as employe_nom,
         'assignation'::VARCHAR(50) as type_mouvement,
         ca.created_at as date_mouvement,
-        ca.commentaires as motif,
+        '' as motif,
         ca.statut
     FROM carburant_assignations ca
-    WHERE ca.numero_carte = p_numero_carte
+    LEFT JOIN employes e ON e.id = ca.employe_id
+    WHERE ca.carte_id = p_numero_carte
     
     UNION ALL
     
@@ -666,16 +659,16 @@ SELECT
     e.prenom,
     e.nom,
     e.matricule,
-    c.montant as montant_carte,
-    c.statut as statut_carte,
+    ca.carte_id as numero_carte,
+    'CARTE_STANDARD' as type_carte,
+    'active' as carte_statut,
     CASE 
-        WHEN ca.date_fin_reelle IS NOT NULL THEN 'terminee'
-        WHEN ca.date_fin_prevue IS NOT NULL AND ca.date_fin_prevue < CURRENT_DATE THEN 'expiree'
+        WHEN ca.date_fin IS NOT NULL THEN 'terminee'
+        WHEN ca.date_fin IS NOT NULL AND ca.date_fin < CURRENT_DATE THEN 'expiree'
         ELSE 'active'
     END as statut_reel
 FROM carburant_assignations ca
 JOIN employes e ON ca.employe_id = e.id
-JOIN carburant c ON ca.numero_carte = c.numero_carte
 WHERE ca.statut = 'active';
 
 -- Trigger pour créer automatiquement un mouvement lors d'une assignation
@@ -726,6 +719,183 @@ CREATE TRIGGER trigger_carburant_assignation_mouvement
     FOR EACH ROW
     EXECUTE FUNCTION trigger_carburant_mouvement();
 
+-- ===========================================
+-- TABLES POUR COÛTS PAR SALARIÉ
+-- ===========================================
+
+-- Table pour les coûts par salarié
+CREATE TABLE IF NOT EXISTS cout_par_salaire (
+    id SERIAL PRIMARY KEY,
+    nom VARCHAR(255) NOT NULL,
+    prenom VARCHAR(255) NOT NULL,
+    salaire_net DECIMAL(10,2) DEFAULT 0,
+    salaire_brut DECIMAL(10,2) DEFAULT 0,
+    cout_total DECIMAL(10,2) DEFAULT 0,
+    charge DECIMAL(10,2) DEFAULT 0,
+    mois INTEGER NOT NULL,
+    annee INTEGER NOT NULL,
+    matricule VARCHAR(255),
+    taxe DECIMAL(5,2) DEFAULT 0,
+    impot DECIMAL(10,2) DEFAULT 0,
+    total_genere DECIMAL(10,2) DEFAULT 0,
+    rap DECIMAL(10,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index pour cout_par_salaire
+CREATE INDEX IF NOT EXISTS idx_cout_par_salaire_matricule ON cout_par_salaire(matricule);
+CREATE INDEX IF NOT EXISTS idx_cout_par_salaire_mois_annee ON cout_par_salaire(mois, annee);
+CREATE INDEX IF NOT EXISTS idx_cout_par_salaire_nom_prenom ON cout_par_salaire(nom, prenom);
+
+-- ===========================================
+-- TABLES POUR GESTION DES COÛTS
+-- ===========================================
+
+-- Table pour les coûts fixes
+CREATE TABLE IF NOT EXISTS fixed_costs (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    amount DECIMAL(10,2) NOT NULL,
+    category VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table pour les coûts variables
+CREATE TABLE IF NOT EXISTS variable_costs (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    amount DECIMAL(10,2) NOT NULL,
+    category VARCHAR(255),
+    date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table pour les catégories de coûts
+CREATE TABLE IF NOT EXISTS cost_categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    color VARCHAR(7) DEFAULT '#3B82F6',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===========================================
+-- TABLE POUR TARIFS ENTREPRISE
+-- ===========================================
+
+-- Table pour les tarifs d'entreprise
+CREATE TABLE IF NOT EXISTS company_pricing (
+    id SERIAL PRIMARY KEY,
+    company_name VARCHAR(255) NOT NULL,
+    service_code VARCHAR(255) NOT NULL,
+    category VARCHAR(255) NOT NULL,
+    prix_base DECIMAL(10,2) DEFAULT 0,
+    prix_tech DECIMAL(10,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(company_name, service_code, category)
+);
+
+-- Index pour company_pricing
+CREATE INDEX IF NOT EXISTS idx_company_pricing_company ON company_pricing(company_name);
+CREATE INDEX IF NOT EXISTS idx_company_pricing_service ON company_pricing(service_code);
+CREATE INDEX IF NOT EXISTS idx_company_pricing_category ON company_pricing(category);
+
+-- ===========================================
+-- FONCTIONS POUR DÉTECTION DE CONFLITS
+-- ===========================================
+
+-- Fonction pour détecter les conflits d'assignation (version corrigée)
+CREATE OR REPLACE FUNCTION detecter_conflits_assignation(
+    p_employe_id INTEGER,
+    p_carte_id VARCHAR(255),
+    p_date_debut TIMESTAMP
+) RETURNS TABLE(
+    conflit_existe BOOLEAN,
+    message_conflit TEXT,
+    assignation_existante_id INTEGER,
+    assignation_existante_employe_id INTEGER,
+    assignation_existante_carte_id VARCHAR(255),
+    assignation_existante_date_debut TIMESTAMP,
+    assignation_existante_date_fin TIMESTAMP
+) AS $$
+BEGIN
+    -- Vérifier s'il y a des conflits d'assignation
+    RETURN QUERY
+    SELECT 
+        CASE 
+            WHEN ca.id IS NOT NULL THEN TRUE
+            ELSE FALSE
+        END as conflit_existe,
+        CASE 
+            WHEN ca.id IS NOT NULL THEN 
+                'Conflit détecté: La carte ' || ca.carte_id || ' est déjà assignée à l''employé ' || 
+                COALESCE(e.nom || ' ' || e.prenom, 'ID:' || ca.employe_id) || 
+                ' du ' || ca.date_assignation::DATE || ' au ' || COALESCE(ca.date_fin::DATE::TEXT, 'actuellement')
+            ELSE 'Aucun conflit détecté'
+        END as message_conflit,
+        ca.id as assignation_existante_id,
+        ca.employe_id as assignation_existante_employe_id,
+        ca.carte_id as assignation_existante_carte_id,
+        ca.date_assignation as assignation_existante_date_debut,
+        ca.date_fin as assignation_existante_date_fin
+    FROM carburant_assignations ca
+    LEFT JOIN employes e ON e.id = ca.employe_id
+    WHERE ca.carte_id = p_carte_id
+        AND ca.statut = 'active'
+        AND (
+            -- Conflit 1: La carte est déjà assignée à un autre employé
+            (ca.employe_id != p_employe_id)
+            OR
+            -- Conflit 2: L'employé a déjà une carte assignée
+            (ca.employe_id = p_employe_id AND ca.carte_id != p_carte_id)
+        )
+        AND (
+            -- Vérifier les chevauchements de dates
+            (ca.date_fin IS NULL) -- Assignation active sans date de fin
+            OR
+            (ca.date_fin IS NOT NULL AND ca.date_fin >= p_date_debut) -- Chevauchement de dates
+        )
+    LIMIT 1;
+    
+    -- Si aucun conflit trouvé, retourner un résultat par défaut
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT 
+            FALSE as conflit_existe,
+            'Aucun conflit détecté' as message_conflit,
+            NULL::INTEGER as assignation_existante_id,
+            NULL::INTEGER as assignation_existante_employe_id,
+            NULL::VARCHAR(255) as assignation_existante_carte_id,
+            NULL::TIMESTAMP as assignation_existante_date_debut,
+            NULL::TIMESTAMP as assignation_existante_date_fin;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ===========================================
+-- DONNÉES PAR DÉFAUT
+-- ===========================================
+
+-- Insérer des catégories de coûts par défaut
+INSERT INTO cost_categories (name, description, color) VALUES
+('Personnel', 'Coûts liés au personnel', '#3B82F6'),
+('Matériel', 'Coûts liés au matériel', '#EF4444'),
+('Transport', 'Coûts de transport', '#10B981'),
+('Formation', 'Coûts de formation', '#F59E0B'),
+('Maintenance', 'Coûts de maintenance', '#8B5CF6'),
+('Autres', 'Autres coûts', '#6B7280')
+ON CONFLICT (name) DO NOTHING;
+
+-- ===========================================
+-- COMMENTAIRES SUR LES NOUVELLES TABLES
+-- ===========================================
+
 -- Commentaires sur les tables carburant
 COMMENT ON TABLE carburant IS 'Cartes carburant disponibles dans le système';
 COMMENT ON TABLE carburant_assignations IS 'Assignations des cartes carburant aux employés avec gestion des périodes';
@@ -733,7 +903,16 @@ COMMENT ON TABLE carburant_mouvements IS 'Historique de tous les mouvements des 
 COMMENT ON TABLE carburant_conflits IS 'Détection et résolution des conflits d''assignation';
 COMMENT ON TABLE carburant_consommation IS 'Historique des consommations de carburant';
 COMMENT ON VIEW carburant_assignations_actives IS 'Vue des assignations actives avec informations complètes';
-COMMENT ON FUNCTION detecter_conflits_assignation(VARCHAR, DATE, DATE) IS 'Détecte les conflits d''assignation pour une carte sur une période donnée';
+
+-- Commentaires sur les nouvelles tables
+COMMENT ON TABLE cout_par_salaire IS 'Coûts par salarié avec calculs automatiques de taxes et RAP';
+COMMENT ON TABLE fixed_costs IS 'Coûts fixes de l''entreprise';
+COMMENT ON TABLE variable_costs IS 'Coûts variables de l''entreprise';
+COMMENT ON TABLE cost_categories IS 'Catégories de coûts pour l''organisation';
+COMMENT ON TABLE company_pricing IS 'Tarifs d''entreprise pour les services et interventions';
+
+-- Commentaires sur les fonctions
+COMMENT ON FUNCTION detecter_conflits_assignation(INTEGER, VARCHAR, TIMESTAMP) IS 'Détecte les conflits d''assignation pour un employé, une carte et une date';
 COMMENT ON FUNCTION historique_carte(VARCHAR) IS 'Retourne l''historique complet des mouvements d''une carte';
 COMMENT ON FUNCTION historique_employe(INTEGER) IS 'Retourne l''historique des assignations d''un employé';
 COMMENT ON FUNCTION trigger_carburant_mouvement() IS 'Trigger pour enregistrer automatiquement les mouvements de cartes';

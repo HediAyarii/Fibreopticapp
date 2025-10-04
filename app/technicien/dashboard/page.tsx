@@ -975,8 +975,8 @@ export default function TechnicienDashboard() {
                             <p className="text-xs sm:text-sm">{penalite.motif}</p>
                           </div>
                           <div>
-                            <p className="text-xs sm:text-sm text-gray-600">Échéance</p>
-                            <p className="text-xs sm:text-sm">{penalite.date_echeance}</p>
+                            <p className="text-xs sm:text-sm text-gray-600">Date d'Attribution</p>
+                            <p className="text-xs sm:text-sm">{new Date(penalite.date_attribution).toLocaleDateString('fr-FR')}</p>
                           </div>
                         </div>
                       </div>

@@ -124,9 +124,9 @@ export async function GET(request: NextRequest) {
     let query = `
       SELECT 
         ca.id,
-        ca.numero_carte,
+        ca.carte_id,
         ca.employe_id,
-        ca.employe_nom,
+        e.nom || ' ' || e.prenom as employe_nom,
         ca.date_assignation,
         ca.date_fin,
         ca.statut,
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
       params.push(employeId)
     }
     
-    query += ` ORDER BY ca.numero_carte, ca.date_assignation`
+    query += ` ORDER BY ca.carte_id, ca.date_assignation`
     
     const startTime = Date.now()
     const result = await pool.query(query, params)

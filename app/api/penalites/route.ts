@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       params = [employeId]
     }
     
-    queryText += ' ORDER BY p.created_at DESC'
+    queryText += ' ORDER BY p.date_attribution DESC'
     
     const result = await query(queryText, params)
     return NextResponse.json({ penalites: result.rows })
@@ -107,17 +107,13 @@ export async function POST(request: NextRequest) {
       employe_id,
       motif,
       montant,
-      statut,
-      date_echeance,
-      date_paiement,
-      methode_paiement,
-      reference_paiement,
       manager_approbateur,
       commentaires,
       reclamation_concernee,
       materiel_concerne,
       num_inter,
-      auto_calculate
+      auto_calculate,
+      date_attribution
     } = await request.json()
 
     let intervention_concernee = null
@@ -224,33 +220,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Une pénalité avec ce numéro existe déjà" }, { status: 400 })
     }
 
-    // Nettoyer les données : convertir les chaînes vides en null pour les champs entiers et dates
+    // Nettoyer les données : convertir les chaînes vides en null pour les champs entiers
     const cleanedData = {
       employe_id: finalEmployeId === '' ? null : finalEmployeId,
       montant: finalMontant === '' ? null : finalMontant,
       intervention_concernee: intervention_concernee === '' ? null : intervention_concernee,
       reclamation_concernee: reclamation_concernee === '' ? null : reclamation_concernee,
-      materiel_concerne: materiel_concerne === '' ? null : materiel_concerne,
-      date_echeance: date_echeance === '' ? null : date_echeance,
-      date_paiement: date_paiement === '' ? null : date_paiement
+      materiel_concerne: materiel_concerne === '' ? null : materiel_concerne
     }
 
     const insertQuery = `
       INSERT INTO penalites (
-        numero_penalite, employe_id, type_penalite, motif, montant, statut,
-        date_echeance, date_paiement, methode_paiement, reference_paiement,
+        numero_penalite, employe_id, type_penalite, motif, montant,
         manager_approbateur, commentaires, intervention_concernee,
-        reclamation_concernee, materiel_concerne
+        reclamation_concernee, materiel_concerne, date_attribution
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
       ) RETURNING *
     `
 
     const values = [
-      numeroPenalite, cleanedData.employe_id, type_penalite, finalMotif, cleanedData.montant, statut || 'active',
-      cleanedData.date_echeance, cleanedData.date_paiement, methode_paiement, reference_paiement,
+      numeroPenalite, cleanedData.employe_id, type_penalite, finalMotif, cleanedData.montant,
       manager_approbateur, commentaires, cleanedData.intervention_concernee,
-      cleanedData.reclamation_concernee, cleanedData.materiel_concerne
+      cleanedData.reclamation_concernee, cleanedData.materiel_concerne, date_attribution
     ]
 
     const result = await query(insertQuery, values)
@@ -261,7 +253,7 @@ export async function POST(request: NextRequest) {
       SET penalites_total = (
         SELECT COALESCE(SUM(montant), 0) 
         FROM penalites 
-        WHERE employe_id = $1 AND statut = 'active'
+        WHERE employe_id = $1
       )
       WHERE id = $1
     `, [cleanedData.employe_id])
@@ -274,8 +266,7 @@ export async function POST(request: NextRequest) {
           montant: cleanedData.montant,
           motif: finalMotif,
           type_penalite: type_penalite,
-          statut: statut || 'active',
-          date_echeance: cleanedData.date_echeance
+          date_attribution: result.rows[0].date_attribution
         }
         
         // 1. Notification Socket.IO (pour l'interface web)
@@ -376,15 +367,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Pénalité non trouvée" }, { status: 404 })
     }
 
-    // Mettre à jour le total des pénalités de l'employé si le montant ou le statut a changé
-    if (updateData.montant !== undefined || updateData.statut !== undefined) {
+    // Mettre à jour le total des pénalités de l'employé si le montant a changé
+    if (updateData.montant !== undefined) {
       const employeId = result.rows[0].employe_id
       await query(`
         UPDATE employes 
         SET penalites_total = (
           SELECT COALESCE(SUM(montant), 0) 
           FROM penalites 
-          WHERE employe_id = $1 AND statut = 'active'
+          WHERE employe_id = $1
         )
         WHERE id = $1
       `, [employeId])
@@ -425,7 +416,7 @@ export async function DELETE(request: NextRequest) {
       SET penalites_total = (
         SELECT COALESCE(SUM(montant), 0) 
         FROM penalites 
-        WHERE employe_id = $1 AND statut = 'active'
+        WHERE employe_id = $1
       )
       WHERE id = $1
     `, [employeId])

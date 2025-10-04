@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
           date_assignation DATE NOT NULL DEFAULT CURRENT_DATE,
           date_fin DATE,
           statut VARCHAR(20) DEFAULT 'active',
-          commentaires TEXT,
+          -- commentaires TEXT, -- Colonne supprimée car n'existe pas dans la vraie table
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (employe_id) REFERENCES employes(id) ON DELETE CASCADE
@@ -82,13 +82,13 @@ export async function GET(request: NextRequest) {
       WITH card_movements AS (
         SELECT 
           ca.id as assignation_id,
-          ca.numero_carte,
+          ca.carte_id,
           ca.employe_id,
-          ca.employe_nom,
+          e.nom || ' ' || e.prenom as employe_nom,
           ca.date_assignation,
           COALESCE(ca.date_fin, CURRENT_DATE) as date_fin_effective,
           ca.statut as assignation_statut,
-          ca.commentaires as transfer_comments,
+          '' as transfer_comments,
           e.nom as employe_nom_complet,
           e.prenom as employe_prenom_complet,
           e.matricule,
@@ -99,13 +99,13 @@ export async function GET(request: NextRequest) {
           ca.updated_at as last_update
         FROM carburant_assignations ca
         LEFT JOIN employes e ON ca.employe_id = e.id
-        LEFT JOIN carburant c ON ca.numero_carte = c.numero_carte
-        ORDER BY ca.numero_carte, ca.date_assignation
+        LEFT JOIN carburant c ON ca.carte_id = c.numero_carte
+        ORDER BY ca.carte_id, ca.date_assignation
       ),
       consommation_per_period AS (
         SELECT 
           cm.assignation_id,
-          cm.numero_carte,
+          cm.carte_id as numero_carte,
           cm.employe_id,
           cm.employe_nom_complet,
           cm.employe_prenom_complet,
@@ -132,8 +132,8 @@ export async function GET(request: NextRequest) {
             END
           ) as nombre_transactions_periode
         FROM card_movements cm
-        LEFT JOIN carburant_consommation cc ON cm.numero_carte = cc.numero_carte
-        GROUP BY cm.assignation_id, cm.numero_carte, cm.employe_id, 
+        LEFT JOIN carburant_consommation cc ON cm.carte_id = cc.numero_carte
+        GROUP BY cm.assignation_id, cm.carte_id, cm.employe_id, 
                  cm.employe_nom_complet, cm.employe_prenom_complet, cm.matricule,
                  cm.date_assignation, cm.date_fin_effective, cm.mouvement_date,
                  cm.transfer_comments, cm.last_update

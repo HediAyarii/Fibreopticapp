@@ -23,11 +23,7 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
     employe_id: penalty?.employe_id || '',
     motif: penalty?.motif || '',
     montant: penalty?.montant || '',
-    statut: penalty?.statut || 'en_attente',
-    date_echeance: penalty?.date_echeance || '',
-    date_paiement: penalty?.date_paiement || '',
-    methode_paiement: penalty?.methode_paiement || '',
-    reference_paiement: penalty?.reference_paiement || '',
+    date_attribution: penalty?.date_attribution || new Date().toISOString().split('T')[0],
     manager_approbateur: penalty?.manager_approbateur || '',
     commentaires: penalty?.commentaires || '',
     reclamation_concernee: penalty?.reclamation_concernee || '',
@@ -310,65 +306,17 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
             </Select>
           </div>
           <div>
-            <Label htmlFor="statut">Statut *</Label>
-            <Select value={formData.statut} onValueChange={(value) => handleChange('statut', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sélectionnez un statut" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en_attente">En Attente</SelectItem>
-                <SelectItem value="valide">Validé</SelectItem>
-                <SelectItem value="paye">Payé</SelectItem>
-                <SelectItem value="annule">Annulé</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="date_echeance">Date d'Échéance</Label>
+            <Label htmlFor="date_attribution">Date d'Attribution *</Label>
             <Input
-              id="date_echeance"
+              id="date_attribution"
               type="date"
-              value={formData.date_echeance}
-              onChange={(e) => handleChange('date_echeance', e.target.value)}
+              value={formData.date_attribution}
+              onChange={(e) => handleChange('date_attribution', e.target.value)}
+              required
             />
-          </div>
-          <div>
-            <Label htmlFor="date_paiement">Date de Paiement</Label>
-            <Input
-              id="date_paiement"
-              type="date"
-              value={formData.date_paiement}
-              onChange={(e) => handleChange('date_paiement', e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="methode_paiement">Méthode de Paiement</Label>
-            <Select value={formData.methode_paiement} onValueChange={(value) => handleChange('methode_paiement', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sélectionnez une méthode" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="virement">Virement</SelectItem>
-                <SelectItem value="cheque">Chèque</SelectItem>
-                <SelectItem value="especes">Espèces</SelectItem>
-                <SelectItem value="autre">Autre</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="reference_paiement">Référence de Paiement</Label>
-            <Input
-              id="reference_paiement"
-              value={formData.reference_paiement}
-              onChange={(e) => handleChange('reference_paiement', e.target.value)}
-              placeholder="Référence du paiement"
-            />
+            <p className="text-xs text-gray-500 mt-1">
+              Date à laquelle la pénalité a été attribuée
+            </p>
           </div>
         </div>
 

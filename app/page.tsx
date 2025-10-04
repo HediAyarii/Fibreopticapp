@@ -39,11 +39,14 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { MaterialForm, EmployeeForm } from "@/components/Forms"
 import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
 import { AffectationTest } from "@/components/AffectationTest"
+import { EmployeeMaterialValueTable } from "@/components/EmployeeMaterialValueTable"
 import { ReclamationForm } from "@/components/ReclamationForm"
 import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesForms"
 import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
+import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
+import EmployeeSyncManager from "@/components/EmployeeSyncManager"
 import {
   Building2,
   Users,
@@ -212,6 +215,11 @@ export default function EmployeeTracker() {
   const [articlesText, setArticlesText] = useState("")
   const [savingArticles, setSavingArticles] = useState(false)
 
+  // Tax edit states
+  const [editingTaxEmployee, setEditingTaxEmployee] = useState<any>(null)
+  const [taxValue, setTaxValue] = useState("")
+  const [savingTax, setSavingTax] = useState(false)
+
   // Photos management states
   const [showPhotosModal, setShowPhotosModal] = useState(false)
   const [selectedClaim, setSelectedClaim] = useState<any>(null)
@@ -240,6 +248,10 @@ export default function EmployeeTracker() {
   const [assignmentComments, setAssignmentComments] = useState('')
   const [assignmentType, setAssignmentType] = useState<'permanent' | 'temporary'>('temporary')
   const [showUnassignModal, setShowUnassignModal] = useState(false)
+  
+  // Employee sync states
+  const [showEmployeeSync, setShowEmployeeSync] = useState(false)
+  const [autoSyncTriggered, setAutoSyncTriggered] = useState(false)
   const [unassignComments, setUnassignComments] = useState('')
   const [showCardHistoryModal, setShowCardHistoryModal] = useState(false)
   const [selectedEmployeeHistory, setSelectedEmployeeHistory] = useState<any>(null)
@@ -291,6 +303,32 @@ export default function EmployeeTracker() {
   const [fuelCurrentPage, setFuelCurrentPage] = useState(1)
   const [fuelItemsPerPage, setFuelItemsPerPage] = useState(25)
 
+  // Fonction de synchronisation automatique des employés
+  const autoSyncEmployees = async () => {
+    if (autoSyncTriggered) return // Éviter les appels multiples
+    
+    try {
+      console.log('🔄 Synchronisation automatique des employés...')
+      setAutoSyncTriggered(true)
+      
+      const response = await fetch('/api/sync/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.data.employes_crees > 0) {
+          console.log(`✅ ${data.data.employes_crees} employés créés automatiquement`)
+          // Recharger les données des employés
+          loadDataFromDatabase()
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ Erreur synchronisation automatique:', error)
+    }
+  }
+
   // Load data from database on component mount
   useEffect(() => {
     if (isLoggedIn) {
@@ -301,6 +339,8 @@ export default function EmployeeTracker() {
       loadFuelEmployeesData()
       // Charger les données des tarifs
       loadTarifsFromDatabase()
+      // Synchronisation automatique des employés
+      autoSyncEmployees()
     }
   }, [isLoggedIn])
 
@@ -436,6 +476,67 @@ export default function EmployeeTracker() {
     setShowArticlesModal(false)
     setEditingIntervention(null)
     setArticlesText("")
+  }
+
+  // Tax edit functions
+  const handleEditTax = (employee: any) => {
+    setEditingTaxEmployee(employee)
+    setTaxValue(employee.pourcentage_taxe ? employee.pourcentage_taxe.toString() : "0")
+  }
+
+  const handleSaveTax = async () => {
+    if (!editingTaxEmployee) return
+
+    const taxValueNum = parseFloat(taxValue)
+    if (isNaN(taxValueNum) || taxValueNum < 0 || taxValueNum > 100) {
+      alert("Le pourcentage de taxe doit être entre 0 et 100")
+      return
+    }
+
+    setSavingTax(true)
+    try {
+      const response = await fetch('/api/employes', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingTaxEmployee.id,
+          pourcentage_taxe: taxValueNum
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Taxe mise à jour:', data)
+        
+        // Mettre à jour l'employé dans la liste locale
+        setEmployees(prevEmployees => 
+          prevEmployees.map(emp => 
+            emp.id === editingTaxEmployee.id 
+              ? { ...emp, pourcentage_taxe: taxValueNum }
+              : emp
+          )
+        )
+        
+        setEditingTaxEmployee(null)
+        setTaxValue("")
+        alert(`Taxe mise à jour avec succès: ${taxValueNum}%`)
+      } else {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors de la mise à jour')
+      }
+    } catch (error) {
+      console.error('Erreur sauvegarde taxe:', error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+    } finally {
+      setSavingTax(false)
+    }
+  }
+
+  const handleCancelTax = () => {
+    setEditingTaxEmployee(null)
+    setTaxValue("")
   }
 
   // Check if intervention needs articles (CLOTURE TERMINEE and articles NaN/N/A)
@@ -770,6 +871,84 @@ export default function EmployeeTracker() {
     } catch (error) {
       console.error("[v0] Erreur chargement employés:", error)
       return []
+    }
+  }
+
+  const syncTaxes = async () => {
+    try {
+      console.log('🔄 Synchronisation des taxes...')
+      
+      // Afficher un message d'information
+      alert('Pour synchroniser les taxes, exécutez la commande suivante dans le terminal :\n\nnode scripts/sync_all_taxes.mjs\n\nPuis cliquez sur "Actualiser" pour recharger les données.')
+      
+    } catch (error) {
+      console.error('❌ Erreur synchronisation:', error)
+      alert(`Erreur lors de la synchronisation: ${error.message}`)
+    }
+  }
+
+  const clearDatabase = async () => {
+    try {
+      // Demander confirmation avec un message d'avertissement
+      const confirmMessage = `⚠️ ATTENTION - ACTION IRRÉVERSIBLE ⚠️
+
+Cette action va SUPPRIMER TOUTES LES DONNÉES de la base de données :
+• Tous les employés (sauf admin)
+• Toutes les interventions
+• Tous les coûts par salarié
+• Tous les paiements
+• Toutes les données de carburant
+• Tout le matériel
+• Toutes les réclamations
+• Tous les frais d'entreprise
+
+Seuls les utilisateurs admin seront conservés.
+
+Êtes-vous ABSOLUMENT SÛR de vouloir continuer ?
+
+Tapez "CONFIRMER" pour continuer :`
+
+      const userInput = prompt(confirmMessage)
+      
+      if (userInput !== 'CONFIRMER') {
+        alert('Opération annulée. Aucune donnée n\'a été supprimée.')
+        return
+      }
+
+      console.log('🧹 Début du nettoyage de la base de données...')
+      
+      const response = await fetch('/api/admin/clear-database', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Base de données vidée avec succès:', result)
+        
+        alert(`✅ Base de données vidée avec succès !
+
+📊 Résultats :
+• ${result.data.totalDeleted} enregistrements supprimés
+• ${result.data.tablesProcessed} tables traitées
+• ${result.data.adminUsers} utilisateur(s) admin conservé(s)
+
+La page va se recharger automatiquement...`)
+        
+        // Recharger la page après 2 secondes
+        setTimeout(() => {
+          window.location.reload()
+        }, 2000)
+        
+      } else {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors du nettoyage de la base de données')
+      }
+      
+    } catch (error) {
+      console.error('❌ Erreur nettoyage base de données:', error)
+      alert(`❌ Erreur lors du nettoyage de la base de données : ${error.message}`)
     }
   }
 
@@ -1281,6 +1460,9 @@ export default function EmployeeTracker() {
         throw new Error(error.error || "Erreur lors de la sauvegarde")
       }
 
+      // Déclencher la synchronisation automatique
+      window.dispatchEvent(new CustomEvent('material-updated'))
+      
       await loadAllCRUDData()
       setShowMaterialModal(false)
       setEditingItem(null)
@@ -1302,6 +1484,9 @@ export default function EmployeeTracker() {
         throw new Error(error.error || "Erreur lors de la suppression")
       }
 
+      // Déclencher la synchronisation automatique
+      window.dispatchEvent(new CustomEvent('material-updated'))
+      
       await loadAllCRUDData()
       alert("Matériel supprimé avec succès")
     } catch (error) {
@@ -1333,6 +1518,9 @@ export default function EmployeeTracker() {
         throw new Error(error.error || "Erreur lors de la sauvegarde")
       }
 
+      // Déclencher la synchronisation automatique
+      window.dispatchEvent(new CustomEvent('material-assignment-updated'))
+      
       await loadAllCRUDData()
       setShowAffectationModal(false)
       setEditingItem(null)
@@ -1354,6 +1542,9 @@ export default function EmployeeTracker() {
         throw new Error(error.error || "Erreur lors de la suppression")
       }
 
+      // Déclencher la synchronisation automatique
+      window.dispatchEvent(new CustomEvent('material-assignment-updated'))
+      
       await loadAllCRUDData()
       alert("Affectation supprimée avec succès")
     } catch (error) {
@@ -1694,8 +1885,59 @@ export default function EmployeeTracker() {
           if (!confirm(conflictMessage)) {
             return
           }
-          // Si l'utilisateur confirme, on pourrait implémenter une logique pour forcer l'assignation
-          alert("Fonctionnalité de forçage d'assignation à implémenter")
+          // Si l'utilisateur confirme, forcer l'assignation
+          console.log('🔄 Forçage de l\'assignation malgré le conflit')
+          
+          // Relancer l'assignation avec le paramètre force = true
+          const forceResponse = await fetch('/api/carburant-assignation-periode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              numero_carte: selectedCardNumber,
+              employe_id: selectedEmployee.id,
+              employe_nom: `${selectedEmployee.prenom} ${selectedEmployee.nom}`,
+              date_debut: assignmentStartDate,
+              date_fin_prevue: assignmentType === 'temporary' ? assignmentEndDate : null,
+              commentaires: assignmentComments,
+              assignee_par: 1, // ID de l'utilisateur actuel
+              force: true // Forcer l'assignation
+            })
+          })
+          
+          if (!forceResponse.ok) {
+            const forceErrorData = await forceResponse.json()
+            throw new Error(forceErrorData.error || 'Erreur lors du forçage de l\'assignation')
+          }
+          
+          const forceResult = await forceResponse.json()
+          console.log('✅ Assignation forcée avec succès:', forceResult)
+          
+          // Continuer avec le message de succès normal
+          const periodText = assignmentType === 'permanent' 
+            ? `à partir du ${assignmentStartDate}` 
+            : `du ${assignmentStartDate} au ${assignmentEndDate}`
+          
+          alert(`✅ Carte ${selectedCardNumber} assignée avec forçage à ${selectedEmployee.prenom} ${selectedEmployee.nom} ${periodText}`)
+          
+          // Fermer le modal et réinitialiser les champs
+          setShowCardAssignmentModal(false)
+          setSelectedEmployee(null)
+          setSelectedCardNumber('')
+          setAssignmentStartDate('')
+          setAssignmentEndDate('')
+          setAssignmentComments('')
+          setAssignmentType('temporary')
+          
+          // Recharger les données
+          setTimeout(async () => {
+            try {
+              await loadAllCRUDData()
+              await loadDataFromDatabase()
+            } catch (reloadError) {
+              console.error('Erreur lors du rechargement des données:', reloadError)
+              window.location.reload()
+            }
+          }, 500)
           return
         }
         throw new Error(errorData.error || 'Erreur lors de l\'assignation')
@@ -2092,6 +2334,32 @@ export default function EmployeeTracker() {
                 <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "cout-par-salaire"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+              onClick={() => setActiveTab("cout-par-salaire")}
+                >
+                  <DollarSign className="w-5 h-5" />
+                  <span className="font-medium">Coûts par Salarié</span>
+                </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "employee-sync"
+                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                      : "glass-card border border-white/20 hover:bg-primary/5"
+                  }`}
+              onClick={() => setActiveTab("employee-sync")}
+                >
+                  <UserPlus className="w-5 h-5" />
+                  <span className="font-medium">Sync Employés</span>
+                </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "claims"
                       ? "gradient-primary text-white shadow-lg animate-pulse-glow"
                       : "glass-card border border-white/20 hover:bg-primary/5"
@@ -2333,6 +2601,23 @@ export default function EmployeeTracker() {
                     Actualiser
                   </Button>
                   <Button 
+                    variant="outline" 
+                    onClick={() => syncTaxes()}
+                    className="glass-card border border-white/20 hover:bg-white/10"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Sync Taxes
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    onClick={() => clearDatabase()}
+                    className="glass-card border border-red-500/50 hover:bg-red-500/10 text-red-400"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Vider Base de Données
+                  </Button>
+                  <Button 
                     onClick={() => {
                       setEditingItem(null)
                       setShowEmployeeModal(true)
@@ -2391,9 +2676,49 @@ export default function EmployeeTracker() {
                               <div className="text-sm text-muted-foreground">{employee.poste || 'N/A'}</div>
                             </td>
                             <td className="p-4">
-                              <div className="font-medium text-primary">
-                                {employee.pourcentage_taxe ? `${employee.pourcentage_taxe}%` : '0.00%'}
-                              </div>
+                              {editingTaxEmployee?.id === employee.id ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    value={taxValue}
+                                    onChange={(e) => setTaxValue(e.target.value)}
+                                    className="w-20 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    autoFocus
+                                  />
+                                  <span className="text-sm text-gray-500">%</span>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={handleSaveTax}
+                                      disabled={savingTax}
+                                      className="h-6 px-2 text-xs bg-green-100 hover:bg-green-200 border-green-300 text-green-800"
+                                    >
+                                      {savingTax ? '...' : '✓'}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={handleCancelTax}
+                                      className="h-6 px-2 text-xs bg-red-100 hover:bg-red-200 border-red-300 text-red-800"
+                                    >
+                                      ✕
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div 
+                                  className="font-medium text-primary cursor-pointer hover:bg-blue-50 px-2 py-1 rounded transition-colors"
+                                  onDoubleClick={() => handleEditTax(employee)}
+                                  title="Double-clic pour modifier la taxe"
+                                >
+                                  {employee.pourcentage_taxe ? `${employee.pourcentage_taxe}%` : '0.00%'}
+                                </div>
+                              )}
                             </td>
                             <td className="p-4">
                               <div className="flex flex-col gap-1">
@@ -4130,6 +4455,9 @@ export default function EmployeeTracker() {
                   <AffectationTest />
                     </CardContent>
                   </Card>
+
+                  {/* Employee Material Value Table */}
+                  <EmployeeMaterialValueTable />
                </div>
             </div>
           )}
@@ -4190,7 +4518,7 @@ export default function EmployeeTracker() {
                             <th className="text-left p-4 font-semibold">Employé</th>
                             <th className="text-left p-4 font-semibold">Type</th>
                             <th className="text-left p-4 font-semibold">Montant</th>
-                               <th className="text-left p-4 font-semibold">Date</th>
+                               <th className="text-left p-4 font-semibold">Date d'Attribution</th>
                             <th className="text-left p-4 font-semibold">Statut</th>
                             <th className="text-left p-4 font-semibold">Actions</th>
                           </tr>
@@ -4210,7 +4538,7 @@ export default function EmployeeTracker() {
                                 )}
                               </td>
                                  <td className="p-4 font-medium text-red-400">{penalty.montant} €</td>
-                                 <td className="p-4">{penalty.date_penalite}</td>
+                                 <td className="p-4">{new Date(penalty.date_attribution).toLocaleDateString('fr-FR')}</td>
                               <td className="p-4">
                                 <Badge 
                                      variant={penalty.statut === 'active' ? 'default' : 'secondary'}
@@ -4301,6 +4629,20 @@ export default function EmployeeTracker() {
             
             {/* Interface de gestion des coûts */}
             <CostsManagement />
+          </div>
+        )}
+
+        {/* Section Coûts par Salarié */}
+        {activeTab === "cout-par-salaire" && (
+          <div className="space-y-6">
+            <CoutParSalaireManager />
+          </div>
+        )}
+
+        {/* Section Synchronisation des Employés */}
+        {activeTab === "employee-sync" && (
+          <div className="space-y-6">
+            <EmployeeSyncManager />
           </div>
         )}
 

@@ -31,23 +31,22 @@ export async function GET(request: NextRequest) {
       // Historique des assignations d'un employé
       const employeHistoriqueQuery = `
         SELECT 
-          ca.numero_carte,
-          ca.date_debut,
-          ca.date_fin_prevue,
-          ca.date_fin_reelle,
+          ca.carte_id as numero_carte,
+          ca.date_assignation as date_debut,
+          ca.date_fin as date_fin_prevue,
+          ca.date_fin as date_fin_reelle,
           ca.statut,
-          ca.commentaires,
-          c.montant as montant_carte,
+          '' as commentaires,
+          '0' as montant_carte,
           CASE 
-            WHEN ca.date_fin_reelle IS NOT NULL THEN 'terminee'
-            WHEN ca.date_fin_prevue IS NOT NULL AND ca.date_fin_prevue < CURRENT_DATE THEN 'expiree'
+            WHEN ca.date_fin IS NOT NULL THEN 'terminee'
+            WHEN ca.date_fin IS NOT NULL AND ca.date_fin < CURRENT_DATE THEN 'expiree'
             ELSE 'active'
           END as statut_reel,
           ca.created_at
         FROM carburant_assignations ca
-        LEFT JOIN carburant c ON ca.numero_carte = c.numero_carte
         WHERE ca.employe_id = $1
-        ORDER BY ca.date_debut DESC
+        ORDER BY ca.date_assignation DESC
       `
       
       const result = await query(employeHistoriqueQuery, [parseInt(employe_id)])

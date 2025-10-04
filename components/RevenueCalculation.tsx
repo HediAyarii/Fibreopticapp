@@ -69,6 +69,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+  const [selectedGrille, setSelectedGrille] = useState<string>("all")
   const [expandedEmployee, setExpandedEmployee] = useState<number | null>(null)
 
   const loadRevenueData = async () => {
@@ -83,6 +84,9 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
       }
       if (dateTo) {
         params.append('date_to', dateTo)
+      }
+      if (selectedGrille !== "all") {
+        params.append('grille', selectedGrille)
       }
 
       const response = await fetch(`/api/revenue-calculation?${params.toString()}`)
@@ -118,7 +122,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
   useEffect(() => {
     loadRevenueData()
     loadInterventionStats()
-  }, [selectedEmployee, dateFrom, dateTo])
+  }, [selectedEmployee, dateFrom, dateTo, selectedGrille])
 
   // Recharger les données quand on revient sur l'onglet
   useEffect(() => {
@@ -205,7 +209,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
       {/* Filtres */}
       <Card className="glass-card border border-white/20">
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <Label htmlFor="employee">Technicien</Label>
               <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
@@ -243,6 +247,20 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                 onChange={(e) => setDateTo(e.target.value)}
                 placeholder="Filtrer par date de clôture"
               />
+            </div>
+            
+            <div>
+              <Label htmlFor="grille">Grille</Label>
+              <Select value={selectedGrille} onValueChange={setSelectedGrille}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Toutes les grilles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les grilles</SelectItem>
+                  <SelectItem value="AXECOM MANCHE">AXECOM MANCHE</SelectItem>
+                  <SelectItem value="ERT">ERT (Autres)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="flex items-end gap-2">

@@ -21,33 +21,31 @@ function processValue(value: any, fieldType: 'date' | 'numeric' | 'text'): any {
 
 export async function GET() {
   try {
-    // Récupérer les employés directement depuis les interventions avec leurs assignations de cartes
+    // Récupérer les employés depuis la table employes avec leurs informations complètes
     const result = await query(`
-      SELECT DISTINCT
-        ROW_NUMBER() OVER (ORDER BY nom_technicien, prenom_technicien) as id,
-        prenom_technicien as prenom,
-        nom_technicien as nom,
-        CONCAT('EMP', UPPER(SUBSTRING(nom_technicien, 1, 3)), UPPER(SUBSTRING(prenom_technicien, 1, 2))) as matricule,
-        CASE 
-          WHEN COUNT(*) >= 100 THEN 'chef_equipe'
-          WHEN COUNT(*) >= 50 THEN 'technicien'
-          ELSE 'technicien'
-        END as niveau_acces,
-        'actif' as statut,
-        CONCAT(LOWER(prenom_technicien), '.', LOWER(REPLACE(nom_technicien, ' ', '')), '@finalfibre.com') as email,
-        CONCAT('+33 6 ', LPAD(FLOOR(RANDOM() * 90 + 10)::TEXT, 2, '0'), ' ', LPAD(FLOOR(RANDOM() * 90 + 10)::TEXT, 2, '0'), ' ', LPAD(FLOOR(RANDOM() * 90 + 10)::TEXT, 2, '0'), ' ', LPAD(FLOOR(RANDOM() * 90 + 10)::TEXT, 2, '0')) as telephone,
-        CURRENT_DATE as date_embauche,
-        CURRENT_TIMESTAMP as created_at,
-        COUNT(*) as nb_interventions
-      FROM interventions 
-      WHERE nom_technicien IS NOT NULL 
-        AND prenom_technicien IS NOT NULL
-        AND nom_technicien != 'nan'
-        AND prenom_technicien != 'nan'
-        AND nom_technicien != ''
-        AND prenom_technicien != ''
-      GROUP BY nom_technicien, prenom_technicien
-      ORDER BY nb_interventions DESC, nom_technicien, prenom_technicien
+      SELECT 
+        id,
+        prenom,
+        nom,
+        matricule,
+        niveau_acces,
+        statut,
+        email,
+        telephone,
+        date_embauche,
+        salaire_base,
+        taux_horaire,
+        pourcentage_taxe,
+        heures_travaillees,
+        heures_supplementaires,
+        prime_performance,
+        penalites_total,
+        date_derniere_evaluation,
+        created_at,
+        updated_at
+      FROM employes 
+      WHERE statut = 'actif'
+      ORDER BY nom, prenom
     `)
 
     // Enrichir avec les informations d'assignation de cartes
@@ -57,18 +55,18 @@ export async function GET() {
           // Récupérer l'assignation active de cet employé
           const cardResult = await query(`
             SELECT 
-              ca.numero_carte,
-              ca.date_debut,
-              ca.date_fin_prevue,
-              ca.date_fin_reelle,
+              ca.carte_id,
+              ca.date_assignation,
+              ca.date_fin,
+              ca.date_fin,
               ca.statut,
               c.montant as montant_carte
             FROM carburant_assignations ca
-            LEFT JOIN carburant c ON ca.numero_carte = c.numero_carte
+            LEFT JOIN carburant c ON ca.carte_id = c.numero_carte
             WHERE ca.employe_id = $1 
               AND ca.statut = 'active'
-              AND (ca.date_fin_reelle IS NULL OR ca.date_fin_reelle > CURRENT_DATE)
-            ORDER BY ca.date_debut DESC
+              AND (ca.date_fin IS NULL OR ca.date_fin > CURRENT_DATE)
+            ORDER BY ca.date_assignation DESC
             LIMIT 1
           `, [employee.id])
 
@@ -223,6 +221,69 @@ export async function PUT(request: NextRequest) {
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
+    }
+
+    // Synchronisation automatique des taxes si pourcentage_taxe a été modifié
+    if (updateData.pourcentage_taxe !== undefined) {
+      try {
+        console.log(`🔄 Synchronisation automatique des taxes pour l'employé ${result.rows[0].nom} ${result.rows[0].prenom}`)
+        
+        // Mettre à jour les enregistrements cout_par_salaire correspondants
+        const syncResult = await query(`
+          UPDATE cout_par_salaire 
+          SET 
+            taxe = $1,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE matricule = $2
+          RETURNING id, nom, prenom, mois, annee, taxe
+        `, [updateData.pourcentage_taxe, result.rows[0].matricule])
+        
+        if (syncResult.rows.length > 0) {
+          console.log(`✅ ${syncResult.rows.length} enregistrement(s) cout_par_salaire mis à jour`)
+          
+          // Recalculer les impôts pour les enregistrements mis à jour
+          for (const cout of syncResult.rows) {
+            let impot = 0
+            const taxe = parseFloat(updateData.pourcentage_taxe) || 0
+            
+            // Récupérer la charge pour ce cout
+            const chargeResult = await query(`
+              SELECT charge FROM cout_par_salaire WHERE id = $1
+            `, [cout.id])
+            
+            if (chargeResult.rows.length > 0) {
+              const charge = parseFloat(chargeResult.rows[0].charge) || 0
+              
+              if (Math.abs(taxe - 100) < 0.01) {
+                impot = 0
+              } else if (Math.abs(taxe - 50) < 0.01) {
+                impot = charge / 2
+              } else if (Math.abs(taxe) < 0.01) {
+                impot = charge
+              } else {
+                impot = charge
+              }
+              
+              // Mettre à jour l'impôt
+              await query(`
+                UPDATE cout_par_salaire 
+                SET 
+                  impot = $1,
+                  updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+              `, [impot, cout.id])
+            }
+          }
+          
+          console.log(`✅ Impôts recalculés pour ${syncResult.rows.length} enregistrement(s)`)
+        } else {
+          console.log(`⚠️ Aucun enregistrement cout_par_salaire trouvé pour le matricule ${result.rows[0].matricule}`)
+        }
+        
+      } catch (syncError) {
+        console.error('❌ Erreur lors de la synchronisation des taxes:', syncError)
+        // Ne pas faire échouer la mise à jour de l'employé si la synchronisation échoue
+      }
     }
 
     return NextResponse.json({

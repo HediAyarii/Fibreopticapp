@@ -18,26 +18,26 @@ export async function GET(request: NextRequest) {
       SELECT 
         cc.*,
         ca.employe_id,
-        ca.employe_nom,
-        ca.date_debut as assignation_debut,
-        ca.date_fin_prevue as assignation_fin_prevue,
-        ca.date_fin_reelle as assignation_fin_reelle,
+        e.nom as employe_nom,
+        e.prenom as employe_prenom,
+        ca.date_assignation as assignation_debut,
+        ca.date_fin as assignation_fin_prevue,
+        ca.date_fin as assignation_fin_reelle,
         CASE 
-          WHEN ca.date_fin_reelle IS NOT NULL THEN ca.date_fin_reelle
-          WHEN ca.date_fin_prevue IS NOT NULL THEN ca.date_fin_prevue
+          WHEN ca.date_fin IS NOT NULL THEN ca.date_fin
           ELSE '2099-12-31'::DATE
         END as assignation_fin_effective
       FROM carburant_consommation cc
       LEFT JOIN carburant_assignations ca ON (
-        cc.numero_carte = ca.numero_carte 
-        AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') >= ca.date_debut 
+        cc.numero_carte = ca.carte_id 
+        AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') >= ca.date_assignation 
         AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') <= CASE 
-          WHEN ca.date_fin_reelle IS NOT NULL THEN ca.date_fin_reelle
-          WHEN ca.date_fin_prevue IS NOT NULL THEN ca.date_fin_prevue
+          WHEN ca.date_fin IS NOT NULL THEN ca.date_fin
           ELSE '2099-12-31'::DATE
         END
         AND ca.statut = 'active'
       )
+      LEFT JOIN employes e ON e.id = ca.employe_id
       WHERE 1=1
     `
 

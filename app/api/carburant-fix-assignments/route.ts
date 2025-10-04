@@ -16,9 +16,9 @@ export async function POST(request: NextRequest) {
     const updateQuery = `
       WITH employee_assignments AS (
         SELECT 
-          ca.numero_carte,
+          ca.carte_id,
           ca.employe_id,
-          ca.employe_nom,
+          e.nom || ' ' || e.prenom as employe_nom,
           ca.date_assignation,
           COALESCE(ca.date_fin, CURRENT_DATE) as date_fin_effective,
           ca.statut,
@@ -135,9 +135,9 @@ export async function GET(request: NextRequest) {
     let query = `
       WITH employee_assignments AS (
         SELECT 
-          ca.numero_carte,
+          ca.carte_id,
           ca.employe_id,
-          ca.employe_nom,
+          e.nom || ' ' || e.prenom as employe_nom,
           ca.date_assignation,
           COALESCE(ca.date_fin, CURRENT_DATE) as date_fin_effective,
           ca.statut,

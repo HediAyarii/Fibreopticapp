@@ -7,18 +7,17 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Package, User, Calendar, Search, ChevronLeft, ChevronRight } from "lucide-react"
+import { Package, User, Calendar, Search, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react"
+import { useAffectationsAutoSync } from "@/hooks/useAutoSync"
 
 export function AffectationTest() {
-  const [affectations, setAffectations] = useState([])
-  const [loading, setLoading] = useState(false)
+  const { data: affectations, loading, triggerSync } = useAffectationsAutoSync()
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(5)
   const [employeeFilter, setEmployeeFilter] = useState('all')
   const [employees, setEmployees] = useState([])
 
   useEffect(() => {
-    loadAffectations()
     loadEmployees()
   }, [])
 
@@ -34,21 +33,6 @@ export function AffectationTest() {
     }
   }
 
-  const loadAffectations = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch('/api/affectations-materiel')
-      if (response.ok) {
-        const data = await response.json()
-        setAffectations(data.affectations || [])
-      }
-    } catch (error) {
-      console.error('Erreur chargement affectations:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'permanent': return 'bg-blue-100 text-blue-800'
@@ -59,7 +43,7 @@ export function AffectationTest() {
   }
 
   // Filtrer les affectations par employé
-  const filteredAffectations = affectations.filter(affectation => {
+  const filteredAffectations = affectations.filter((affectation: any) => {
     if (employeeFilter === 'all') return true
     return affectation.employe_id === parseInt(employeeFilter)
   })
@@ -94,7 +78,8 @@ export function AffectationTest() {
       })
 
       if (response.ok) {
-        await loadAffectations()
+        // Déclencher la synchronisation automatique
+        window.dispatchEvent(new CustomEvent('material-assignment-updated'))
         alert('Affectation créée avec succès !')
       } else {
         const error = await response.json()
@@ -253,8 +238,8 @@ export function AffectationTest() {
         )}
 
         <div className="mt-4 flex gap-2">
-          <Button onClick={loadAffectations} variant="outline">
-            <Search className="w-4 h-4 mr-2" />
+          <Button onClick={triggerSync} variant="outline" disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualiser
           </Button>
           <Button onClick={createTestAffectation} variant="default">

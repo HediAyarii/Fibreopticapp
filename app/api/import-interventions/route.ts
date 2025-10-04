@@ -53,9 +53,28 @@ export async function POST(request: NextRequest) {
       const successLine = lines.find(line => line.includes('[SUCCES]'))
       const interventionsCount = successLine ? successLine.match(/(\d+)/)?.[1] : '0'
       
+      // Synchronisation automatique des employés après l'import
+      console.log('🔄 Déclenchement de la synchronisation automatique des employés...')
+      try {
+        const syncResponse = await fetch('http://localhost:3000/api/sync/employees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        
+        if (syncResponse.ok) {
+          const syncData = await syncResponse.json()
+          console.log(`✅ Synchronisation réussie: ${syncData.data.employes_crees} employés créés`)
+        } else {
+          console.log('⚠️ Erreur lors de la synchronisation des employés')
+        }
+      } catch (syncError) {
+        console.log('⚠️ Erreur lors de la synchronisation des employés:', syncError)
+      }
+      
       return NextResponse.json({ 
         message: `${interventionsCount} interventions importées avec succès`,
-        count: parseInt(interventionsCount || '0')
+        count: parseInt(interventionsCount || '0'),
+        syncMessage: 'Synchronisation automatique des employés effectuée'
       })
       
     } finally {

@@ -13,7 +13,8 @@ export async function POST(request: NextRequest) {
       date_debut, 
       date_fin_prevue, 
       commentaires,
-      assignee_par 
+      assignee_par,
+      force = false
     } = await request.json()
 
     if (!numero_carte || !employe_id || !employe_nom || !date_debut) {
@@ -27,12 +28,15 @@ export async function POST(request: NextRequest) {
       SELECT * FROM detecter_conflits_assignation($1, $2, $3)
     `
     const conflits = await query(conflitsQuery, [
-      numero_carte, 
-      date_debut, 
-      date_fin_prevue || '2099-12-31'
+      employe_id,  // employe_id en premier
+      numero_carte,  // carte_id en deuxième
+      date_debut   // date_debut en troisième
     ])
 
-    if (conflits.rows.length > 0) {
+    // Vérifier s'il y a vraiment un conflit
+    const hasConflict = conflits.rows.length > 0 && conflits.rows.some(row => row.conflit_existe === true)
+    
+    if (hasConflict && !force) {
       return NextResponse.json({ 
         error: 'Conflit détecté',
         conflits: conflits.rows,
@@ -40,22 +44,37 @@ export async function POST(request: NextRequest) {
       }, { status: 409 })
     }
 
+    // Si force = true, désactiver les assignations en conflit
+    if (hasConflict && force) {
+      console.log(`🔄 Forçage d'assignation: désactivation des ${conflits.rows.length} conflits`)
+      
+      for (const conflit of conflits.rows.filter(row => row.conflit_existe === true)) {
+        await query(`
+          UPDATE carburant_assignations 
+          SET statut = 'inactive', 
+              date_fin = $1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [date_debut, conflit.id])
+        
+        console.log(`✅ Assignation ${conflit.id} désactivée pour forcer la nouvelle assignation`)
+      }
+    }
+
     // Créer l'assignation
     const insertQuery = `
       INSERT INTO carburant_assignations (
-        numero_carte, employe_id, employe_nom, date_debut, 
-        date_fin_prevue, commentaires, statut
-      ) VALUES ($1, $2, $3, $4, $5, $6, 'active')
+        carte_id, employe_id, date_assignation, 
+        date_fin, statut
+      ) VALUES ($1, $2, $3, $4, 'active')
       RETURNING *
     `
 
     const result = await query(insertQuery, [
       numero_carte,
       employe_id,
-      employe_nom,
       date_debut,
-      date_fin_prevue || null,
-      commentaires || null
+      date_fin_prevue || null
     ])
 
     return NextResponse.json({
@@ -87,19 +106,19 @@ export async function GET(request: NextRequest) {
     let paramIndex = 1
 
     if (numero_carte) {
-      whereConditions.push(`numero_carte = $${paramIndex}`)
+      whereConditions.push(`ca.carte_id = $${paramIndex}`)
       params.push(numero_carte)
       paramIndex++
     }
 
     if (employe_id) {
-      whereConditions.push(`employe_id = $${paramIndex}`)
+      whereConditions.push(`ca.employe_id = $${paramIndex}`)
       params.push(parseInt(employe_id))
       paramIndex++
     }
 
     if (statut) {
-      whereConditions.push(`statut = $${paramIndex}`)
+      whereConditions.push(`ca.statut = $${paramIndex}`)
       params.push(statut)
       paramIndex++
     }
@@ -107,8 +126,8 @@ export async function GET(request: NextRequest) {
     // Filtrer par période si spécifiée
     if (date_debut && date_fin) {
       whereConditions.push(`
-        (date_debut <= $${paramIndex + 1} AND 
-         COALESCE(date_fin_reelle, date_fin_prevue, '2099-12-31'::DATE) >= $${paramIndex})
+        (ca.date_assignation <= $${paramIndex + 1} AND 
+         COALESCE(ca.date_fin, '2099-12-31'::DATE) >= $${paramIndex})
       `)
       params.push(date_debut, date_fin)
       paramIndex += 2
@@ -123,15 +142,15 @@ export async function GET(request: NextRequest) {
         c.montant as montant_carte,
         c.statut as statut_carte,
         CASE 
-          WHEN ca.date_fin_reelle IS NOT NULL THEN 'terminee'
-          WHEN ca.date_fin_prevue IS NOT NULL AND ca.date_fin_prevue < CURRENT_DATE THEN 'expiree'
+          WHEN ca.date_fin IS NOT NULL THEN 'terminee'
+          WHEN ca.date_fin IS NOT NULL AND ca.date_fin < CURRENT_DATE THEN 'expiree'
           ELSE 'active'
         END as statut_reel
       FROM carburant_assignations ca
       LEFT JOIN employes e ON ca.employe_id = e.id
-      LEFT JOIN carburant c ON ca.numero_carte = c.numero_carte
+      LEFT JOIN carburant c ON ca.carte_id = c.numero_carte
       WHERE ${whereConditions.join(' AND ')}
-      ORDER BY ca.date_debut DESC, ca.created_at DESC
+      ORDER BY ca.date_assignation DESC, ca.created_at DESC
     `
 
     const result = await query(selectQuery, params)

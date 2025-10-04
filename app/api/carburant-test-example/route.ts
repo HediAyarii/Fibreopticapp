@@ -20,9 +20,9 @@ export async function GET(request: NextRequest) {
       WITH employee_assignments AS (
         SELECT 
           ca.id as assignation_id,
-          ca.numero_carte,
+          ca.carte_id,
           ca.employe_id,
-          ca.employe_nom,
+          e.nom || ' ' || e.prenom as employe_nom,
           ca.date_assignation,
           COALESCE(ca.date_fin, CURRENT_DATE) as date_fin_effective,
           ca.statut,
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
           ca.created_at as assignation_date
         FROM carburant_assignations ca
         LEFT JOIN employes e ON ca.employe_id = e.id
-        WHERE ca.numero_carte = '12'
+        WHERE ca.carte_id = '12'
         ORDER BY ca.date_assignation
       ),
       fuel_transactions AS (
