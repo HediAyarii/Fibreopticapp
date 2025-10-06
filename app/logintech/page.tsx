@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, User, Lock, Eye, EyeOff } from "lucide-react"
 import { useRouter } from 'next/navigation'
+import { LoginNotificationManager } from '@/components/LoginNotificationManager'
 
 export default function LoginTechPage() {
   const [formData, setFormData] = useState({
@@ -99,6 +100,21 @@ export default function LoginTechPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+
+            {/* Section Notifications - Avant la connexion */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-medium text-blue-900 mb-1">
+                    🔔 Notifications Push
+                  </h3>
+                  <p className="text-xs text-blue-700">
+                    Activez les notifications pour recevoir les alertes de pénalités
+                  </p>
+                </div>
+                <LoginNotificationManager />
+              </div>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">

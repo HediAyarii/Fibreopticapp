@@ -92,7 +92,7 @@ export function NotificationManager({ employeeId }: NotificationManagerProps) {
       const registration = await navigator.serviceWorker.ready
       
       // Configuration VAPID (clés publiques pour les notifications push)
-      const vapidPublicKey = 'BCTx_XKKl40Yl4_XmF9ltBjyADCSWWsrs3o6nOX65S90nB2qzR9JXTvkBCoOrtod_5e04azaMSAxAzOt9JJIYxg'
+      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BLZZNzGYoo6KLhGm_qVQDIjPWcLZVYeWwPILUwBwaBKL7lEKUQ24f7CWR2GmFhaEiKU_jDDTLv9fo52Ym8xqmak'
       
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,

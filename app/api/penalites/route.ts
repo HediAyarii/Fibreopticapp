@@ -3,6 +3,16 @@ import { query } from "@/lib/database"
 import { sendPenaliteNotification } from "@/lib/socketio"
 import webpush from 'web-push'
 
+// Configuration VAPID (clés fournies par l'utilisateur)
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || 'BLZZNzGYoo6KLhGm_qVQDIjPWcLZVYeWwPILUwBwaBKL7lEKUQ24f7CWR2GmFhaEiKU_jDDTLv9fo52Ym8xqmak'
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || 'DqE1Bk4uzykAXsmSKIAw46-Gy7z78K7t5CDNVQdlp24'
+
+webpush.setVapidDetails(
+  'mailto:admin@finalfibre.com',
+  vapidPublicKey,
+  vapidPrivateKey
+)
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)

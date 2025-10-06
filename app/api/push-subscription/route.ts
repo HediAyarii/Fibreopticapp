@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/database'
 import webpush from 'web-push'
 
-// Configuration VAPID (en production, utilisez des clés réelles)
-const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || 'BCTx_XKKl40Yl4_XmF9ltBjyADCSWWsrs3o6nOX65S90nB2qzR9JXTvkBCoOrtod_5e04azaMSAxAzOt9JJIYxg'
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '9HOWMXxtjsME2hAS3fJQu811blXmiq-PNyEQiQSAWls'
+// Configuration VAPID (clés fournies par l'utilisateur)
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || 'BLZZNzGYoo6KLhGm_qVQDIjPWcLZVYeWwPILUwBwaBKL7lEKUQ24f7CWR2GmFhaEiKU_jDDTLv9fo52Ym8xqmak'
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || 'DqE1Bk4uzykAXsmSKIAw46-Gy7z78K7t5CDNVQdlp24'
 
 webpush.setVapidDetails(
   'mailto:admin@finalfibre.com',

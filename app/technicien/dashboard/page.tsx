@@ -395,7 +395,8 @@ export default function TechnicienDashboard() {
     }
   }
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | undefined) => {
+    if (!status) return 'bg-gray-100 text-gray-800'
     switch (status.toLowerCase()) {
       case 'terminé':
       case 'terminée':
@@ -504,6 +505,7 @@ export default function TechnicienDashboard() {
                   </div>
                 )}
                 <NotificationCenter employeeId={user.id} />
+                <MobilePushNotificationManager employeeId={user.id} />
                 <Button
                   variant="outline"
                   size="sm"
@@ -524,8 +526,7 @@ export default function TechnicienDashboard() {
                 </div>
               )}
               <NotificationCenter employeeId={user.id} />
-              <MobileNotificationButton />
-              <MobilePushNotificationManager />
+              <MobilePushNotificationManager employeeId={user.id} />
               <Button
                 variant="outline"
                 size="sm"

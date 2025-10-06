@@ -50,7 +50,11 @@ export function initializeSocketIO(server: NetServer) {
     cors: {
       origin: process.env.NODE_ENV === 'production' 
         ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
-        : ['http://localhost:3000', 'http://127.0.0.1:3000'],
+        : [
+            'http://localhost:3000', 
+            'http://127.0.0.1:3000',
+            'https://7555cde4b50c.ngrok-free.app'
+          ],
       methods: ['GET', 'POST'],
       credentials: true
     }

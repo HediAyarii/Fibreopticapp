@@ -40,6 +40,7 @@ import { MaterialForm, EmployeeForm } from "@/components/Forms"
 import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
 import { AffectationTest } from "@/components/AffectationTest"
 import { EmployeeMaterialValueTable } from "@/components/EmployeeMaterialValueTable"
+import { RecapCalculTable } from "@/components/RecapCalculTable"
 import { ReclamationForm } from "@/components/ReclamationForm"
 import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesForms"
 import { PricingTable } from "@/components/PricingTable"
@@ -1462,6 +1463,7 @@ La page va se recharger automatiquement...`)
 
       // Déclencher la synchronisation automatique
       window.dispatchEvent(new CustomEvent('material-updated'))
+      window.dispatchEvent(new CustomEvent('revenue-updated'))
       
       await loadAllCRUDData()
       setShowMaterialModal(false)
@@ -1486,6 +1488,7 @@ La page va se recharger automatiquement...`)
 
       // Déclencher la synchronisation automatique
       window.dispatchEvent(new CustomEvent('material-updated'))
+      window.dispatchEvent(new CustomEvent('revenue-updated'))
       
       await loadAllCRUDData()
       alert("Matériel supprimé avec succès")
@@ -1520,6 +1523,7 @@ La page va se recharger automatiquement...`)
 
       // Déclencher la synchronisation automatique
       window.dispatchEvent(new CustomEvent('material-assignment-updated'))
+      window.dispatchEvent(new CustomEvent('revenue-updated'))
       
       await loadAllCRUDData()
       setShowAffectationModal(false)
@@ -1544,6 +1548,7 @@ La page va se recharger automatiquement...`)
 
       // Déclencher la synchronisation automatique
       window.dispatchEvent(new CustomEvent('material-assignment-updated'))
+      window.dispatchEvent(new CustomEvent('revenue-updated'))
       
       await loadAllCRUDData()
       alert("Affectation supprimée avec succès")
@@ -2222,10 +2227,12 @@ La page va se recharger automatiquement...`)
 
       <div className="flex">
         <aside className="w-80 glass-sidebar h-[calc(100vh-5rem)] sticky top-20">
-          <nav className="p-6 space-y-3">
-            <div className="mb-8">
+          <nav className="h-full flex flex-col">
+            <div className="p-6 pb-4">
               <h2 className="text-lg font-semibold text-muted-foreground mb-4">Navigation</h2>
             </div>
+            <div className="flex-1 overflow-y-auto px-6 pb-6 sidebar-scrollable">
+              <div className="space-y-3">
 
               <Button
               variant="ghost"
@@ -2279,7 +2286,7 @@ La page va se recharger automatiquement...`)
               Carburant
             </Button>
 
-            <Button
+                <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                     activeTab === "materials"
@@ -2291,6 +2298,20 @@ La page va se recharger automatiquement...`)
                   <Package className="w-5 h-5" />
               Matériel
                 </Button>
+
+                <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "recap-calcul"
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
+              onClick={() => setActiveTab("recap-calcul")}
+            >
+              <Calculator className="w-5 h-5" />
+              Récap Calcul
+            </Button>
+
 
                 <Button
               variant="ghost"
@@ -2440,6 +2461,8 @@ La page va se recharger automatiquement...`)
               <UserCog className="w-5 h-5" />
               Comptes Techniciens
                 </Button>
+              </div>
+            </div>
           </nav>
         </aside>
 
@@ -4461,6 +4484,22 @@ La page va se recharger automatiquement...`)
                </div>
             </div>
           )}
+
+          {/* Récap Calcul Section */}
+          {activeTab === "recap-calcul" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold">Récap Calcul</h2>
+                  <p className="text-muted-foreground">Calcul du bénéfice net par employé</p>
+                </div>
+              </div>
+
+              {/* Récap Calcul Table */}
+              <RecapCalculTable />
+            </div>
+          )}
+
 
            {/* Penalties Section */}
           {activeTab === "penalties" && (

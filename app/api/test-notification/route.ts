@@ -4,10 +4,10 @@ import webpush from 'web-push'
 
 export const dynamic = 'force-dynamic'
 
-// Configuration VAPID (clés pour les notifications push)
+// Configuration VAPID (clés fournies par l'utilisateur)
 const vapidKeys = {
-  publicKey: 'BCTx_XKKl40Yl4_XmF9ltBjyADCSWWsrs3o6nOX65S90nB2qzR9JXTvkBCoOrtod_5e04azaMSAxAzOt9JJIYxg',
-  privateKey: process.env.VAPID_PRIVATE_KEY || '9HOWMXxtjsME2hAS3fJQu811blXmiq-PNyEQiQSAWls'
+  publicKey: 'BLZZNzGYoo6KLhGm_qVQDIjPWcLZVYeWwPILUwBwaBKL7lEKUQ24f7CWR2GmFhaEiKU_jDDTLv9fo52Ym8xqmak',
+  privateKey: 'DqE1Bk4uzykAXsmSKIAw46-Gy7z78K7t5CDNVQdlp24'
 }
 
 // Configuration web-push

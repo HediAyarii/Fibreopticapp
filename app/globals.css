@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Force CSS refresh - version timestamp */
+/* CSS_VERSION: 2024-12-19-15:45 */
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -219,4 +222,33 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(14, 165, 233, 0.5);
+}
+
+/* Sidebar scrollbar styles */
+.sidebar-scrollable {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.sidebar-scrollable::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-scrollable::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.sidebar-scrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.sidebar-scrollable::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.sidebar-scrollable::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.4);
 }
