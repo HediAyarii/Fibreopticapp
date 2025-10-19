@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Vérifier si c'est une période future ou sans données
+    // Vérifier si c'est une période future
     const startDateObj = new Date(startDate)
     const endDateObj = new Date(endDate)
     const currentDate = new Date()
@@ -33,22 +33,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Extraire le mois et l'année des dates
-    const startMonth = startDateObj.getMonth() + 1
-    const startYear = startDateObj.getFullYear()
-    const endMonth = endDateObj.getMonth() + 1
-    const endYear = endDateObj.getFullYear()
-    
-    // Si ce n'est pas mai 2025, retourner des données vides
-    if (startMonth !== 5 || startYear !== 2025 || endMonth !== 5 || endYear !== 2025) {
-      return NextResponse.json({ 
-        success: true,
-        recettesParTechnicien: [],
-        total: 0
-      })
-    }
-
-    // Requête simple pour mai 2025 uniquement
+    // Requête avec filtrage de date robuste et gestion des valeurs invalides
     const result = await query(`
       SELECT 
         i.nom_technicien as employe_nom,
@@ -80,13 +65,23 @@ export async function GET(request: NextRequest) {
         AND i.articles IS NOT NULL 
         AND i.articles != ''
         AND (
-          (i.cloture_tech LIKE '%05.2025%' OR i.cloture_tech LIKE '%2025-05%') OR
-          (i.cloture_hotline LIKE '%05.2025%' OR i.cloture_hotline LIKE '%2025-05%') OR
-          (i.date_rdv LIKE '%05.2025%' OR i.date_rdv LIKE '%2025-05%')
+          -- Filtrage par cloture_tech (avec vérification des valeurs valides)
+          (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
+           i.cloture_tech ~ '^[0-9]' AND 
+           (i.cloture_tech::date >= $1::date AND i.cloture_tech::date <= $2::date)) OR
+          -- Filtrage par cloture_hotline (avec vérification des valeurs valides)
+          (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
+           i.cloture_hotline ~ '^[0-9]' AND 
+           (i.cloture_hotline::date >= $1::date AND i.cloture_hotline::date <= $2::date)) OR
+          -- Filtrage par date_rdv si les autres sont NULL (avec vérification des valeurs valides)
+          (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
+           i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
+           i.date_rdv ~ '^[0-9]' AND 
+           (i.date_rdv::date >= $1::date AND i.date_rdv::date <= $2::date))
         )
       GROUP BY i.nom_technicien, i.prenom_technicien
       ORDER BY total_recette_technicien DESC
-    `)
+    `, [startDate, endDate])
     
     // Convertir les valeurs numériques en nombres
     const recapData = result.rows.map((row: any) => ({
