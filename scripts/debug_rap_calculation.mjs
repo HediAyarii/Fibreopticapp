@@ -1,136 +1,126 @@
-import { Pool } from 'pg'
+import { Pool } from 'pg';
 
 const pool = new Pool({
-  host: process.env.POSTGRES_HOST || 'localhost',
-  port: parseInt(process.env.POSTGRES_PORT || '5432'),
-  database: process.env.POSTGRES_DB || 'finalfibre_db',
-  user: process.env.POSTGRES_USER || 'finalfibre_user',
-  password: process.env.POSTGRES_PASSWORD || 'finalfibre_password_2024',
+  host: 'localhost',
+  port: 5432,
+  database: 'finalfibre_db',
+  user: 'finalfibre_user',
+  password: 'finalfibre_password_2024',
   ssl: false,
-})
+  max: 50,
+  min: 5,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 5000,
+  acquireTimeoutMillis: 10000,
+  allowExitOnIdle: true,
+});
 
 async function debugRapCalculation() {
-  console.log('🔍 Debug du calcul RAP pour BECHIRMOULAHI MOHAMED...')
+  console.log('🔍 Diagnostic du calcul du RAP...');
   
   try {
-    // 1. Récupérer les données de cet employé
+    // 1. Récupérer les données de BECHIRMOULAHI MOHAMED
+    console.log('\n📊 1. Données de BECHIRMOULAHI MOHAMED:');
     const result = await pool.query(`
       SELECT 
-        id, nom, prenom, matricule,
-        total_genere, salaire_net, charge, cout_total, taxe,
+        id,
+        nom,
+        prenom,
+        total_genere,
+        salaire_net,
+        salaire_brut,
+        charge,
+        taxe,
+        impot,
+        prime,
         rap,
-        calculer_total_paiements(id) as total_paiements,
-        calculer_rap_avec_paiements(id) as rap_calcule
-      FROM cout_par_salaire 
-      WHERE nom = 'BECHIRMOULAHI' AND prenom = 'MOHAMED'
-    `)
+        created_at,
+        updated_at
+      FROM cout_par_salaire
+      WHERE LOWER(nom) LIKE '%moulahi%' AND LOWER(prenom) LIKE '%mohamed%'
+    `);
     
     if (result.rows.length === 0) {
-      console.log('❌ Employé non trouvé')
-      return
+      console.log('   ❌ Aucun enregistrement trouvé');
+      return;
     }
     
-    const cout = result.rows[0]
-    console.log('\n📊 Données de l\'employé:')
-    console.log(`  - ID: ${cout.id}`)
-    console.log(`  - Nom: ${cout.nom} ${cout.prenom}`)
-    console.log(`  - Matricule: ${cout.matricule}`)
-    console.log(`  - Total Généré: ${cout.total_genere}€`)
-    console.log(`  - Salaire Net: ${cout.salaire_net}€`)
-    console.log(`  - Charge: ${cout.charge}€`)
-    console.log(`  - Coût Total: ${cout.cout_total}€`)
-    console.log(`  - Taxe: ${cout.taxe}%`)
-    console.log(`  - Total Paiements: ${cout.total_paiements}€`)
-    console.log(`  - RAP actuel: ${cout.rap}€`)
-    console.log(`  - RAP calculé: ${cout.rap_calcule}€`)
+    const row = result.rows[0];
+    console.log(`   📊 Enregistrement: ${row.nom} ${row.prenom}`);
+    console.log(`      ID: ${row.id}`);
+    console.log(`      Total Généré: ${row.total_genere}€`);
+    console.log(`      Salaire Net: ${row.salaire_net}€`);
+    console.log(`      Salaire Brut: ${row.salaire_brut}€`);
+    console.log(`      Charge: ${row.charge}€`);
+    console.log(`      Taxe: ${row.taxe}€`);
+    console.log(`      Impôt: ${row.impot}€`);
+    console.log(`      Prime: ${row.prime}€`);
+    console.log(`      RAP: ${row.rap}€`);
+    console.log(`      Updated: ${row.updated_at}`);
     
-    // 2. Calcul manuel étape par étape
-    console.log('\n🧮 Calcul manuel étape par étape:')
+    // 2. Calculer le RAP manuellement
+    console.log('\n📊 2. Calcul manuel du RAP:');
+    const totalGenere = parseFloat(row.total_genere);
+    const salaireNet = parseFloat(row.salaire_net);
+    const charge = parseFloat(row.charge);
+    const prime = parseFloat(row.prime || '0');
     
-    const totalGenere = parseFloat(cout.total_genere) || 0
-    const salaireNet = parseFloat(cout.salaire_net) || 0
-    const charge = parseFloat(cout.charge) || 0
-    const coutTotal = parseFloat(cout.cout_total) || 0
-    const taxe = parseFloat(cout.taxe) || 0
-    const totalPaiements = parseFloat(cout.total_paiements) || 0
+    const impot = charge * 0.5; // 50% de la charge
+    const rapCalcule = totalGenere - salaireNet - impot + prime;
     
-    console.log(`  - Total Généré: ${totalGenere}€`)
-    console.log(`  - Salaire Net: ${salaireNet}€`)
-    console.log(`  - Charge: ${charge}€`)
-    console.log(`  - Taxe: ${taxe}%`)
-    console.log(`  - Total Paiements: ${totalPaiements}€`)
+    console.log(`   📊 Formule: RAP = Total Généré - Salaire Net - Impôt + Prime`);
+    console.log(`   📊 Calcul: ${totalGenere}€ - ${salaireNet}€ - ${impot}€ + ${prime}€ = ${rapCalcule}€`);
+    console.log(`   📊 Impôt: ${impot}€ (50% de ${charge}€)`);
+    console.log(`   📊 RAP Calculé: ${rapCalcule}€`);
+    console.log(`   📊 RAP Base de données: ${row.rap}€`);
     
-    // Calcul du RAP de base selon la taxe
-    let rapBase = 0
-    if (Math.abs(taxe - 100) < 0.01) {
-      rapBase = totalGenere - salaireNet
-      console.log(`  - Formule (100%): ${totalGenere} - ${salaireNet} = ${rapBase}€`)
-    } else if (Math.abs(taxe - 50) < 0.01) {
-      rapBase = totalGenere - salaireNet + (0.5 * charge)
-      console.log(`  - Formule (50%): ${totalGenere} - ${salaireNet} + (0.5 × ${charge}) = ${rapBase}€`)
-      console.log(`  - Détail: ${totalGenere} - ${salaireNet} + ${(0.5 * charge).toFixed(2)} = ${rapBase}€`)
-    } else if (Math.abs(taxe) < 0.01) {
-      rapBase = totalGenere - coutTotal
-      console.log(`  - Formule (0%): ${totalGenere} - ${coutTotal} = ${rapBase}€`)
+    const difference = Math.abs(parseFloat(row.rap) - rapCalcule);
+    if (difference < 0.01) {
+      console.log(`   ✅ RAP correct`);
     } else {
-      rapBase = totalGenere - coutTotal
-      console.log(`  - Formule (personnalisé): ${totalGenere} - ${coutTotal} = ${rapBase}€`)
+      console.log(`   ❌ RAP incorrect (diff: ${difference}€)`);
     }
     
-    const rapFinal = rapBase - totalPaiements
-    console.log(`  - RAP final: ${rapBase}€ - ${totalPaiements}€ = ${rapFinal}€`)
-    
-    // 3. Vérifier la fonction de la base de données
-    console.log('\n🔍 Test de la fonction de la base de données:')
-    const functionTest = await pool.query(`
-      SELECT calculer_rap_avec_paiements($1) as rap_fonction
-    `, [cout.id])
-    
-    console.log(`  - Fonction DB: ${functionTest.rows[0].rap_fonction}€`)
-    console.log(`  - Calcul manuel: ${rapFinal}€`)
-    console.log(`  - Différence: ${Math.abs(parseFloat(functionTest.rows[0].rap_fonction) - rapFinal)}€`)
-    
-    // 4. Vérifier s'il y a des paiements
-    const paiements = await pool.query(`
-      SELECT id, montant_verse, date_paiement, statut
-      FROM paiements_employes 
-      WHERE cout_par_salaire_id = $1
-    `, [cout.id])
-    
-    console.log(`\n💰 Paiements enregistrés: ${paiements.rows.length}`)
-    if (paiements.rows.length > 0) {
-      paiements.rows.forEach((p, index) => {
-        console.log(`  ${index + 1}. ${p.montant_verse}€ le ${p.date_paiement} (${p.statut})`)
-      })
+    // 3. Mettre à jour le RAP manuellement
+    console.log('\n📊 3. Mise à jour manuelle du RAP:');
+    try {
+      await pool.query(`
+        UPDATE cout_par_salaire
+        SET rap = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [rapCalcule, row.id]);
+      
+      console.log(`   ✅ RAP mis à jour: ${row.rap}€ → ${rapCalcule}€`);
+    } catch (error) {
+      console.log(`   ❌ Erreur lors de la mise à jour: ${error.message}`);
     }
     
-    // 5. Diagnostic
-    console.log('\n🔍 Diagnostic:')
-    if (Math.abs(parseFloat(functionTest.rows[0].rap_fonction) - rapFinal) < 0.01) {
-      console.log('✅ La fonction de la base de données est correcte')
-    } else {
-      console.log('❌ Il y a un problème dans la fonction de la base de données')
+    // 4. Vérification finale
+    console.log('\n📊 4. Vérification finale:');
+    const finalResult = await pool.query(`
+      SELECT rap FROM cout_par_salaire WHERE id = $1
+    `, [row.id]);
+    
+    if (finalResult.rows.length > 0) {
+      const finalRap = finalResult.rows[0].rap;
+      console.log(`   📊 RAP final: ${finalRap}€`);
+      
+      if (Math.abs(parseFloat(finalRap) - rapCalcule) < 0.01) {
+        console.log(`   ✅ RAP correctement mis à jour`);
+      } else {
+        console.log(`   ❌ RAP non mis à jour`);
+      }
     }
     
-    if (totalPaiements > 0) {
-      console.log('⚠️ Des paiements sont déjà enregistrés')
-    } else {
-      console.log('✅ Aucun paiement enregistré')
-    }
-    
-    console.log(`\n🎯 RAP attendu: ${rapFinal.toFixed(2)}€`)
-    console.log(`📊 RAP affiché: ${cout.rap}€`)
+    console.log('\n🎯 Diagnostic terminé !');
     
   } catch (error) {
-    console.error('❌ Erreur lors du debug:', error.message)
+    console.error('❌ Erreur:', error.message);
+    console.error('🔍 Détails:', error);
   } finally {
-    await pool.end()
+    await pool.end();
   }
 }
 
-debugRapCalculation()
-
-
-
-
-
+debugRapCalculation().catch(console.error);

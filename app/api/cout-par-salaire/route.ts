@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       params.push(parseInt(annee))
     }
     
-    // Récupérer les données de base
+    // Récupérer les données de base avec calcul automatique des RAP
     const result = await query(`
       SELECT 
         id,
@@ -38,11 +38,18 @@ export async function GET(request: NextRequest) {
         mois,
         annee,
         matricule,
-        taxe,
-        impot,
+        -- Afficher le pourcentage de taxe (50% par défaut)
+        CASE 
+          WHEN charge > 0 THEN 50.0
+          ELSE 0.0
+        END as taxe,
+        -- Calculer automatiquement l'impôt (50% de la charge)
+        (charge * 0.5) as impot,
         penalite,
+        prime,
         total_genere,
-        rap,
+        -- Calculer automatiquement le RAP avec la formule correcte (incluant la prime)
+        (total_genere - salaire_net - (charge * 0.5) + COALESCE(prime, 0)) as rap,
         created_at,
         updated_at
       FROM cout_par_salaire 
@@ -50,7 +57,7 @@ export async function GET(request: NextRequest) {
       ORDER BY annee DESC, mois DESC, nom, prenom
     `, params)
     
-    // Calculer le total des paiements pour chaque employé
+    // Calculer le total des paiements et le RAP final pour chaque employé
     const coutsWithRevenue = await Promise.all(
       result.rows.map(async (cout: any) => {
         try {
@@ -61,15 +68,20 @@ export async function GET(request: NextRequest) {
             
             const totalPaiements = parseFloat(paiementsResult.rows[0].total_paiements) || 0
             
+            // Calculer le RAP final (RAP de base - paiements)
+            const rapFinal = parseFloat(cout.rap) - totalPaiements
+            
             return {
               ...cout,
-              total_paiements: totalPaiements
+              total_paiements: totalPaiements,
+              rap: rapFinal  // RAP final avec paiements déduits
           }
         } catch (error) {
           console.error(`Erreur calcul paiements pour ${cout.nom} ${cout.prenom}:`, error)
             return {
               ...cout,
-            total_paiements: 0
+            total_paiements: 0,
+            rap: parseFloat(cout.rap)  // RAP de base si erreur
           }
         }
       })
@@ -242,6 +254,40 @@ export async function PUT(request: NextRequest) {
     
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "Coût non trouvé" }, { status: 400 })
+    }
+    
+    // Si la prime a été mise à jour, recalculer le RAP
+    if (updateData.prime !== undefined) {
+      const cout = result.rows[0]
+      const impot = parseFloat(cout.charge) * 0.5 // Calculer l'impôt (50% de la charge)
+      const newRap = parseFloat(cout.total_genere) - parseFloat(cout.salaire_net) - impot + parseFloat(cout.prime)
+      
+      // Désactiver temporairement les triggers pour éviter les conflits
+      await query('ALTER TABLE cout_par_salaire DISABLE TRIGGER trigger_recalcul_rap;')
+      await query('ALTER TABLE cout_par_salaire DISABLE TRIGGER trigger_calcul_rap_auto;')
+      
+      try {
+        // Mettre à jour le RAP dans la base de données
+        await query(`
+          UPDATE cout_par_salaire 
+          SET rap = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [newRap, cout.id])
+        
+        // Récupérer les données mises à jour
+        const updatedResult = await query(`
+          SELECT * FROM cout_par_salaire WHERE id = $1
+        `, [cout.id])
+        
+        return NextResponse.json({
+          success: true,
+          cout: updatedResult.rows[0]
+        })
+      } finally {
+        // Réactiver les triggers
+        await query('ALTER TABLE cout_par_salaire ENABLE TRIGGER trigger_recalcul_rap;')
+        await query('ALTER TABLE cout_par_salaire ENABLE TRIGGER trigger_calcul_rap_auto;')
+      }
     }
     
     return NextResponse.json({

@@ -22,6 +22,7 @@ import {
   Eye,
   RefreshCw
 } from 'lucide-react'
+import PaymentHistoryModal from './PaymentHistoryModal'
 
 interface CoutParSalaire {
   id: number
@@ -37,6 +38,7 @@ interface CoutParSalaire {
   taxe?: number
   impot?: number
   penalite?: number
+  prime?: number
   total_genere?: number
   rap?: number
   total_paiements?: number
@@ -107,6 +109,20 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     commentaires: ''
   })
   const [paymentLoading, setPaymentLoading] = useState(false)
+  
+  // États pour l'historique des paiements
+  const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false)
+  const [selectedEmployeForHistory, setSelectedEmployeForHistory] = useState<{
+    id: number
+    nom: string
+    prenom: string
+  } | null>(null)
+  
+  // États pour l'ajout de prime
+  const [showPrimeModal, setShowPrimeModal] = useState(false)
+  const [selectedCoutForPrime, setSelectedCoutForPrime] = useState<CoutParSalaire | null>(null)
+  const [primeAmount, setPrimeAmount] = useState('')
+  const [isEditingPrime, setIsEditingPrime] = useState(false)
 
   // Fonction utilitaire pour formater l'impôt
   const formatImpot = (impot: any): string => {
@@ -150,6 +166,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       setLoading(false)
     }
   }
+
+  // Charger les employés au montage du composant
+  useEffect(() => {
+    loadEmployees()
+  }, [])
 
   // Fonction pour charger les employés disponibles
   const loadAvailableEmployees = async () => {
@@ -261,12 +282,26 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
 
     setPaymentLoading(true)
     try {
+      // Debug: Afficher les informations
+      console.log('🔍 Debug paiement:')
+      console.log('   📊 Coût sélectionné:', selectedCoutForPayment.nom, selectedCoutForPayment.prenom)
+      console.log('   📊 Matricule coût:', selectedCoutForPayment.matricule)
+      console.log('   📊 Cache employés:', employeesCache.length, 'employés')
+      
+      // Charger les employés si le cache est vide
+      const employes = await loadEmployees(true) // Force le rechargement
+      console.log('   📊 Employés chargés:', employes.length)
+      
       // Trouver l'employé correspondant
-      const employe = employeesCache.find(emp => 
+      const employe = employes.find(emp => 
         emp.matricule === selectedCoutForPayment.matricule
       )
 
+      console.log('   📊 Employé trouvé:', employe ? `${employe.nom} ${employe.prenom}` : 'AUCUN')
+
       if (!employe) {
+        console.log('   ❌ Aucun employé trouvé avec le matricule:', selectedCoutForPayment.matricule)
+        console.log('   📊 Matricules disponibles:', employes.map(emp => emp.matricule))
         alert('Employé non trouvé pour ce coût')
         return
       }
@@ -328,6 +363,123 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     } catch (error) {
       console.error('Erreur suppression paiement:', error)
       alert(error instanceof Error ? error.message : 'Erreur lors de la suppression du paiement')
+    }
+  }
+
+  // Fonction pour ouvrir l'historique des paiements d'un employé
+  const openPaymentHistoryForEmployee = async (cout: CoutParSalaire) => {
+    console.log('🔍 Debug historique employé:')
+    console.log('   📊 Coût:', cout.nom, cout.prenom, cout.matricule)
+    console.log('   📊 Cache employés:', employeesCache.length)
+    
+    // Charger les employés si nécessaire
+    const employes = await loadEmployees(true)
+    console.log('   📊 Employés chargés:', employes.length)
+    
+    // Trouver l'employé correspondant
+    const employe = employes.find(emp => 
+      emp.matricule === cout.matricule
+    )
+    
+    console.log('   📊 Employé trouvé:', employe ? `${employe.nom} ${employe.prenom}` : 'AUCUN')
+    
+    if (employe) {
+      setSelectedEmployeForHistory({
+        id: employe.id,
+        nom: employe.nom,
+        prenom: employe.prenom
+      })
+      setShowPaymentHistoryModal(true)
+    } else {
+      console.log('   ❌ Matricules disponibles:', employes.map(emp => emp.matricule))
+      alert('Employé non trouvé pour cet historique')
+    }
+  }
+
+  // Fonction pour gérer l'ajout de prime
+  const handleAddPrime = (cout: CoutParSalaire) => {
+    console.log('💰 Ajout de prime pour:', cout.nom, cout.prenom)
+    setSelectedCoutForPrime(cout)
+    setPrimeAmount('')
+    setIsEditingPrime(false)
+    setShowPrimeModal(true)
+  }
+
+  // Fonction pour gérer la modification de prime
+  const handleEditPrime = (cout: CoutParSalaire) => {
+    console.log('✏️ Modification de prime pour:', cout.nom, cout.prenom)
+    setSelectedCoutForPrime(cout)
+    setPrimeAmount(cout.prime ? Number(cout.prime).toString() : '0')
+    setIsEditingPrime(true)
+    setShowPrimeModal(true)
+  }
+
+  // Fonction pour soumettre l'ajout/modification de prime
+  const handleSubmitPrime = async () => {
+    if (!selectedCoutForPrime || !primeAmount) {
+      alert('Veuillez saisir un montant de prime')
+      return
+    }
+
+    const amount = parseFloat(primeAmount)
+    if (isNaN(amount) || amount < 0) {
+      alert('Veuillez saisir un montant valide (≥ 0)')
+      return
+    }
+
+    try {
+      setPaymentLoading(true)
+      
+      let newPrime: number
+      let actionText: string
+      
+      if (isEditingPrime) {
+        // Modification : remplacer la prime existante
+        newPrime = amount
+        actionText = `Prime modifiée: ${amount}€`
+      } else {
+        // Ajout : ajouter au montant existant
+        const currentPrime = parseFloat(selectedCoutForPrime.prime || '0')
+        newPrime = currentPrime + amount
+        actionText = `Prime ajoutée: ${amount}€ (Total: ${newPrime}€)`
+      }
+      
+      // Mettre à jour la prime dans la base de données
+      const response = await fetch('/api/cout-par-salaire', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: selectedCoutForPrime.id,
+          prime: newPrime
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la mise à jour de la prime')
+      }
+
+      const result = await response.json()
+      
+      if (result.success) {
+        // Recharger les données
+        await loadData()
+        setShowPrimeModal(false)
+        setSelectedCoutForPrime(null)
+        setPrimeAmount('')
+        setIsEditingPrime(false)
+        
+        console.log(`✅ ${actionText}`)
+        alert(`${actionText} avec succès!`)
+      } else {
+        throw new Error(result.error || 'Erreur lors de la mise à jour')
+      }
+    } catch (error) {
+      console.error('Erreur lors de la gestion de la prime:', error)
+      alert('Erreur lors de la gestion de la prime')
+    } finally {
+      setPaymentLoading(false)
     }
   }
 
@@ -465,20 +617,26 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [employeesCache, setEmployeesCache] = useState<any[]>([])
 
   // Charger les employés une seule fois
-  const loadEmployees = async () => {
-    if (employeesCache.length > 0) return employeesCache
+  const loadEmployees = async (forceReload = false) => {
+    if (!forceReload && employeesCache.length > 0) {
+      console.log(`📊 Cache employés déjà chargé: ${employeesCache.length} employés`)
+      return employeesCache
+    }
     
     try {
+      console.log('🔄 Chargement des employés...')
       const response = await fetch('/api/employes')
       const data = await response.json()
       
       if (data.success && data.employes) {
         setEmployeesCache(data.employes)
+        console.log(`✅ ${data.employes.length} employés chargés dans le cache`)
         return data.employes
       }
+      console.log('❌ Aucun employé chargé')
       return []
     } catch (error) {
-      console.error('Erreur chargement employés:', error)
+      console.error('❌ Erreur chargement employés:', error)
       return []
     }
   }
@@ -872,6 +1030,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                 <th className="text-right p-3">Taxe (%)</th>
                 <th className="text-right p-3">Impôt (€)</th>
                 <th className="text-right p-3">Pénalité (€)</th>
+                <th className="text-right p-3">Prime (€)</th>
                 <th className="text-right p-3">Total Généré (€)</th>
                 <th className="text-right p-3">RAP (€)</th>
                 <th className="text-right p-3">Paiements (€)</th>
@@ -884,7 +1043,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                 </thead>
                 <tbody>
                   {couts.map((cout) => (
-                    <tr key={cout.id} className="border-b hover:bg-gray-50">
+                    <tr key={cout.id} className={`border-b hover:bg-gray-50 ${
+                      cout.rap && Math.abs(Number(cout.rap)) < 0.01 
+                        ? 'bg-green-50 border-green-200' 
+                        : ''
+                    }`}>
                       <td className="p-3 font-medium">{cout.nom}</td>
                       <td className="p-3">{cout.prenom}</td>
                       
@@ -941,6 +1104,31 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                       </td>
                       
                       <td className="p-3 text-right">
+                        <div 
+                          className="cursor-pointer hover:bg-gray-100 p-2 rounded transition-colors"
+                          onDoubleClick={() => handleAddPrime(cout)}
+                          title="Double-clic pour ajouter une prime"
+                        >
+                          <span className={`font-medium ${cout.prime && Number(cout.prime) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                            {cout.prime ? `${Number(cout.prime).toFixed(2)}€` : '0.00€'}
+                          </span>
+                          {cout.prime && Number(cout.prime) > 0 && (
+                            <div className="text-xs text-green-600 mt-1">✓ Prime</div>
+                          )}
+                          <div className="text-xs text-gray-500 mt-1">Double-clic pour ajouter</div>
+                        </div>
+                        {cout.prime && Number(cout.prime) > 0 && (
+                          <button
+                            onClick={() => handleEditPrime(cout)}
+                            className="mt-1 text-xs text-blue-600 hover:text-blue-800 underline"
+                            title="Modifier la prime"
+                          >
+                            Modifier
+                          </button>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
                         <span className={`font-medium ${cout.total_genere && Number(cout.total_genere) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
                           {cout.total_genere ? `${Number(cout.total_genere).toFixed(2)}€` : '0.00€'}
                         </span>
@@ -950,11 +1138,22 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                       </td>
                       
                       <td className="p-3 text-right">
-                        <span className={`font-medium ${cout.rap && Number(cout.rap) > 0 ? 'text-blue-600' : cout.rap && Number(cout.rap) < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                        <span className={`font-medium ${
+                          cout.rap && Number(cout.rap) > 0.01 
+                            ? 'text-blue-600' 
+                            : cout.rap && Number(cout.rap) < -0.01 
+                            ? 'text-red-600' 
+                            : cout.rap && Math.abs(Number(cout.rap)) <= 0.01
+                            ? 'text-green-600'
+                            : 'text-gray-400'
+                        }`}>
                           {cout.rap ? `${Number(cout.rap).toFixed(2)}€` : '0.00€'}
                         </span>
-                        {cout.rap && Number(cout.rap) > 0 && (
+                        {cout.rap && Number(cout.rap) > 0.01 && (
                           <div className="text-xs text-blue-600 mt-1">✓ Reste à payer</div>
+                        )}
+                        {cout.rap && Math.abs(Number(cout.rap)) <= 0.01 && (
+                          <div className="text-xs text-green-600 mt-1">✓ 100% payé</div>
                         )}
                         {cout.rap && Number(cout.rap) < 0 && (
                           <div className="text-xs text-red-600 mt-1">⚠️ Déficit</div>
@@ -1101,6 +1300,15 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                             title="Voir l'historique des paiements"
                           >
                             <History className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openPaymentHistoryForEmployee(cout)}
+                            className="h-7 px-2 text-xs bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-800"
+                            title="Voir l'historique complet de l'employé"
+                          >
+                            <Users className="w-3 h-3" />
                           </Button>
                         </div>
                       </td>
@@ -1435,6 +1643,98 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Ajouter un paiement
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal d'historique des paiements pour l'employé */}
+      <PaymentHistoryModal
+        isOpen={showPaymentHistoryModal}
+        onClose={() => {
+          setShowPaymentHistoryModal(false)
+          setSelectedEmployeForHistory(null)
+        }}
+        employeId={selectedEmployeForHistory?.id}
+        employeNom={selectedEmployeForHistory?.nom}
+        employePrenom={selectedEmployeForHistory?.prenom}
+      />
+
+      {/* Modal d'ajout/modification de prime */}
+      {showPrimeModal && selectedCoutForPrime && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">
+                {isEditingPrime ? 'Modifier la Prime' : 'Ajouter une Prime'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowPrimeModal(false)
+                  setIsEditingPrime(false)
+                  setPrimeAmount('')
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                Employé: {selectedCoutForPrime.nom} {selectedCoutForPrime.prenom}
+              </label>
+              <label className="block text-sm font-medium mb-2">
+                Prime actuelle: {selectedCoutForPrime.prime ? `${Number(selectedCoutForPrime.prime).toFixed(2)}€` : '0.00€'}
+              </label>
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                {isEditingPrime ? 'Nouveau montant de la prime (€)' : 'Montant de la prime à ajouter (€)'}
+              </label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={primeAmount}
+                onChange={(e) => setPrimeAmount(e.target.value)}
+                placeholder={isEditingPrime ? "Nouveau montant" : "0.00"}
+                className="w-full"
+              />
+            </div>
+            
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> {isEditingPrime 
+                  ? 'La prime sera remplacée par le nouveau montant et le RAP sera recalculé.'
+                  : 'La prime sera ajoutée au montant existant et augmentera le RAP (Reste à Payer).'
+                }
+              </p>
+            </div>
+            
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowPrimeModal(false)
+                  setIsEditingPrime(false)
+                  setPrimeAmount('')
+                }}
+                disabled={paymentLoading}
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={handleSubmitPrime}
+                disabled={paymentLoading || !primeAmount}
+                className={isEditingPrime ? "bg-orange-600 hover:bg-orange-700" : "bg-green-600 hover:bg-green-700"}
+              >
+                {paymentLoading 
+                  ? (isEditingPrime ? 'Modification...' : 'Ajout...') 
+                  : (isEditingPrime ? 'Modifier la Prime' : 'Ajouter la Prime')
+                }
               </Button>
             </div>
           </div>

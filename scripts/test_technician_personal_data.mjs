@@ -154,3 +154,4 @@ testTechnicianPersonalData()
     process.exit(1)
   })
 
+

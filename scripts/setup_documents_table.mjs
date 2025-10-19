@@ -52,3 +52,4 @@ setupDocumentsTable()
     process.exit(1)
   })
 
+

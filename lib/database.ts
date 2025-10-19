@@ -8,9 +8,12 @@ const dbConfig = {
   user: process.env.POSTGRES_USER || 'finalfibre_user',
   password: process.env.POSTGRES_PASSWORD || 'finalfibre_password_2024',
   ssl: false, // Désactiver SSL pour le développement local
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
+  max: 50, // Augmenter le nombre maximum de connexions
+  min: 5, // Nombre minimum de connexions maintenues
+  idleTimeoutMillis: 10000, // Fermer les connexions inactives après 10 secondes
+  connectionTimeoutMillis: 5000, // Augmenter le timeout de connexion à 5 secondes
+  acquireTimeoutMillis: 10000, // Timeout pour acquérir une connexion
+  allowExitOnIdle: true, // Permettre la fermeture du pool quand il est inactif
 }
 
 // Pool de connexions PostgreSQL
@@ -55,10 +58,43 @@ export async function query(text: string, params?: any[]): Promise<any> {
   }
 }
 
+// Fonction utilitaire pour exécuter des requêtes avec gestion explicite des connexions
+export async function queryWithClient(text: string, params?: any[]): Promise<any> {
+  const pool = getPool()
+  const start = Date.now()
+  let client: PoolClient | null = null
+  
+  try {
+    client = await pool.connect()
+    const result = await client.query(text, params)
+    const duration = Date.now() - start
+    console.log(`📊 Query executed in ${duration}ms: ${text.substring(0, 50)}...`)
+    return result
+  } catch (error) {
+    console.error('❌ Database query error:', error)
+    throw error
+  } finally {
+    if (client) {
+      client.release()
+    }
+  }
+}
+
 // Fonction pour obtenir un client de connexion
 export async function getClient(): Promise<PoolClient> {
   const pool = getPool()
   return await pool.connect()
+}
+
+// Fonction pour surveiller l'état du pool
+export function getPoolStats(): any {
+  if (!pool) return null
+  
+  return {
+    totalCount: pool.totalCount,
+    idleCount: pool.idleCount,
+    waitingCount: pool.waitingCount
+  }
 }
 
 // Fonction pour fermer le pool (utile pour les tests)

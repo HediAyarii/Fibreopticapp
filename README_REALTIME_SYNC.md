@@ -211,3 +211,4 @@ Pour toute question ou problème concernant la synchronisation en temps réel :
 
 La synchronisation en temps réel améliore considérablement l'expérience utilisateur en permettant une collaboration fluide entre les administrateurs et les techniciens.
 
+

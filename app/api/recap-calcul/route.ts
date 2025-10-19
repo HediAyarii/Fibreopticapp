@@ -10,8 +10,8 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
 
-    // Vérifier si les dates sont fournies
-    if (!startDate || !endDate) {
+    // Vérifier si au moins la date de début est fournie
+    if (!startDate) {
       return NextResponse.json({ 
         success: true,
         recettesParTechnicien: [],
@@ -19,12 +19,15 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Vérifier si c'est une période future
+    // Si pas de date de fin, utiliser la date de début comme date de fin
+    const effectiveEndDate = endDate || startDate
+
+    // Vérifier si c'est une période future (seulement si la date de début est dans le futur)
     const startDateObj = new Date(startDate)
-    const endDateObj = new Date(endDate)
+    const endDateObj = new Date(effectiveEndDate)
     const currentDate = new Date()
     
-    // Si la période est dans le futur, retourner des données vides
+    // Si la date de début est dans le futur, retourner des données vides
     if (startDateObj > currentDate) {
       return NextResponse.json({ 
         success: true,
@@ -81,7 +84,7 @@ export async function GET(request: NextRequest) {
         )
       GROUP BY i.nom_technicien, i.prenom_technicien
       ORDER BY total_recette_technicien DESC
-    `, [startDate, endDate])
+    `, [startDate, effectiveEndDate])
     
     // Convertir les valeurs numériques en nombres
     const recapData = result.rows.map((row: any) => ({

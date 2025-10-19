@@ -48,6 +48,9 @@ import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
 import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
+import SyncButton from "@/components/SyncButton"
+import AutoDetectButton from "@/components/AutoDetectButton"
+import RapAutoCorrectButton from "@/components/RapAutoCorrectButton"
 import FailureStatistics from "@/components/FailureStatistics"
 import EmployeeSyncManager from "@/components/EmployeeSyncManager"
 // import { useEmployeeUpdates } from "@/hooks/useEmployeeUpdates" // Désactivé pour éviter les erreurs de build
@@ -4913,6 +4916,25 @@ La page va se recharger automatiquement...`)
         {/* Section Charges par Salarié */}
         {activeTab === "cout-par-salaire" && (
           <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <h3 className="text-lg font-semibold mb-4">Synchronisation des données</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Synchronisez automatiquement les données entre "Bénéfice Brut" et "Charges par Salarié" 
+                pour maintenir la cohérence des informations.
+              </p>
+              <SyncButton />
+            </div>
+            
+           <div className="bg-white rounded-lg shadow-sm border p-6">
+             <h3 className="text-lg font-semibold mb-4">Détection automatique des noms</h3>
+             <p className="text-sm text-gray-600 mb-4">
+               Système intelligent de détection automatique des correspondances entre les noms des techniciens 
+               pour éviter les problèmes de matching manuel.
+             </p>
+             <AutoDetectButton />
+           </div>
+           
+           <RapAutoCorrectButton />
             <CoutParSalaireManager />
           </div>
         )}
