@@ -8,22 +8,33 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const employeId = searchParams.get('employe_id')
     
+    // Libérer automatiquement les assignations expirées
+    await libererAssignationsExpirees()
+    
     let query: string
     let params: any[] = []
     
     if (employeId) {
-      // Récupérer la consommation carburant d'un employé spécifique
+      // Récupérer la carte carburant assignée aujourd'hui à un employé spécifique
       query = `
         SELECT 
-          cc.*,
+          ca.carte_id as numero_carte,
+          ca.employe_id,
+          ca.date_assignation,
+          ca.date_fin,
+          ca.statut,
+          ca.created_at,
           e.nom as employe_nom,
           e.prenom as employe_prenom,
           e.matricule as employe_matricule
-        FROM carburant_consommation cc
-        LEFT JOIN employes e ON cc.employe_assigné = e.id
-        WHERE cc.employe_assigné = $1
-        ORDER BY cc.date_livraison DESC
-        LIMIT 100
+        FROM carburant_assignations ca
+        LEFT JOIN employes e ON ca.employe_id = e.id
+        WHERE ca.employe_id = $1 
+          AND ca.statut = 'active'
+          AND (ca.date_fin IS NULL OR ca.date_fin >= CURRENT_DATE)
+          AND ca.statut != 'expired'
+        ORDER BY ca.date_assignation DESC
+        LIMIT 1
       `
       params = [employeId]
     } else {
@@ -289,5 +300,64 @@ export async function DELETE(request: NextRequest) {
       { error: 'Erreur lors de la suppression de l\'assignation' },
       { status: 500 }
     )
+  }
+}
+
+// Fonction pour libérer automatiquement les assignations expirées
+async function libererAssignationsExpirees() {
+  try {
+    const pool = getPool()
+    
+    // Identifier les assignations expirées
+    const expiredQuery = `
+      SELECT id, carte_id, employe_id, date_fin
+      FROM carburant_assignations 
+      WHERE statut = 'active' 
+        AND date_fin IS NOT NULL 
+        AND date_fin < CURRENT_DATE
+    `
+    
+    const expiredResult = await pool.query(expiredQuery)
+    
+    if (expiredResult.rows.length > 0) {
+      console.log(`🔄 ${expiredResult.rows.length} assignation(s) expirée(s) détectée(s)`)
+      
+      // Désactiver les assignations expirées
+      const deactivateQuery = `
+        UPDATE carburant_assignations 
+        SET statut = 'expired',
+            updated_at = NOW(),
+            commentaires = CASE 
+              WHEN commentaires IS NULL OR commentaires = '' 
+              THEN 'Libération automatique - assignation expirée le ' || TO_CHAR(date_fin, 'DD/MM/YYYY')
+              ELSE commentaires || ' | Libération automatique - assignation expirée le ' || TO_CHAR(date_fin, 'DD/MM/YYYY')
+            END
+        WHERE statut = 'active' 
+          AND date_fin IS NOT NULL 
+          AND date_fin < CURRENT_DATE
+        RETURNING id, carte_id, employe_id, date_fin
+      `
+      
+      const deactivateResult = await pool.query(deactivateQuery)
+      
+      // Créer des mouvements d'historique pour chaque assignation libérée
+      for (const assignment of deactivateResult.rows) {
+        const movementQuery = `
+          INSERT INTO carburant_mouvements (
+            numero_carte,
+            employe_id_precedent,
+            type_mouvement,
+            motif,
+            commentaires
+          ) VALUES ($1, $2, 'liberation_automatique', 'Assignation expirée', 'Libération automatique - date de fin atteinte')
+        `
+        await pool.query(movementQuery, [assignment.carte_id, assignment.employe_id])
+      }
+      
+      console.log(`✅ ${deactivateResult.rows.length} assignation(s) libérée(s) automatiquement`)
+    }
+    
+  } catch (error) {
+    console.error('❌ Erreur lors de la libération automatique des assignations:', error)
   }
 }

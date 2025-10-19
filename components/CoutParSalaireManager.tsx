@@ -694,8 +694,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     URL.revokeObjectURL(url)
   }
 
-  const totalCout = couts.reduce((sum, cout) => sum + cout.cout_total, 0)
-  const totalCharge = couts.reduce((sum, cout) => sum + cout.charge, 0)
+  const totalCout = couts.reduce((sum, cout) => {
+    const value = parseFloat(cout.cout_total || 0)
+    return sum + (isNaN(value) ? 0 : value)
+  }, 0)
 
   return (
     <div className="space-y-6">
@@ -822,7 +824,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       )}
 
       {/* Statistiques */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -841,19 +843,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
               <DollarSign className="w-5 h-5 text-green-500" />
               <div>
                 <p className="text-sm text-gray-600">Coût Total</p>
-                <p className="text-2xl font-bold">{totalCout.toLocaleString('fr-FR')}€</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-orange-500" />
-              <div>
-                <p className="text-sm text-gray-600">Charges</p>
-                <p className="text-2xl font-bold">{totalCharge.toLocaleString('fr-FR')}€</p>
+                <p className="text-2xl font-bold">{totalCout.toFixed(2)}€</p>
               </div>
             </div>
           </CardContent>

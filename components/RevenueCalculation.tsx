@@ -46,11 +46,6 @@ interface RevenueStats {
   total_recette_generale: number
 }
 
-interface InterventionStats {
-  total_cloture_terminee: number
-  avec_articles: number
-  sans_articles: number
-}
 
 interface RevenueCalculationProps {
   employees: any[]
@@ -64,7 +59,6 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
     total_recette_entreprise: 0,
     total_recette_generale: 0
   })
-  const [interventionStats, setInterventionStats] = useState<InterventionStats | null>(null)
   const [loading, setLoading] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all")
   const [dateFrom, setDateFrom] = useState("")
@@ -105,23 +99,10 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
     }
   }
 
-  const loadInterventionStats = async () => {
-    try {
-      const response = await fetch('/api/interventions-stats')
-      if (!response.ok) {
-        throw new Error('Erreur lors du chargement des statistiques')
-      }
-
-      const data = await response.json()
-      setInterventionStats(data.stats)
-    } catch (error) {
-      console.error('Erreur lors du chargement des statistiques:', error)
-    }
-  }
 
   useEffect(() => {
+    console.log('Changement de filtres détecté:', { selectedEmployee, dateFrom, dateTo, selectedGrille })
     loadRevenueData()
-    loadInterventionStats()
   }, [selectedEmployee, dateFrom, dateTo, selectedGrille])
 
   // Recharger les données quand on revient sur l'onglet
@@ -129,14 +110,12 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         loadRevenueData()
-        loadInterventionStats()
       }
     }
 
     const handleReloadRevenue = () => {
       console.log('🔄 Rechargement des recettes demandé...')
       loadRevenueData()
-      loadInterventionStats()
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -233,8 +212,12 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                 id="dateFrom"
                 type="date"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => {
+                  console.log('Date début changée:', e.target.value)
+                  setDateFrom(e.target.value)
+                }}
                 placeholder="Filtrer par date de clôture"
+                className="glass-card border border-white/20"
               />
             </div>
             
@@ -244,8 +227,12 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                 id="dateTo"
                 type="date"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => {
+                  console.log('Date fin changée:', e.target.value)
+                  setDateTo(e.target.value)
+                }}
                 placeholder="Filtrer par date de clôture"
+                className="glass-card border border-white/20"
               />
             </div>
             
@@ -266,7 +253,10 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
             <div className="flex items-end gap-2">
               <Button
                 variant="outline"
-                onClick={loadRevenueData}
+                onClick={() => {
+                  console.log('Actualisation avec dates:', { dateFrom, dateTo })
+                  loadRevenueData()
+                }}
                 disabled={loading}
                 className="flex-1"
               >
@@ -276,12 +266,15 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
               <Button
                 variant="outline"
                 onClick={() => {
-                  loadRevenueData()
-                  loadInterventionStats()
+                  setDateFrom("")
+                  setDateTo("")
+                  setSelectedEmployee("all")
+                  setSelectedGrille("all")
+                  console.log('Filtres réinitialisés')
                 }}
                 disabled={loading}
                 className="px-3"
-                title="Actualiser les recettes et statistiques"
+                title="Réinitialiser les filtres"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
@@ -302,36 +295,6 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
           </CardDescription>
         </CardHeader>
         
-        {/* Statistiques détaillées */}
-        {interventionStats && (
-          <div className="px-6 pb-4">
-            <div className="p-4 bg-blue-50/20 rounded-lg border border-blue-200/30">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {interventionStats.total_cloture_terminee}
-                  </div>
-                  <div className="text-gray-600">Total CLOTURE TERMINEE</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
-                    {interventionStats.avec_articles}
-                  </div>
-                  <div className="text-gray-600">Avec Articles</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">
-                    {interventionStats.sans_articles}
-                  </div>
-                  <div className="text-gray-600">Sans Articles</div>
-                </div>
-              </div>
-              <div className="mt-3 text-xs text-gray-500 text-center">
-                💡 La différence entre "Total" ({interventionStats.total_cloture_terminee}) et "Avec Articles" ({interventionStats.avec_articles}) = {interventionStats.sans_articles} interventions sans articles
-              </div>
-            </div>
-          </div>
-        )}
         <CardContent>
           {loading ? (
             <div className="text-center py-8">

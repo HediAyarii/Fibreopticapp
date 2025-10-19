@@ -76,3 +76,8 @@ async function testAllCarburantAPIs() {
 }
 
 testAllCarburantAPIs()
+
+
+
+
+

@@ -66,3 +66,8 @@ async function checkCarburantAssignationsStructure() {
 }
 
 checkCarburantAssignationsStructure()
+
+
+
+
+

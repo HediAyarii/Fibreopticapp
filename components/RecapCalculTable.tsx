@@ -16,6 +16,7 @@ interface RecapCalculData {
   employe_prenom: string
   employe_matricule: string
   recettes_generes: number
+  recettes_entreprise: number
   cout_carburant: number
   cout_materiel: number
   cout_impots: number
@@ -94,6 +95,10 @@ export function RecapCalculTable() {
     return recapData.reduce((sum, item: any) => sum + (item.recettes_generes || 0), 0)
   }
 
+  const getTotalRecettesEntreprise = () => {
+    return recapData.reduce((sum, item: any) => sum + (item.recettes_entreprise || 0), 0)
+  }
+
   const getTotalCouts = () => {
     return recapData.reduce((sum, item: any) => sum + (item.total_couts || 0), 0)
   }
@@ -104,7 +109,7 @@ export function RecapCalculTable() {
 
   const getMoyenneMarge = () => {
     if (recapData.length === 0) return 0
-    const totalMarge = recapData.reduce((sum, item: any) => sum + (item.marge_beneficiaire || 0), 0)
+    const totalMarge = recapData.reduce((sum: number, item: any) => sum + (Number(item.marge_beneficiaire) || 0), 0)
     return totalMarge / recapData.length
   }
 
@@ -261,7 +266,7 @@ export function RecapCalculTable() {
         </div>
 
         {/* Statistiques globales */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -271,7 +276,22 @@ export function RecapCalculTable() {
                 <div>
                   <p className="text-sm text-muted-foreground">Recettes Totales</p>
                   <p className="text-2xl font-bold text-green-500">
-                    {formatCurrency(getTotalRecettes())}
+                    {formatCurrency(Number(getTotalRecettes()))}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card border border-white/20">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-500/10 rounded-lg">
+                  <BarChart3 className="w-5 h-5 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Recettes Entreprise</p>
+                  <p className="text-2xl font-bold text-blue-500">
+                    {formatCurrency(Number(getTotalRecettesEntreprise()))}
                   </p>
                 </div>
               </div>
@@ -286,7 +306,7 @@ export function RecapCalculTable() {
                 <div>
                   <p className="text-sm text-muted-foreground">Coûts Totaux</p>
                   <p className="text-2xl font-bold text-red-500">
-                    {formatCurrency(getTotalCouts())}
+                    {formatCurrency(Number(getTotalCouts()))}
                   </p>
                 </div>
               </div>
@@ -301,7 +321,7 @@ export function RecapCalculTable() {
                 <div>
                   <p className="text-sm text-muted-foreground">Bénéfice Net</p>
                   <p className={`text-2xl font-bold ${getBeneficeColor(getTotalBenefice())}`}>
-                    {formatCurrency(getTotalBenefice())}
+                    {formatCurrency(Number(getTotalBenefice()))}
                   </p>
                 </div>
               </div>
@@ -330,6 +350,7 @@ export function RecapCalculTable() {
             <thead>
               <tr className="border-b border-white/10">
                 <th className="text-left p-3 font-medium text-muted-foreground">Employé</th>
+                <th className="text-right p-3 font-medium text-muted-foreground">Recettes Entreprise</th>
                 <th className="text-right p-3 font-medium text-muted-foreground">Recettes</th>
                 <th className="text-right p-3 font-medium text-muted-foreground">Carburant</th>
                 <th className="text-right p-3 font-medium text-muted-foreground">Matériel</th>
@@ -343,7 +364,7 @@ export function RecapCalculTable() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="text-center p-8">
+                  <td colSpan={11} className="text-center p-8">
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
                       Chargement...
@@ -352,7 +373,7 @@ export function RecapCalculTable() {
                 </tr>
               ) : recapData.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center p-8 text-muted-foreground">
+                  <td colSpan={11} className="text-center p-8 text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
                       <Calculator className="w-8 h-8 text-muted-foreground" />
                       <div>
@@ -377,6 +398,11 @@ export function RecapCalculTable() {
                       <div className="text-sm text-muted-foreground">
                         {employee.employe_matricule}
                       </div>
+                    </td>
+                    <td className="p-3 text-right">
+                      <span className="text-sm font-medium text-blue-600">
+                        {formatCurrency(employee.recettes_entreprise)}
+                      </span>
                     </td>
                     <td className="p-3 text-right">
                       <span className="text-sm font-medium text-green-600">

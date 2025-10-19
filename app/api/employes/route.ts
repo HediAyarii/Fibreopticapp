@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/database'
+// import { broadcastEmployeeUpdate, broadcastPersonalDataUpdate } from '../employees-updates/route' // Supprimé pour éviter les erreurs de build
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -41,6 +42,8 @@ export async function GET() {
         prime_performance,
         penalites_total,
         date_derniere_evaluation,
+        rib_salaire,
+        rib2,
         created_at,
         updated_at
       FROM employes 
@@ -190,7 +193,9 @@ export async function PUT(request: NextRequest) {
       heures_supplementaires: 'numeric',
       prime_performance: 'numeric',
       penalites_total: 'numeric',
-      date_derniere_evaluation: 'date'
+      date_derniere_evaluation: 'date',
+      rib_salaire: 'text',
+      rib2: 'text'
     }
 
     Object.entries(updateData).forEach(([key, value]) => {
@@ -222,6 +227,9 @@ export async function PUT(request: NextRequest) {
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
     }
+
+    // Diffusion des mises à jour supprimée (utilise le polling automatique à la place)
+    console.log(`📡 Employé ${result.rows[0].prenom} ${result.rows[0].nom} mis à jour (ID: ${id})`)
 
     // Synchronisation automatique des taxes si pourcentage_taxe a été modifié
     if (updateData.pourcentage_taxe !== undefined) {

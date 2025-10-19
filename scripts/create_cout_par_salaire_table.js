@@ -64,3 +64,8 @@ async function createCoutParSalaireTable() {
 }
 
 createCoutParSalaireTable()
+
+
+
+
+

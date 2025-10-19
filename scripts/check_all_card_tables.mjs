@@ -138,3 +138,8 @@ async function checkAllCardTables() {
 }
 
 checkAllCardTables()
+
+
+
+
+

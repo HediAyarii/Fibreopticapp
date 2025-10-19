@@ -5,7 +5,47 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    // Requête pour obtenir les statistiques des interventions CLOTURE TERMINEE
+    const { searchParams } = new URL(request.url)
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
+
+    // Construire les filtres de date pour les interventions
+    const queryParams: any[] = []
+    let paramIndex = 1
+
+    let dateFilter = ""
+    if (startDate) {
+      dateFilter += ` AND (
+        (cloture_tech IS NOT NULL AND cloture_tech != '' AND 
+         (TO_DATE(cloture_tech, 'DD.MM.YYYY') >= $${paramIndex} OR 
+          TO_DATE(cloture_tech, 'YYYY-MM-DD') >= $${paramIndex} OR
+          cloture_tech >= $${paramIndex})) OR
+        (cloture_hotline IS NOT NULL AND cloture_hotline != '' AND 
+         (TO_DATE(cloture_hotline, 'DD.MM.YYYY') >= $${paramIndex} OR 
+          TO_DATE(cloture_hotline, 'YYYY-MM-DD') >= $${paramIndex} OR
+          cloture_hotline >= $${paramIndex})) OR
+        (cloture_tech IS NULL AND cloture_hotline IS NULL AND date_rdv >= $${paramIndex})
+      )`
+      queryParams.push(startDate)
+      paramIndex++
+    }
+    if (endDate) {
+      dateFilter += ` AND (
+        (cloture_tech IS NOT NULL AND cloture_tech != '' AND 
+         (TO_DATE(cloture_tech, 'DD.MM.YYYY') <= $${paramIndex} OR 
+          TO_DATE(cloture_tech, 'YYYY-MM-DD') <= $${paramIndex} OR
+          cloture_tech <= $${paramIndex})) OR
+        (cloture_hotline IS NOT NULL AND cloture_hotline != '' AND 
+         (TO_DATE(cloture_hotline, 'DD.MM.YYYY') <= $${paramIndex} OR 
+          TO_DATE(cloture_hotline, 'YYYY-MM-DD') <= $${paramIndex} OR
+          cloture_hotline <= $${paramIndex})) OR
+        (cloture_tech IS NULL AND cloture_hotline IS NULL AND date_rdv <= $${paramIndex})
+      )`
+      queryParams.push(endDate)
+      paramIndex++
+    }
+
+    // Requête pour obtenir les statistiques des interventions CLOTURE TERMINEE avec filtrage par date
     const statsQuery = `
       SELECT 
         COUNT(*) as total_cloture_terminee,
@@ -22,10 +62,10 @@ export async function GET(request: NextRequest) {
           THEN 1 
         END) as sans_articles
       FROM interventions 
-      WHERE statut = 'CLOTURE TERMINEE'
+      WHERE statut = 'CLOTURE TERMINEE'${dateFilter}
     `
 
-    const result = await query(statsQuery)
+    const result = await query(statsQuery, queryParams)
     const stats = result.rows[0]
 
     return NextResponse.json({

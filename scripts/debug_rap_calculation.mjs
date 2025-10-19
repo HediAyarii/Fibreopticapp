@@ -129,3 +129,8 @@ async function debugRapCalculation() {
 }
 
 debugRapCalculation()
+
+
+
+
+

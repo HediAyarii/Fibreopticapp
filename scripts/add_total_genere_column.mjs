@@ -61,3 +61,8 @@ async function addTotalGenereColumn() {
 }
 
 addTotalGenereColumn()
+
+
+
+
+

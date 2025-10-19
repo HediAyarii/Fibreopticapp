@@ -191,7 +191,9 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
     date_embauche: employee?.date_embauche || '',
     salaire_base: employee?.salaire_base || '',
     statut: employee?.statut || 'actif',
-    niveau_acces: employee?.niveau_acces || 'technicien'
+    niveau_acces: employee?.niveau_acces || 'technicien',
+    rib_salaire: employee?.rib_salaire || '',
+    rib2: employee?.rib2 || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -333,6 +335,35 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
                 <SelectItem value="suspendu">Suspendu</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="rib_salaire">RIB Salaire</Label>
+            <Input
+              id="rib_salaire"
+              value={formData.rib_salaire}
+              onChange={(e) => handleChange('rib_salaire', e.target.value)}
+              placeholder="FR76 1234 5678 9012 3456 7890 123"
+              className="font-mono"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              RIB principal pour les salaires
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="rib2">RIB Secondaire</Label>
+            <Input
+              id="rib2"
+              value={formData.rib2}
+              onChange={(e) => handleChange('rib2', e.target.value)}
+              placeholder="FR76 9876 5432 1098 7654 3210 987"
+              className="font-mono"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              RIB alternatif (optionnel)
+            </p>
           </div>
         </div>
 

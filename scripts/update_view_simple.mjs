@@ -1,0 +1,52 @@
+import { query } from '../lib/database.ts'
+
+async function updateView() {
+  try {
+    console.log('🔄 Mise à jour de la vue documents_administratifs...')
+    
+    await query(`
+      CREATE OR REPLACE VIEW v_documents_administratifs AS
+      SELECT
+          da.id,
+          da.employe_id,
+          e.prenom,
+          e.nom,
+          e.matricule,
+          da.type_document,
+          da.statut,
+          da.date_demande,
+          da.date_traitement,
+          da.commentaire_demande,
+          da.commentaire_admin,
+          da.fichier_jointe,
+          da.chemin_fichier,
+          da.taille_fichier,
+          da.type_fichier,
+          da.created_at,
+          da.updated_at,
+          CASE
+              WHEN da.statut = 'en_attente' THEN 'En attente'
+              WHEN da.statut = 'traite' THEN 'Traité'
+              WHEN da.statut = 'rejete' THEN 'Rejeté'
+              ELSE da.statut
+          END as statut_libelle,
+          CASE
+              WHEN da.type_document = 'fiche_paie' THEN 'Fiche de Paie'
+              WHEN da.type_document = 'attestation_travail' THEN 'Attestation de Travail'
+              WHEN da.type_document LIKE 'autre:%' THEN 'Autre: ' || SUBSTRING(da.type_document FROM 7)
+              WHEN da.type_document = 'autre' THEN 'Autre'
+              ELSE da.type_document
+          END as type_document_libelle
+      FROM documents_administratifs da
+      JOIN employes e ON da.employe_id = e.id
+      ORDER BY da.date_demande DESC;
+    `)
+    
+    console.log('✅ Vue mise à jour avec succès')
+    
+  } catch (error) {
+    console.error('❌ Erreur:', error)
+  }
+}
+
+updateView()

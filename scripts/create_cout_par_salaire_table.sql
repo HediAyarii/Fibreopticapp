@@ -26,3 +26,8 @@ CREATE TRIGGER update_cout_par_salaire_updated_at
 
 -- Commentaire sur la table
 COMMENT ON TABLE cout_par_salaire IS 'Coûts par salarié avec répartition par mois et année';
+
+
+
+
+

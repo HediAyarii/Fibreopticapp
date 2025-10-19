@@ -160,3 +160,8 @@ async function migrateCarburantAssignations() {
 }
 
 migrateCarburantAssignations()
+
+
+
+
+

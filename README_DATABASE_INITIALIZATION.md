@@ -127,3 +127,8 @@ Après l'initialisation complète, vous devriez avoir :
 - ✅ Tous les tarifs d'entreprise insérés
 - ✅ Toutes les catégories de coûts créées
 - ✅ Aucune erreur dans les APIs
+
+
+
+
+

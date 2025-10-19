@@ -25,12 +25,13 @@ export async function POST(request: NextRequest) {
 
     // Vérifier les conflits d'assignation
     const conflitsQuery = `
-      SELECT * FROM detecter_conflits_assignation($1, $2, $3)
+      SELECT * FROM detecter_conflits_assignation($1, $2, $3, $4)
     `
     const conflits = await query(conflitsQuery, [
       employe_id,  // employe_id en premier
       numero_carte,  // carte_id en deuxième
-      date_debut   // date_debut en troisième
+      date_debut,   // date_debut en troisième
+      date_fin_prevue  // date_fin en quatrième
     ])
 
     // Vérifier s'il y a vraiment un conflit

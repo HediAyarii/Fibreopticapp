@@ -36,6 +36,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import { AdminDocumentsManager } from "@/components/AdminDocumentsManager"
 import { MaterialForm, EmployeeForm } from "@/components/Forms"
 import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
 import { AffectationTest } from "@/components/AffectationTest"
@@ -47,7 +48,9 @@ import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
 import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
+import FailureStatistics from "@/components/FailureStatistics"
 import EmployeeSyncManager from "@/components/EmployeeSyncManager"
+// import { useEmployeeUpdates } from "@/hooks/useEmployeeUpdates" // Désactivé pour éviter les erreurs de build
 import {
   Building2,
   Users,
@@ -235,7 +238,9 @@ export default function EmployeeTracker() {
     numInter: '',
     client: '',
     grille: '',
-    sansArticles: false
+    sansArticles: false,
+    typeIntervention: '',
+    technicien: ''
   })
   const [filteredInterventions, setFilteredInterventions] = useState<any[]>([])
   const [duplicates, setDuplicates] = useState<any[]>([])
@@ -304,6 +309,61 @@ export default function EmployeeTracker() {
   const [fuelCurrentPage, setFuelCurrentPage] = useState(1)
   const [fuelItemsPerPage, setFuelItemsPerPage] = useState(25)
 
+  // États pour les mises à jour en temps réel
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null)
+  const [updateNotification, setUpdateNotification] = useState<string | null>(null)
+
+  // Fonctions de gestion des mises à jour SSE
+  const handleEmployeeUpdate = (update: any) => {
+    console.log('📡 Mise à jour employé reçue:', update)
+    setLastUpdateTime(new Date())
+    
+    if (update.type === 'employee_updated' && update.employeeData) {
+      // Mettre à jour l'employé dans la liste locale
+      setEmployees(prevEmployees => 
+        prevEmployees.map(emp => 
+          emp.id === update.employeeId 
+            ? { ...emp, ...update.employeeData }
+            : emp
+        )
+      )
+      
+      setUpdateNotification(`Employé ${update.employeeData.prenom} ${update.employeeData.nom} mis à jour`)
+      
+      // Masquer la notification après 3 secondes
+      setTimeout(() => setUpdateNotification(null), 3000)
+    }
+  }
+
+  const handlePersonalDataUpdate = (update: any) => {
+    console.log('📡 Mise à jour données personnelles reçue:', update)
+    setLastUpdateTime(new Date())
+    
+    // Mettre à jour l'employé dans la liste locale
+    setEmployees(prevEmployees => 
+      prevEmployees.map(emp => 
+        emp.id === update.employeeId 
+          ? { ...emp, [update.field]: update.newValue }
+          : emp
+      )
+    )
+    
+    setUpdateNotification(`Données personnelles de l'employé ID ${update.employeeId} mises à jour`)
+    
+    // Masquer la notification après 3 secondes
+    setTimeout(() => setUpdateNotification(null), 3000)
+  }
+
+  // Hook pour les mises à jour en temps réel (désactivé temporairement)
+  // const { isConnected } = useEmployeeUpdates({
+  //   onEmployeeUpdate: handleEmployeeUpdate,
+  //   onPersonalDataUpdate: handlePersonalDataUpdate,
+  //   enabled: isLoggedIn
+  // })
+
+  // Solution alternative : polling automatique plus fréquent
+  const [isConnected, setIsConnected] = useState(true)
+
   // Fonction de synchronisation automatique des employés
   const autoSyncEmployees = async () => {
     if (autoSyncTriggered) return // Éviter les appels multiples
@@ -342,6 +402,14 @@ export default function EmployeeTracker() {
       loadTarifsFromDatabase()
       // Synchronisation automatique des employés
       autoSyncEmployees()
+      
+      // Mise à jour automatique des données toutes les 2 secondes pour la synchronisation en temps réel
+      const dataInterval = setInterval(() => {
+        console.log('🔄 Mise à jour automatique des données admin...')
+        loadAllCRUDData()
+      }, 2000) // 2 secondes pour une synchronisation plus rapide
+      
+      return () => clearInterval(dataInterval)
     }
   }, [isLoggedIn])
 
@@ -625,6 +693,24 @@ export default function EmployeeTracker() {
       })
     }
 
+    // Filter by intervention type
+    if (interventionFilters.typeIntervention) {
+      filtered = filtered.filter(intervention => 
+        intervention.type_intervention && 
+        intervention.type_intervention.toString().toLowerCase().includes(interventionFilters.typeIntervention.toLowerCase())
+      )
+    }
+
+    // Filter by technician
+    if (interventionFilters.technicien) {
+      filtered = filtered.filter(intervention => {
+        const nom = intervention.nom_technicien || ''
+        const prenom = intervention.prenom_technicien || ''
+        const fullName = `${prenom} ${nom}`.trim().toLowerCase()
+        return fullName.includes(interventionFilters.technicien.toLowerCase())
+      })
+    }
+
     setFilteredInterventions(filtered)
   }
 
@@ -643,7 +729,9 @@ export default function EmployeeTracker() {
       numInter: '',
       client: '',
       grille: '',
-      sansArticles: false
+      sansArticles: false,
+      typeIntervention: '',
+      technicien: ''
     })
     setFilteredInterventions([])
   }
@@ -666,6 +754,29 @@ export default function EmployeeTracker() {
       .map(client => client.toString())
     
     return [...new Set(clients)].sort()
+  }
+
+  // Get unique intervention types for filter dropdown
+  const getUniqueInterventionTypes = () => {
+    const types = interventions
+      .map(intervention => intervention.type_intervention)
+      .filter(type => type && type.trim() !== '')
+      .map(type => type.toString())
+    
+    return [...new Set(types)].sort()
+  }
+
+  // Get unique technicians for filter dropdown
+  const getUniqueTechnicians = () => {
+    const technicians = interventions
+      .map(intervention => {
+        const nom = intervention.nom_technicien || ''
+        const prenom = intervention.prenom_technicien || ''
+        return `${prenom} ${nom}`.trim()
+      })
+      .filter(technician => technician.trim() !== '')
+    
+    return [...new Set(technicians)].sort()
   }
 
   // Check and remove duplicates
@@ -856,7 +967,9 @@ export default function EmployeeTracker() {
               const cardData = await cardResponse.json()
               return {
                 ...employee,
-                numero_carte_actuelle: cardData.assignation?.numero_carte || null
+                numero_carte_actuelle: cardData.assignation?.numero_carte || null,
+                date_debut_assignation: cardData.assignation?.date_assignation || null,
+                date_fin_prevue_assignation: cardData.assignation?.date_fin || null
               }
             }
             return employee
@@ -2312,6 +2425,19 @@ La page va se recharger automatiquement...`)
               Récap Calcul
             </Button>
 
+            <Button
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                activeTab === "documents"
+                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                  : "glass-card border border-white/20 hover:bg-primary/5"
+              }`}
+              onClick={() => setActiveTab("documents")}
+            >
+              <FileText className="w-5 h-5" />
+              Documents
+            </Button>
+
 
                 <Button
               variant="ghost"
@@ -2339,6 +2465,7 @@ La page va se recharger automatiquement...`)
                   <span className="font-medium">Statistiques</span>
                 </Button>
 
+
                 <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
@@ -2349,7 +2476,7 @@ La page va se recharger automatiquement...`)
               onClick={() => setActiveTab("costs")}
                 >
                   <Calculator className="w-5 h-5" />
-                  <span className="font-medium">Coûts</span>
+                  <span className="font-medium">Charges</span>
                 </Button>
 
                 <Button
@@ -2362,7 +2489,7 @@ La page va se recharger automatiquement...`)
               onClick={() => setActiveTab("cout-par-salaire")}
                 >
                   <DollarSign className="w-5 h-5" />
-                  <span className="font-medium">Coûts par Salarié</span>
+                  <span className="font-medium">Charges par Salarié</span>
                 </Button>
 
                 <Button
@@ -2420,7 +2547,7 @@ La page va se recharger automatiquement...`)
               }}
                 >
                   <TrendingUp className="w-5 h-5" />
-                  Recette Générée
+                  BENEFICE BRUTE
                 </Button>
 
                 <Button
@@ -2468,8 +2595,18 @@ La page va se recharger automatiquement...`)
 
         <main className="flex-1 p-8">
           {/* Dashboard Tab */}
-          {activeTab === "dashboard" && (
-            <div className="space-y-8">
+        {/* Notification de mise à jour */}
+        {updateNotification && (
+          <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg animate-in slide-in-from-right">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              <span className="text-sm font-medium">{updateNotification}</span>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "dashboard" && (
+          <div className="space-y-8">
                 <div className="flex items-center justify-between">
                   <div>
                   <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
@@ -2595,6 +2732,22 @@ La page va se recharger automatiquement...`)
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Statistiques des Échecs */}
+              <Card className="glass-card border border-white/20 hover-lift">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                    Statistiques des Interventions Échouées
+                  </CardTitle>
+                  <CardDescription>
+                    Analyse des interventions échouées et leurs motifs par technicien
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FailureStatistics />
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -2631,6 +2784,19 @@ La page va se recharger automatiquement...`)
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Sync Taxes
                   </Button>
+                  
+                  {/* Indicateur de connexion SSE */}
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                    <span className="text-xs text-gray-500">
+                      {isConnected ? 'Temps réel' : 'Hors ligne'}
+                    </span>
+                    {lastUpdateTime && (
+                      <span className="text-xs text-gray-400">
+                        Dernière mise à jour: {lastUpdateTime.toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
                   
                   <Button 
                     variant="outline" 
@@ -3290,7 +3456,7 @@ La page va se recharger automatiquement...`)
                       </Button>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-9 gap-4">
                       {/* Filtre par statut */}
                       <div>
                         <Label htmlFor="filter-statut" className="text-sm font-medium">
@@ -3416,12 +3582,59 @@ La page va se recharger automatiquement...`)
                           </Label>
                         </div>
                       </div>
+
+                      {/* Filtre par type d'intervention */}
+                      <div>
+                        <Label htmlFor="filter-type-intervention" className="text-sm font-medium">
+                          Type Intervention
+                        </Label>
+                        <Select
+                          value={interventionFilters.typeIntervention || "all"}
+                          onValueChange={(value) => handleFilterChange('typeIntervention', value === "all" ? "" : value)}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Tous les types" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Tous les types</SelectItem>
+                            {getUniqueInterventionTypes().map((type) => (
+                              <SelectItem key={type} value={type}>
+                                {type}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Filtre par technicien */}
+                      <div>
+                        <Label htmlFor="filter-technicien" className="text-sm font-medium">
+                          Technicien
+                        </Label>
+                        <Select
+                          value={interventionFilters.technicien || "all"}
+                          onValueChange={(value) => handleFilterChange('technicien', value === "all" ? "" : value)}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Tous les techniciens" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Tous les techniciens</SelectItem>
+                            {getUniqueTechnicians().map((technician) => (
+                              <SelectItem key={technician} value={technician}>
+                                {technician}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
 
                     {/* Résumé des filtres actifs */}
                     {(interventionFilters.statut || interventionFilters.numInter || 
                       interventionFilters.dateRdvStart || interventionFilters.dateRdvEnd || 
-                      interventionFilters.client || interventionFilters.grille || interventionFilters.sansArticles) && (
+                      interventionFilters.client || interventionFilters.grille || interventionFilters.sansArticles ||
+                      interventionFilters.typeIntervention || interventionFilters.technicien) && (
                       <div className="mt-4 p-3 bg-blue-50/20 rounded-lg border border-blue-200/30">
                         <div className="flex items-center gap-2 text-sm text-blue-700">
                           <span className="font-medium">Filtres actifs:</span>
@@ -3448,6 +3661,16 @@ La page va se recharger automatiquement...`)
                           {interventionFilters.sansArticles && (
                             <Badge variant="secondary" className="text-xs">
                               Sans Articles
+                            </Badge>
+                          )}
+                          {interventionFilters.typeIntervention && (
+                            <Badge variant="secondary" className="text-xs">
+                              Type: {interventionFilters.typeIntervention}
+                            </Badge>
+                          )}
+                          {interventionFilters.technicien && (
+                            <Badge variant="secondary" className="text-xs">
+                              Technicien: {interventionFilters.technicien}
                             </Badge>
                           )}
                           {interventionFilters.dateRdvStart && (
@@ -4500,6 +4723,21 @@ La page va se recharger automatiquement...`)
             </div>
           )}
 
+          {/* Documents Administratifs Section */}
+          {activeTab === "documents" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold">Documents Administratifs</h2>
+                  <p className="text-muted-foreground">Gestion des demandes de documents des techniciens</p>
+                </div>
+              </div>
+
+              {/* Admin Documents Manager */}
+              <AdminDocumentsManager />
+            </div>
+          )}
+
 
            {/* Penalties Section */}
           {activeTab === "penalties" && (
@@ -4636,19 +4874,20 @@ La page va se recharger automatiquement...`)
           </div>
         )}
 
+
         {activeTab === "costs" && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-3xl font-bold">Calcul des Coûts</h2>
-                <p className="text-muted-foreground">Gestion des coûts fixes et variables</p>
+                <h2 className="text-3xl font-bold">Gestion des Charges</h2>
+                <p className="text-muted-foreground">Gestion des charges fixes et variables</p>
               </div>
               <Button 
                 onClick={async () => {
                   try {
                     const response = await fetch('/api/setup-costs', { method: 'POST' })
                     if (response.ok) {
-                      alert('✅ Tables de coûts initialisées avec succès')
+                      alert('✅ Tables de charges initialisées avec succès')
                       window.location.reload()
                     } else {
                       alert('❌ Erreur lors de l\'initialisation')
@@ -4666,12 +4905,12 @@ La page va se recharger automatiquement...`)
               </Button>
             </div>
             
-            {/* Interface de gestion des coûts */}
+            {/* Interface de gestion des charges */}
             <CostsManagement />
           </div>
         )}
 
-        {/* Section Coûts par Salarié */}
+        {/* Section Charges par Salarié */}
         {activeTab === "cout-par-salaire" && (
           <div className="space-y-6">
             <CoutParSalaireManager />
@@ -5332,8 +5571,21 @@ La page va se recharger automatiquement...`)
                    <p className="text-sm text-gray-600">{selectedEmployee.plaque_vehicule || 'N/A'}</p>
                  </div>
                  <div>
-                   <Label className="text-sm font-medium">Numéro Carte Carburant</Label>
-                   <p className="text-sm text-gray-600">{selectedEmployee.numero_carte_carburant || 'N/A'}</p>
+                   <Label className="text-sm font-medium">RIB Salaire</Label>
+                   <p className="text-sm text-gray-600 font-mono">{selectedEmployee.rib_salaire || 'Non renseigné'}</p>
+                 </div>
+                 <div>
+                   <Label className="text-sm font-medium">RIB Secondaire</Label>
+                   <p className="text-sm text-gray-600 font-mono">{selectedEmployee.rib2 || 'Non renseigné'}</p>
+                 </div>
+                 <div>
+                   <Label className="text-sm font-medium">Carte Carburant Assignée</Label>
+                   <p className="text-sm text-gray-600">{selectedEmployee.numero_carte_actuelle || 'Aucune carte assignée'}</p>
+                   {selectedEmployee.numero_carte_actuelle && (
+                     <p className="text-xs text-gray-500 mt-1">
+                       📅 Assignée le {selectedEmployee.date_debut_assignation ? new Date(selectedEmployee.date_debut_assignation).toLocaleDateString('fr-FR') : 'Date inconnue'}
+                     </p>
+                   )}
                  </div>
                  <div>
                    <Label className="text-sm font-medium">Pourcentage Taxe</Label>
@@ -6088,7 +6340,7 @@ La page va se recharger automatiquement...`)
   )
 }
 
-// Composant de gestion des coûts
+// Composant de gestion des charges
 function CostsManagement() {
   const [fixedCosts, setFixedCosts] = useState<any[]>([])
   const [variableCosts, setVariableCosts] = useState<any[]>([])
@@ -6118,7 +6370,7 @@ function CostsManagement() {
       setVariableCosts(variableData.costs || [])
       setCategories(categoriesData.categories || [])
     } catch (error) {
-      console.error('Erreur chargement coûts:', error)
+      console.error('Erreur chargement charges:', error)
     } finally {
       setLoading(false)
     }
@@ -6157,12 +6409,12 @@ function CostsManagement() {
         setEditingCost(null)
       }
     } catch (error) {
-      console.error('Erreur sauvegarde coût:', error)
+      console.error('Erreur sauvegarde charge:', error)
     }
   }
 
   const handleDeleteCost = async (id: number, type: 'fixed' | 'variable') => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer ce coût ?')) return
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette charge ?')) return
 
     try {
       const response = await fetch(`/api/costs?id=${id}&type=${type}`, {
@@ -6173,7 +6425,7 @@ function CostsManagement() {
         await loadData()
       }
     } catch (error) {
-      console.error('Erreur suppression coût:', error)
+      console.error('Erreur suppression charge:', error)
     }
   }
 
@@ -6217,11 +6469,11 @@ function CostsManagement() {
         </div>
       </div>
 
-      {/* Résumé des coûts */}
+      {/* Résumé des charges */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Coûts Fixes</CardTitle>
+            <CardTitle className="text-sm font-medium">Charges Fixes</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{totalFixed.toLocaleString('fr-FR')} €</div>
@@ -6231,7 +6483,7 @@ function CostsManagement() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Coûts Variables</CardTitle>
+            <CardTitle className="text-sm font-medium">Charges Variables</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">{totalVariable.toLocaleString('fr-FR')} €</div>
@@ -6245,18 +6497,18 @@ function CostsManagement() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{totalCosts.toLocaleString('fr-FR')} €</div>
-            <p className="text-xs text-muted-foreground">Coûts totaux</p>
+            <p className="text-xs text-muted-foreground">Charges totales</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Coûts fixes */}
+      {/* Charges fixes */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Coûts Fixes</CardTitle>
-              <CardDescription>Coûts récurrents chaque mois</CardDescription>
+              <CardTitle>Charges Fixes</CardTitle>
+              <CardDescription>Charges récurrentes chaque mois</CardDescription>
             </div>
             <Button onClick={() => setShowFixedModal(true)}>
               <UserPlus className="w-4 h-4 mr-2" />
@@ -6299,13 +6551,13 @@ function CostsManagement() {
         </CardContent>
       </Card>
 
-      {/* Coûts variables */}
+      {/* Charges variables */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Coûts Variables</CardTitle>
-              <CardDescription>Coûts spécifiques à {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}</CardDescription>
+              <CardTitle>Charges Variables</CardTitle>
+              <CardDescription>Charges spécifiques à {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}</CardDescription>
             </div>
             <Button onClick={() => setShowVariableModal(true)}>
               <UserPlus className="w-4 h-4 mr-2" />
@@ -6348,7 +6600,7 @@ function CostsManagement() {
         </CardContent>
       </Card>
 
-      {/* Modals pour ajouter/modifier les coûts */}
+      {/* Modals pour ajouter/modifier les charges */}
       <CostModal
         isOpen={showFixedModal}
         onClose={() => {
@@ -6420,19 +6672,19 @@ function CostModal({ isOpen, onClose, onSave, categories, editingCost, type }: {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {editingCost ? 'Modifier' : 'Ajouter'} un coût {type === 'fixed' ? 'fixe' : 'variable'}
+            {editingCost ? 'Modifier' : 'Ajouter'} une charge {type === 'fixed' ? 'fixe' : 'variable'}
           </DialogTitle>
           <DialogDescription>
             {type === 'fixed' 
-              ? 'Les coûts fixes sont récurrents chaque mois'
-              : 'Les coûts variables sont spécifiques au mois sélectionné'
+              ? 'Les charges fixes sont récurrentes chaque mois'
+              : 'Les charges variables sont spécifiques au mois sélectionné'
             }
           </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="name">Nom du coût</Label>
+            <Label htmlFor="name">Nom de la charge</Label>
             <Input
               id="name"
               value={formData.name}
