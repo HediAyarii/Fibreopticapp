@@ -10,16 +10,16 @@ export async function PATCH(
     const { is_active } = await request.json()
 
     // Vérifier si l'utilisateur existe
-    const existingUser = await query('SELECT id, role FROM users WHERE id = $1', [userId])
+    const existingUser = await query('SELECT id, role_id FROM users WHERE id = $1', [userId])
     if (existingUser.rows.length === 0) {
       return NextResponse.json({ error: 'Utilisateur non trouvé' }, { status: 404 })
     }
 
     // Empêcher la désactivation du dernier admin
-    if (existingUser.rows[0].role === 'admin' && !is_active) {
+    if (existingUser.rows[0].role_id === 1 && !is_active) {
       const activeAdminCount = await query(
-        'SELECT COUNT(*) as count FROM users WHERE role = $1 AND is_active = true',
-        ['admin']
+        'SELECT COUNT(*) as count FROM users WHERE role_id = $1 AND is_active = true',
+        [1]
       )
       if (parseInt(activeAdminCount.rows[0].count) <= 1) {
         return NextResponse.json({ error: 'Impossible de désactiver le dernier administrateur actif' }, { status: 400 })

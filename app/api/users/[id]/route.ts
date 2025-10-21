@@ -2,20 +2,59 @@ import { NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 import bcrypt from 'bcryptjs'
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const userId = parseInt(params.id)
+
+    // Récupérer les détails de l'utilisateur
+    const result = await query(`
+      SELECT 
+        u.id,
+        u.username,
+        u.email,
+        u.role_id,
+        r.name as role_name,
+        u.first_name,
+        u.last_name,
+        u.is_active,
+        u.last_login,
+        u.created_at,
+        u.updated_at,
+        r.permissions
+      FROM users u
+      LEFT JOIN roles r ON u.role_id = r.id
+      WHERE u.id = $1
+    `, [userId])
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ error: 'Utilisateur non trouvé' }, { status: 404 })
+    }
+
+    const user = result.rows[0]
+    return NextResponse.json({ user })
+  } catch (error) {
+    console.error('Erreur lors de la récupération de l\'utilisateur:', error)
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const userId = parseInt(params.id)
-    const { username, email, password, role, permissions, employee_id } = await request.json()
+    const { username, email, password, role_id, first_name, last_name, permissions } = await request.json()
 
     // Validation des données
     if (!username || !email) {
       return NextResponse.json({ error: 'Nom d\'utilisateur et email requis' }, { status: 400 })
     }
 
-    if (role !== 'admin' && role !== 'employee') {
+    if (!role_id || (role_id !== 1 && role_id !== 2)) {
       return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 })
     }
 
@@ -38,9 +77,9 @@ export async function PUT(
     // Préparer la requête de mise à jour
     let updateQuery = `
       UPDATE users 
-      SET username = $1, email = $2, role = $3, permissions = $4, employee_id = $5, updated_at = CURRENT_TIMESTAMP
+      SET username = $1, email = $2, role_id = $3, first_name = $4, last_name = $5, updated_at = CURRENT_TIMESTAMP
     `
-    const updateParams = [username, email, role, JSON.stringify({ sections: permissions || [] }), employee_id || null]
+    const updateParams = [username, email, role_id, first_name || null, last_name || null]
 
     // Si un nouveau mot de passe est fourni, l'ajouter à la requête
     if (password && password.trim() !== '') {
@@ -53,6 +92,15 @@ export async function PUT(
     updateParams.push(userId)
 
     await query(updateQuery, updateParams)
+
+    // Si c'est un employé, mettre à jour les permissions dans la table roles
+    if (role_id === 2 && permissions && permissions.length > 0) {
+      await query(`
+        UPDATE roles 
+        SET permissions = $1 
+        WHERE id = 2
+      `, [JSON.stringify({ sections: permissions })])
+    }
 
     return NextResponse.json({ message: 'Utilisateur modifié avec succès' })
   } catch (error) {
@@ -69,14 +117,14 @@ export async function DELETE(
     const userId = parseInt(params.id)
 
     // Vérifier si l'utilisateur existe
-    const existingUser = await query('SELECT id, role FROM users WHERE id = $1', [userId])
+    const existingUser = await query('SELECT id, role_id FROM users WHERE id = $1', [userId])
     if (existingUser.rows.length === 0) {
       return NextResponse.json({ error: 'Utilisateur non trouvé' }, { status: 404 })
     }
 
     // Empêcher la suppression du dernier admin
-    if (existingUser.rows[0].role === 'admin') {
-      const adminCount = await query('SELECT COUNT(*) as count FROM users WHERE role = $1', ['admin'])
+    if (existingUser.rows[0].role_id === 1) {
+      const adminCount = await query('SELECT COUNT(*) as count FROM users WHERE role_id = $1', [1])
       if (parseInt(adminCount.rows[0].count) <= 1) {
         return NextResponse.json({ error: 'Impossible de supprimer le dernier administrateur' }, { status: 400 })
       }

@@ -88,17 +88,30 @@ export default function UserManagement() {
       const response = await fetch('/api/sections')
       const data = await response.json()
       if (response.ok) {
-        setSections(data.sections)
-        console.log('Sections chargées:', data.sections)
+        // Filtrer les sections pour ne garder que celles qui sont visibles dans la sidebar
+        const visibleSections = data.sections.filter(section => {
+          // Exclure les sections cachées dans la sidebar
+          const hiddenSections = ['fuel', 'reports', 'employee-sync', 'compte-admin']
+          
+          // Ne pas inclure les sections cachées
+          if (hiddenSections.includes(section.section_key)) {
+            return false
+          }
+          
+          return true
+        })
+        
+        setSections(visibleSections)
+        console.log('📋 Sections disponibles pour les permissions:', visibleSections.length)
+        console.log('Sections chargées:', visibleSections)
       } else {
         console.error('Erreur API sections:', data.error)
-        // Fallback avec sections hardcodées
+        // Fallback avec sections visibles uniquement
         setSections([
           { section_key: 'dashboard', section_name: 'Tableau de Bord' },
           { section_key: 'employees', section_name: 'Employés' },
           { section_key: 'interventions', section_name: 'Interventions' },
           { section_key: 'materials', section_name: 'Matériel' },
-          { section_key: 'fuel', section_name: 'Carburant' },
           { section_key: 'fuel-consumption', section_name: 'Consommation Carburant' },
           { section_key: 'penalties', section_name: 'Pénalités' },
           { section_key: 'statistics', section_name: 'Statistiques' },
@@ -109,19 +122,17 @@ export default function UserManagement() {
           { section_key: 'recap-calcul', section_name: 'Récap Calcul' },
           { section_key: 'tarifs', section_name: 'Tarifs' },
           { section_key: 'recette-generer', section_name: 'BENEFICE BRUTE' },
-          { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' },
-          { section_key: 'compte-admin', section_name: 'Compte Admin' }
+          { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' }
         ])
       }
     } catch (error) {
       console.error('Erreur lors du chargement des sections:', error)
-      // Fallback avec sections hardcodées
+      // Fallback avec sections visibles uniquement
       setSections([
         { section_key: 'dashboard', section_name: 'Tableau de Bord' },
         { section_key: 'employees', section_name: 'Employés' },
         { section_key: 'interventions', section_name: 'Interventions' },
         { section_key: 'materials', section_name: 'Matériel' },
-        { section_key: 'fuel', section_name: 'Carburant' },
         { section_key: 'fuel-consumption', section_name: 'Consommation Carburant' },
         { section_key: 'penalties', section_name: 'Pénalités' },
         { section_key: 'statistics', section_name: 'Statistiques' },
@@ -132,8 +143,7 @@ export default function UserManagement() {
         { section_key: 'recap-calcul', section_name: 'Récap Calcul' },
         { section_key: 'tarifs', section_name: 'Tarifs' },
         { section_key: 'recette-generer', section_name: 'BENEFICE BRUTE' },
-        { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' },
-        { section_key: 'compte-admin', section_name: 'Compte Admin' }
+        { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' }
       ])
     }
   }
