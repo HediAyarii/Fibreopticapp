@@ -1215,20 +1215,6 @@ export default function EmployeeTracker() {
               </Button>
             </form>
 
-            <div className="mt-6 p-4 bg-muted rounded-lg">
-              <p className="text-sm font-medium mb-2">Comptes de démonstration :</p>
-              <div className="space-y-1 text-xs">
-                <p>
-                  <strong>Super Admin:</strong> admin@fibertech.com / admin123
-                </p>
-                <p>
-                  <strong>Chef Équipe:</strong> chef@fibertech.com / chef123
-                </p>
-                <p>
-                  <strong>Conduite:</strong> activite@fibertech.com / activite123
-                </p>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>

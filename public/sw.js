@@ -135,6 +135,46 @@ self.addEventListener('error', (event) => {
   console.error('❌ Service Worker: Erreur', event.error)
 })
 
+// Gestion des notifications push
+self.addEventListener('push', (event) => {
+  console.log('🔔 Service Worker: Notification push reçue', event.data)
+  
+  const options = {
+    body: event.data ? event.data.text() : 'Nouvelle notification',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: 'finalfibre-notification',
+    requireInteraction: true,
+    actions: [
+      {
+        action: 'open',
+        title: 'Ouvrir'
+      },
+      {
+        action: 'close',
+        title: 'Fermer'
+      }
+    ]
+  }
+  
+  event.waitUntil(
+    self.registration.showNotification('FinalFibre', options)
+  )
+})
+
+// Gestion des clics sur les notifications
+self.addEventListener('notificationclick', (event) => {
+  console.log('🖱️ Service Worker: Clic sur notification', event.action)
+  
+  event.notification.close()
+  
+  if (event.action === 'open') {
+    event.waitUntil(
+      clients.openWindow('/logintech')
+    )
+  }
+})
+
 // Gestion des messages depuis l'application
 self.addEventListener('message', (event) => {
   console.log('💬 Service Worker: Message reçu', event.data)
