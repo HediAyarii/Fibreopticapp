@@ -199,3 +199,5 @@ Le système utilise le mécanisme de polling existant :
 Le système de gestion des documents administratifs est **100% fonctionnel** et prêt à être intégré dans l'application. Tous les composants ont été testés et validés. Il ne reste plus qu'à ajouter les composants dans les interfaces existantes selon les instructions d'intégration fournies dans `README_DOCUMENTS_ADMINISTRATIFS.md`.
 
 
+
+

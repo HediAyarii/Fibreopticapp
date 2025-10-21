@@ -81,3 +81,5 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION detecter_conflits_assignation IS 'Fonction corrigée pour prendre en compte les assignations expirées. Ne considère plus les assignations avec date_fin < CURRENT_DATE comme des conflits.';
 
 
+
+

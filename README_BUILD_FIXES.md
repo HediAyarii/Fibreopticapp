@@ -120,3 +120,5 @@ node scripts/test_realtime_simple.mjs
 La solution de **polling automatique** offre une synchronisation en temps réel fiable sans les complexités des Server-Sent Events, tout en maintenant une excellente expérience utilisateur.
 
 
+
+

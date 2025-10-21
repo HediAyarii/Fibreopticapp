@@ -1185,7 +1185,8 @@ export default function EmployeeTracker() {
               Interventions
             </Button>
 
-            <Button
+            {/* Temporarily hidden - Carburant section */}
+            {/* <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "fuel"
@@ -1196,7 +1197,7 @@ export default function EmployeeTracker() {
             >
               <Fuel className="w-5 h-5" />
               Carburant
-            </Button>
+            </Button> */}
 
             <Button
               variant="ghost"
@@ -1250,7 +1251,8 @@ export default function EmployeeTracker() {
               Consommation Carburant
             </Button>
 
-            <Button
+            {/* Temporarily hidden - Rapports section */}
+            {/* <Button
               variant="ghost"
               className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
                 activeTab === "reports"
@@ -1261,7 +1263,7 @@ export default function EmployeeTracker() {
             >
               <TrendingUp className="w-5 h-5" />
               Rapports
-            </Button>
+            </Button> */}
           </nav>
         </aside>
 
@@ -1572,10 +1574,42 @@ export default function EmployeeTracker() {
                   <h2 className="text-3xl font-bold">Consommation Carburant</h2>
                   <p className="text-muted-foreground">Suivi de la consommation carburant par employé</p>
                 </div>
-                <Button variant="outline">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Importer Données
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Importer Carburant
                 </Button>
+                  </DialogTrigger>
+                  <DialogContent className="glass-card border border-white/20">
+                    <DialogHeader>
+                      <DialogTitle>Importer des Données Carburant</DialogTitle>
+                      <DialogDescription>
+                        Sélectionnez un fichier CSV ou XLSX contenant les données de consommation carburant
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="import-fuel-consumption">Fichier Carburant (CSV/XLSX)</Label>
+                        <Input
+                          id="import-fuel-consumption"
+                          type="file"
+                          accept=".csv,.xlsx"
+                          onChange={handleImportFuelConsumption}
+                          className="mt-2 glass-card border border-white/20"
+                        />
+                      </div>
+                      <Button
+                        onClick={async () => {
+                          await loadDataFromDatabase()
+                        }}
+                        className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium"
+                      >
+                        Actualiser les Données
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </div>
 
               <Card className="glass-card border border-white/20 hover-lift">
