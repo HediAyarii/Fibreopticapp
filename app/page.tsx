@@ -53,6 +53,8 @@ import AutoDetectButton from "@/components/AutoDetectButton"
 import RapAutoCorrectButton from "@/components/RapAutoCorrectButton"
 import FailureStatistics from "@/components/FailureStatistics"
 import EmployeeSyncManager from "@/components/EmployeeSyncManager"
+import UserManagement from "@/components/UserManagement"
+import { useUserPermissions } from "@/hooks/useUserPermissions"
 // import { useEmployeeUpdates } from "@/hooks/useEmployeeUpdates" // Désactivé pour éviter les erreurs de build
 import {
   Building2,
@@ -161,6 +163,9 @@ export default function EmployeeTracker() {
   const isValidArray = (data: any): data is any[] => {
     return Array.isArray(data) && data.length >= 0
   }
+
+  // Hook pour gérer les permissions
+  const { hasPermission, isAdmin, getAvailableSections } = useUserPermissions()
 
   // Helper function to safely convert to number
   const safeNumber = (value: any): number => {
@@ -1393,14 +1398,36 @@ La page va se recharger automatiquement...`)
     }
   }
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const foundUser = Object.values(users).find((u) => u.email === email && u.password === password)
-    if (foundUser) {
-      setUser(foundUser)
-      setIsLoggedIn(true)
-    } else {
-      alert("Email ou mot de passe incorrect")
+    
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setUser(data.user)
+        setIsLoggedIn(true)
+        // Sauvegarder les données utilisateur dans le localStorage
+        localStorage.setItem('currentUser', JSON.stringify(data.user))
+        // Déclencher un événement pour mettre à jour les permissions
+        window.dispatchEvent(new CustomEvent('userChanged'))
+        console.log('✅ Connexion réussie:', data.user.username)
+        console.log('📋 Permissions:', data.user.permissions)
+      } else {
+        alert(data.error || "Email ou mot de passe incorrect")
+        console.log('❌ Erreur de connexion:', data.error)
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors de la connexion:', error)
+      alert("Erreur de connexion au serveur")
     }
   }
 
@@ -2363,31 +2390,35 @@ La page va se recharger automatiquement...`)
               Tableau de Bord
               </Button>
 
-              <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                  activeTab === "employees"
-                    ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                    : "glass-card border border-white/20 hover:bg-primary/5"
-                }`}
-                onClick={() => setActiveTab("employees")}
-              >
-                <Users className="w-5 h-5" />
-              Employés
-              </Button>
-
+              {hasPermission('employees') && (
                 <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "interventions"
+                variant="ghost"
+                className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "employees"
                       ? "gradient-primary text-white shadow-lg animate-pulse-glow"
                       : "glass-card border border-white/20 hover:bg-primary/5"
                   }`}
-              onClick={() => setActiveTab("interventions")}
+                  onClick={() => setActiveTab("employees")}
                 >
-                  <FileText className="w-5 h-5" />
-              Interventions
+                  <Users className="w-5 h-5" />
+                Employés
                 </Button>
+              )}
+
+                {hasPermission('interventions') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "interventions"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("interventions")}
+                    >
+                      <FileText className="w-5 h-5" />
+                  Interventions
+                    </Button>
+                )}
 
                 {/* Temporarily hidden - Carburant section */}
                 {/* <Button
@@ -2403,98 +2434,112 @@ La page va se recharger automatiquement...`)
               Carburant
             </Button> */}
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "materials"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-                  onClick={() => setActiveTab("materials")}
-                >
-                  <Package className="w-5 h-5" />
-              Matériel
-                </Button>
+                {hasPermission('materials') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                        activeTab === "materials"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                      onClick={() => setActiveTab("materials")}
+                    >
+                      <Package className="w-5 h-5" />
+                  Matériel
+                    </Button>
+                )}
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "recap-calcul"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
-              onClick={() => setActiveTab("recap-calcul")}
-            >
-              <Calculator className="w-5 h-5" />
-              Récap Calcul
-            </Button>
+                {hasPermission('recap-calcul') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "recap-calcul"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("recap-calcul")}
+                    >
+                      <Calculator className="w-5 h-5" />
+                  Récap Calcul
+                    </Button>
+                )}
 
-            <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "documents"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
-              onClick={() => setActiveTab("documents")}
-            >
-              <FileText className="w-5 h-5" />
-              Documents
-            </Button>
-
-
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "penalties"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("penalties")}
-                >
-              <AlertTriangle className="w-5 h-5" />
-              Pénalités
-                </Button>
-
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "statistics"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("statistics")}
-                >
-                  <BarChart3 className="w-5 h-5" />
-                  <span className="font-medium">Statistiques</span>
-                </Button>
+            {hasPermission('documents') && (
+              <Button
+                variant="ghost"
+                className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                  activeTab === "documents"
+                        ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                        : "glass-card border border-white/20 hover:bg-primary/5"
+                    }`}
+                onClick={() => setActiveTab("documents")}
+                  >
+                    <FileText className="w-5 h-5" />
+                Documents
+                  </Button>
+            )}
 
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "costs"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("costs")}
-                >
-                  <Calculator className="w-5 h-5" />
-                  <span className="font-medium">Charges</span>
-                </Button>
+                {hasPermission('penalties') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "penalties"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("penalties")}
+                    >
+                      <AlertTriangle className="w-5 h-5" />
+                  Pénalités
+                    </Button>
+                )}
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "cout-par-salaire"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("cout-par-salaire")}
-                >
-                  <DollarSign className="w-5 h-5" />
-                  <span className="font-medium">Charges par Salarié</span>
-                </Button>
+                {hasPermission('statistics') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "statistics"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("statistics")}
+                    >
+                      <BarChart3 className="w-5 h-5" />
+                      <span className="font-medium">Statistiques</span>
+                    </Button>
+                )}
+
+
+                {hasPermission('costs') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "costs"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("costs")}
+                    >
+                      <Calculator className="w-5 h-5" />
+                      <span className="font-medium">Charges</span>
+                    </Button>
+                )}
+
+                {hasPermission('cout-par-salaire') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "cout-par-salaire"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("cout-par-salaire")}
+                    >
+                      <DollarSign className="w-5 h-5" />
+                      <span className="font-medium">Charges par Salarié</span>
+                    </Button>
+                )}
 
                 {/* Temporarily hidden - Sync Employés section */}
                 {/* <Button
@@ -2510,63 +2555,71 @@ La page va se recharger automatiquement...`)
                   <span className="font-medium">Sync Employés</span>
                 </Button> */}
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "claims"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("claims")}
-                >
-              <FileText className="w-5 h-5" />
-              Réclamations
-                </Button>
+                {hasPermission('claims') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "claims"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("claims")}
+                    >
+                  <FileText className="w-5 h-5" />
+                  Réclamations
+                    </Button>
+                )}
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "tarifs"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("tarifs")}
-                >
-                  <Building2 className="w-5 h-5" />
-                  Tarifs
-                </Button>
+                {hasPermission('tarifs') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "tarifs"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("tarifs")}
+                    >
+                      <Building2 className="w-5 h-5" />
+                      Tarifs
+                    </Button>
+                )}
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "recette-generer"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => {
-                setActiveTab("recette-generer")
-                // Recharger les recettes quand on change d'onglet
-                setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent('reloadRevenueData'))
-                }, 100)
-              }}
-                >
-                  <TrendingUp className="w-5 h-5" />
-                  BENEFICE BRUTE
-                </Button>
+                {hasPermission('recette-generer') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "recette-generer"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => {
+                    setActiveTab("recette-generer")
+                    // Recharger les recettes quand on change d'onglet
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent('reloadRevenueData'))
+                    }, 100)
+                  }}
+                    >
+                      <TrendingUp className="w-5 h-5" />
+                      BENEFICE BRUTE
+                    </Button>
+                )}
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "fuel-consumption"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("fuel-consumption")}
-                >
-              <Fuel className="w-5 h-5" />
-              Consommation Carburant
-                </Button>
+                {hasPermission('fuel-consumption') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "fuel-consumption"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("fuel-consumption")}
+                    >
+                      <Fuel className="w-5 h-5" />
+                      Consommation Carburant
+                    </Button>
+                )}
 
                 {/* Temporarily hidden - Rapports section */}
                 {/* <Button
@@ -2582,18 +2635,35 @@ La page va se recharger automatiquement...`)
               Rapports
                 </Button> */}
 
-                <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "technicien-accounts"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("technicien-accounts")}
-                >
-              <UserCog className="w-5 h-5" />
-              Comptes Techniciens
-                </Button>
+                {hasPermission('technicien-accounts') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "technicien-accounts"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("technicien-accounts")}
+                    >
+                  <UserCog className="w-5 h-5" />
+                  Comptes Techniciens
+                    </Button>
+                )}
+
+                {isAdmin() && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "compte-admin"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("compte-admin")}
+                    >
+                  <UserPlus className="w-5 h-5" />
+                  Compte Admin
+                    </Button>
+                )}
               </div>
             </div>
           </nav>
@@ -3056,7 +3126,7 @@ La page va se recharger automatiquement...`)
                     <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
                       <Upload className="h-4 w-4 mr-2" />
                       Importer Carburant
-                    </Button>
+                </Button>
                   </DialogTrigger>
                   <DialogContent className="glass-card border border-white/20">
                     <DialogHeader>
@@ -4978,6 +5048,13 @@ La page va se recharger automatiquement...`)
         {activeTab === "employee-sync" && (
           <div className="space-y-6">
             <EmployeeSyncManager />
+          </div>
+        )}
+
+        {/* Section Compte Admin */}
+        {activeTab === "compte-admin" && (
+          <div className="space-y-6">
+            <UserManagement />
           </div>
         )}
 
