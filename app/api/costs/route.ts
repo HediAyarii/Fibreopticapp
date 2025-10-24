@@ -3,6 +3,84 @@ import { query } from '@/lib/database'
 
 export const dynamic = 'force-dynamic'
 
+// Fonction pour mettre à jour les mois suivants
+async function updateFutureMonths(name: string, amount: number, description: string, startMonth: number, startYear: number) {
+  const currentDate = new Date()
+  const currentMonth = currentDate.getMonth() + 1
+  const currentYear = currentDate.getFullYear()
+  
+  // Calculer les 12 prochains mois à partir du mois sélectionné
+  for (let i = 0; i < 12; i++) {
+    let targetMonth = startMonth + i
+    let targetYear = startYear
+    
+    // Gérer le passage d'année
+    while (targetMonth > 12) {
+      targetMonth -= 12
+      targetYear += 1
+    }
+    
+    // Ne pas créer de charges pour les mois passés
+    if (targetYear < currentYear || (targetYear === currentYear && targetMonth < currentMonth)) {
+      continue
+    }
+    
+    // Vérifier si une charge existe déjà pour ce mois
+    const existingCharge = await query(`
+      SELECT id FROM frais_entreprise 
+      WHERE fournisseur = $1 
+      AND type_frais = 'Charge Fixe'
+      AND EXTRACT(MONTH FROM date_facture) = $2 
+      AND EXTRACT(YEAR FROM date_facture) = $3
+      AND statut = 'actif'
+    `, [name, targetMonth, targetYear])
+    
+    if (existingCharge.rows.length > 0) {
+      // Mettre à jour la charge existante
+      await query(`
+        UPDATE frais_entreprise 
+        SET 
+          montant_ht = $1,
+          montant_ttc = $2,
+          tva = $3,
+          description = $4,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $5
+      `, [
+        amount * 0.8, // montant_ht
+        amount, // montant_ttc
+        amount * 0.2, // tva
+        description,
+        existingCharge.rows[0].id
+      ])
+    } else {
+      // Créer une nouvelle charge pour ce mois
+      const targetDate = `${targetYear}-${targetMonth.toString().padStart(2, '0')}-01`
+      const serviceCode = `FIXED-${targetYear}-${targetMonth.toString().padStart(2, '0')}`
+      
+      await query(`
+        INSERT INTO frais_entreprise (
+          company_name, service_code, category, numero_facture, date_facture,
+          fournisseur, type_frais, montant_ht, montant_ttc, tva, description, statut
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'actif')
+      `, [
+        'FinalFibre', // company_name
+        serviceCode, // service_code
+        'Frais généraux', // category
+        `FACT-${Date.now()}-${i}`, // numero_facture
+        targetDate, // date_facture
+        name, // fournisseur
+        'Charge Fixe', // type_frais
+        amount * 0.8, // montant_ht
+        amount, // montant_ttc
+        amount * 0.2, // tva
+        description, // description
+      ])
+    }
+  }
+}
+
 // GET - Récupérer tous les coûts
 export async function GET(request: NextRequest) {
   try {
@@ -135,9 +213,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Type de charge invalide' }, { status: 400 })
     }
 
-    // Pour les charges fixes, créer une nouvelle charge pour ce mois
-    // Le système ne met pas à jour les mois précédents, seulement ce mois et les suivants
+    // Pour les charges fixes, créer/mettre à jour pour ce mois et les mois suivants
     if (type === 'fixed') {
+      const currentMonth = parseInt(month || new Date().getMonth() + 1)
+      const currentYear = parseInt(year || new Date().getFullYear())
+      
       // Vérifier s'il existe déjà une charge avec le même nom pour ce mois exact
       const existingFixed = await query(`
         SELECT id FROM frais_entreprise 
@@ -146,10 +226,10 @@ export async function POST(request: NextRequest) {
         AND EXTRACT(MONTH FROM date_facture) = $2 
         AND EXTRACT(YEAR FROM date_facture) = $3
         AND statut = 'actif'
-      `, [name, parseInt(month || new Date().getMonth() + 1), parseInt(year || new Date().getFullYear())])
+      `, [name, currentMonth, currentYear])
       
       if (existingFixed.rows.length > 0) {
-        // Mettre à jour seulement cette charge fixe pour ce mois
+        // Mettre à jour cette charge fixe pour ce mois
         const result = await query(`
           UPDATE frais_entreprise 
           SET 
@@ -168,10 +248,44 @@ export async function POST(request: NextRequest) {
           existingFixed.rows[0].id
         ])
         
+        // Maintenant, mettre à jour ou créer les charges pour les mois suivants
+        await updateFutureMonths(name, parseFloat(amount), description, currentMonth, currentYear)
+        
         return NextResponse.json({
           success: true,
           cost: result.rows[0],
-          message: `Charge fixe mise à jour pour ${month || new Date().getMonth() + 1}/${year || new Date().getFullYear()}`
+          message: `Charge fixe mise à jour pour ${currentMonth}/${currentYear} et les mois suivants`
+        })
+      } else {
+        // Créer la charge pour ce mois
+        const result = await query(`
+          INSERT INTO frais_entreprise (
+            company_name, service_code, category, numero_facture, date_facture,
+            fournisseur, type_frais, montant_ht, montant_ttc, tva, description, statut
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'actif')
+          RETURNING *
+        `, [
+          'FinalFibre', // company_name
+          serviceCode, // service_code
+          category, // category
+          `FACT-${Date.now()}`, // numero_facture
+          dateFacturation, // date_facture
+          name, // fournisseur
+          typeFrais, // type_frais
+          parseFloat(amount) * 0.8, // montant_ht
+          parseFloat(amount), // montant_ttc
+          parseFloat(amount) * 0.2, // tva
+          description, // description
+        ])
+        
+        // Maintenant, créer les charges pour les mois suivants
+        await updateFutureMonths(name, parseFloat(amount), description, currentMonth, currentYear)
+        
+        return NextResponse.json({
+          success: true,
+          cost: result.rows[0],
+          message: `Charge fixe créée pour ${currentMonth}/${currentYear} et les mois suivants`
         })
       }
     }
