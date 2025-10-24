@@ -15,21 +15,44 @@ export async function GET(request: NextRequest) {
 
     if (type === 'fixed') {
       // Récupérer les coûts fixes depuis frais_entreprise
-      result = await query(`
-        SELECT 
-          id,
-          fournisseur as name,
-          description,
-          montant_ttc as amount,
-          type_frais as category,
-          date_facture as date_facturation,
-          statut,
-          created_at,
-          updated_at
-        FROM frais_entreprise 
-        WHERE statut = 'actif' AND type_frais = 'Charge Fixe'
-        ORDER BY fournisseur
-      `)
+      // Si month et year sont spécifiés, récupérer pour ce mois spécifique
+      if (month && year) {
+        result = await query(`
+          SELECT 
+            id,
+            fournisseur as name,
+            description,
+            montant_ttc as amount,
+            type_frais as category,
+            date_facture as date_facturation,
+            statut,
+            created_at,
+            updated_at
+          FROM frais_entreprise 
+          WHERE statut = 'actif' 
+          AND type_frais = 'Charge Fixe'
+          AND EXTRACT(MONTH FROM date_facture) = $1 
+          AND EXTRACT(YEAR FROM date_facture) = $2
+          ORDER BY fournisseur
+        `, [parseInt(month), parseInt(year)])
+      } else {
+        // Récupérer toutes les charges fixes
+        result = await query(`
+          SELECT 
+            id,
+            fournisseur as name,
+            description,
+            montant_ttc as amount,
+            type_frais as category,
+            date_facture as date_facturation,
+            statut,
+            created_at,
+            updated_at
+          FROM frais_entreprise 
+          WHERE statut = 'actif' AND type_frais = 'Charge Fixe'
+          ORDER BY date_facture DESC, fournisseur
+        `)
+      }
     } else if (type === 'variable' && month && year) {
       // Récupérer les coûts variables pour un mois spécifique depuis frais_entreprise
       result = await query(`
@@ -100,13 +123,55 @@ export async function POST(request: NextRequest) {
     // Déterminer le type de frais et le service code
     let serviceCode, typeFrais
     if (type === 'fixed') {
-      serviceCode = 'FIXED-001'
+      // Pour les charges fixes, inclure le mois et l'année dans le service code
+      const currentMonth = month || new Date().getMonth() + 1
+      const currentYear = year || new Date().getFullYear()
+      serviceCode = `FIXED-${currentYear}-${currentMonth.toString().padStart(2, '0')}`
       typeFrais = 'Charge Fixe'
     } else if (type === 'variable') {
       serviceCode = 'VAR-001'
       typeFrais = 'Charge Variable'
     } else {
       return NextResponse.json({ error: 'Type de charge invalide' }, { status: 400 })
+    }
+
+    // Pour les charges fixes, vérifier s'il existe déjà une charge avec le même nom pour ce mois
+    if (type === 'fixed') {
+      const existingFixed = await query(`
+        SELECT id FROM frais_entreprise 
+        WHERE fournisseur = $1 
+        AND type_frais = 'Charge Fixe'
+        AND EXTRACT(MONTH FROM date_facture) = $2 
+        AND EXTRACT(YEAR FROM date_facture) = $3
+        AND statut = 'actif'
+      `, [name, parseInt(month || new Date().getMonth() + 1), parseInt(year || new Date().getFullYear())])
+      
+      if (existingFixed.rows.length > 0) {
+        // Mettre à jour la charge fixe existante
+        const result = await query(`
+          UPDATE frais_entreprise 
+          SET 
+            montant_ht = $1,
+            montant_ttc = $2,
+            tva = $3,
+            description = $4,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $5
+          RETURNING *
+        `, [
+          parseFloat(amount) * 0.8, // montant_ht
+          parseFloat(amount), // montant_ttc
+          parseFloat(amount) * 0.2, // tva
+          description,
+          existingFixed.rows[0].id
+        ])
+        
+        return NextResponse.json({
+          success: true,
+          cost: result.rows[0],
+          message: `Charge fixe mise à jour pour ${month || new Date().getMonth() + 1}/${year || new Date().getFullYear()}`
+        })
+      }
     }
 
     // Créer un frais dans la table frais_entreprise
