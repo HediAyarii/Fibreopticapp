@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
           created_at,
           updated_at
         FROM frais_entreprise 
-        WHERE statut = 'actif'
+        WHERE statut = 'actif' AND type_frais = 'Charge Fixe'
         ORDER BY fournisseur
       `)
     } else if (type === 'variable' && month && year) {
@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
         FROM frais_entreprise 
         WHERE EXTRACT(MONTH FROM date_facture) = $1 
         AND EXTRACT(YEAR FROM date_facture) = $2
+        AND type_frais = 'Charge Variable'
         ORDER BY fournisseur
       `, [parseInt(month), parseInt(year)])
     } else {
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
   try {
     const { name, description, amount, category, type, month, year } = await request.json()
 
-    if (!name || !amount || !category) {
+    if (!name || !amount || !category || !type) {
       return NextResponse.json({ error: 'Données manquantes' }, { status: 400 })
     }
 
@@ -94,6 +95,18 @@ export async function POST(request: NextRequest) {
     } else {
       const now = new Date()
       dateFacturation = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-01`
+    }
+
+    // Déterminer le type de frais et le service code
+    let serviceCode, typeFrais
+    if (type === 'fixed') {
+      serviceCode = 'FIXED-001'
+      typeFrais = 'Charge Fixe'
+    } else if (type === 'variable') {
+      serviceCode = 'VAR-001'
+      typeFrais = 'Charge Variable'
+    } else {
+      return NextResponse.json({ error: 'Type de charge invalide' }, { status: 400 })
     }
 
     // Créer un frais dans la table frais_entreprise
@@ -116,12 +129,12 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `, [
       'FinalFibre', // company_name
-      'SERV-001', // service_code
+      serviceCode, // service_code
       category, // category
       `FACT-${Date.now()}`, // numero_facture
       dateFacturation, // date_facture
       name, // fournisseur
-      category, // type_frais
+      typeFrais, // type_frais
       parseFloat(amount) * 0.8, // montant_ht (80% du montant TTC)
       parseFloat(amount), // montant_ttc
       parseFloat(amount) * 0.2, // tva (20% du montant TTC)
@@ -131,7 +144,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       cost: result.rows[0],
-      message: 'Charge créée avec succès'
+      message: `Charge ${type === 'fixed' ? 'fixe' : 'variable'} créée avec succès`
     })
 
   } catch (error) {
@@ -213,14 +226,15 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
+    const type = searchParams.get('type')
 
-    if (!id) {
-      return NextResponse.json({ error: 'ID requis' }, { status: 400 })
+    if (!id || !type) {
+      return NextResponse.json({ error: 'ID et type requis' }, { status: 400 })
     }
 
     // Vérifier d'abord si le frais existe
     const existingCost = await query(`
-      SELECT id, fournisseur, statut FROM frais_entreprise WHERE id = $1
+      SELECT id, fournisseur, statut, type_frais FROM frais_entreprise WHERE id = $1
     `, [parseInt(id)])
     
     if (existingCost.rows.length === 0) {
@@ -228,6 +242,14 @@ export async function DELETE(request: NextRequest) {
     }
     
     const cost = existingCost.rows[0]
+    
+    // Vérifier que le type correspond
+    const expectedType = type === 'fixed' ? 'Charge Fixe' : 'Charge Variable'
+    if (cost.type_frais !== expectedType) {
+      return NextResponse.json({ 
+        error: `Type de charge incorrect. Attendu: ${expectedType}, trouvé: ${cost.type_frais}` 
+      }, { status: 400 })
+    }
     
     // Si déjà désactivé, retourner un message approprié
     if (cost.statut === 'inactif') {
@@ -238,13 +260,23 @@ export async function DELETE(request: NextRequest) {
       })
     }
     
-    // Désactiver le frais
-    const result = await query(`
-      UPDATE frais_entreprise 
-      SET statut = 'inactif', updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND statut = 'actif'
-      RETURNING *
-    `, [parseInt(id)])
+    // Pour les charges variables, supprimer complètement
+    // Pour les charges fixes, désactiver seulement
+    let result
+    if (type === 'variable') {
+      result = await query(`
+        DELETE FROM frais_entreprise 
+        WHERE id = $1 AND type_frais = 'Charge Variable'
+        RETURNING *
+      `, [parseInt(id)])
+    } else {
+      result = await query(`
+        UPDATE frais_entreprise 
+        SET statut = 'inactif', updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND statut = 'actif' AND type_frais = 'Charge Fixe'
+        RETURNING *
+      `, [parseInt(id)])
+    }
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Aucune modification effectuée' }, { status: 400 })
@@ -252,7 +284,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Charge supprimée avec succès'
+      message: type === 'variable' ? 'Charge variable supprimée avec succès' : 'Charge fixe désactivée avec succès'
     })
 
   } catch (error) {
