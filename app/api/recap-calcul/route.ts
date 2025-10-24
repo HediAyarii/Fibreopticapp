@@ -62,7 +62,27 @@ export async function GET(request: NextRequest) {
               )
             ELSE 0
           END
-        ) as total_recette_technicien
+        ) as total_recette_technicien,
+        SUM(
+          CASE 
+            WHEN i.statut = 'CLOTURE TERMINEE' THEN
+              COALESCE(
+                (SELECT SUM(
+                  CASE 
+                    WHEN cp.prix_base IS NOT NULL THEN cp.prix_base
+                    ELSE 0
+                  END
+                )
+                FROM unnest(string_to_array(i.articles, ',')) as article_item
+                LEFT JOIN company_pricing cp ON 
+                  TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
+                  AND cp.company_name = 'ERT OUEST'
+                  AND cp.category = i.type_intervention
+                ), 0
+              )
+            ELSE 0
+          END
+        ) as total_recette_entreprise
       FROM interventions i
       WHERE i.statut = 'CLOTURE TERMINEE'
         AND i.articles IS NOT NULL 

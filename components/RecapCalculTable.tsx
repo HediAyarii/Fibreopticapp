@@ -92,6 +92,13 @@ export function RecapCalculTable() {
     return recapData.reduce((sum, item: any) => sum + (item.total_recette_technicien || 0), 0)
   }
 
+  const getBeneficeBrut = () => {
+    // BÉNÉFICE BRUT = Recette Entreprise - Recette Technicien
+    const recetteEntreprise = recapData.reduce((sum, item: any) => sum + (item.total_recette_entreprise || 0), 0)
+    const recetteTechnicien = recapData.reduce((sum, item: any) => sum + (item.total_recette_technicien || 0), 0)
+    return recetteEntreprise - recetteTechnicien
+  }
+
   const getTotalInterventions = () => {
     return recapData.reduce((sum, item: any) => sum + (item.nombre_interventions || 0), 0)
   }

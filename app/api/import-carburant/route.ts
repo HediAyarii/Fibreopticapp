@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         scriptPath = join(process.cwd(), 'scripts', 'import_carburant_universal.py')
       }
       
-      const command = `python "${scriptPath}" --file "${tempFilePath}"`
+      const command = `python "${scriptPath}" --file "${tempFilePath}" --no-clear`
       
       console.log('Exécution de la commande:', command)
       console.log('Script path:', scriptPath)

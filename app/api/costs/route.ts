@@ -150,25 +150,47 @@ export async function PUT(request: NextRequest) {
     let result
 
     if (type === 'fixed') {
+      // Vérifier d'abord si le coût existe
+      const existingCost = await query(`
+        SELECT id, name, is_active FROM fixed_costs WHERE id = $1
+      `, [parseInt(id)])
+      
+      if (existingCost.rows.length === 0) {
+        return NextResponse.json({ error: 'Coût non trouvé' }, { status: 404 })
+      }
+      
+      // Mettre à jour le coût fixe
       result = await query(`
         UPDATE fixed_costs 
         SET name = $1, description = $2, amount = $3, category = $4, updated_at = CURRENT_TIMESTAMP
         WHERE id = $5
         RETURNING *
       `, [name, description, parseFloat(amount), category, parseInt(id)])
+      
     } else if (type === 'variable') {
+      // Vérifier d'abord si le coût variable existe
+      const existingCost = await query(`
+        SELECT id, name FROM variable_costs WHERE id = $1
+      `, [parseInt(id)])
+      
+      if (existingCost.rows.length === 0) {
+        return NextResponse.json({ error: 'Coût non trouvé' }, { status: 404 })
+      }
+      
+      // Mettre à jour le coût variable
       result = await query(`
         UPDATE variable_costs 
         SET name = $1, description = $2, amount = $3, category = $4, updated_at = CURRENT_TIMESTAMP
         WHERE id = $5
         RETURNING *
       `, [name, description, parseFloat(amount), category, parseInt(id)])
+      
     } else {
       return NextResponse.json({ error: 'Type de coût invalide' }, { status: 400 })
     }
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: 'Coût non trouvé' }, { status: 404 })
+      return NextResponse.json({ error: 'Aucune modification effectuée' }, { status: 400 })
     }
 
     // Recalculer les coûts mensuels (si la fonction existe)
@@ -227,26 +249,57 @@ export async function DELETE(request: NextRequest) {
     let result
 
     if (type === 'fixed') {
-      // Désactiver le coût fixe au lieu de le supprimer
+      // Vérifier d'abord si le coût existe
+      const existingCost = await query(`
+        SELECT id, name, is_active FROM fixed_costs WHERE id = $1
+      `, [parseInt(id)])
+      
+      if (existingCost.rows.length === 0) {
+        return NextResponse.json({ error: 'Coût non trouvé' }, { status: 404 })
+      }
+      
+      const cost = existingCost.rows[0]
+      
+      // Si déjà désactivé, retourner un message approprié
+      if (!cost.is_active) {
+        return NextResponse.json({ 
+          success: true,
+          message: 'Coût déjà désactivé',
+          cost: cost
+        })
+      }
+      
+      // Désactiver le coût fixe
       result = await query(`
         UPDATE fixed_costs 
         SET is_active = false, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
+        WHERE id = $1 AND is_active = true
         RETURNING *
       `, [parseInt(id)])
+      
     } else if (type === 'variable') {
+      // Vérifier d'abord si le coût variable existe
+      const existingCost = await query(`
+        SELECT id, name FROM variable_costs WHERE id = $1
+      `, [parseInt(id)])
+      
+      if (existingCost.rows.length === 0) {
+        return NextResponse.json({ error: 'Coût non trouvé' }, { status: 404 })
+      }
+      
       // Supprimer le coût variable
       result = await query(`
         DELETE FROM variable_costs 
         WHERE id = $1
         RETURNING *
       `, [parseInt(id)])
+      
     } else {
       return NextResponse.json({ error: 'Type de coût invalide' }, { status: 400 })
     }
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: 'Coût non trouvé' }, { status: 404 })
+      return NextResponse.json({ error: 'Aucune modification effectuée' }, { status: 400 })
     }
 
     // Recalculer les coûts mensuels (si la fonction existe)

@@ -138,11 +138,34 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     return !isNaN(num) && num > 0
   }
 
-  // Charger les données
+  // Charger les données avec synchronisation automatique
   const loadData = async () => {
     setLoading(true)
     try {
-      console.log('🔄 Chargement des données avec calcul du total généré...')
+      console.log('🔄 Chargement des données avec synchronisation automatique...')
+      
+      // 1. D'abord, synchroniser automatiquement les totaux générés
+      console.log('🔄 Synchronisation automatique des totaux générés...')
+      try {
+        const syncResponse = await fetch('/api/sync/total-genere', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (syncResponse.ok) {
+          const syncData = await syncResponse.json()
+          if (syncData.success) {
+            console.log(`✅ Synchronisation terminée: ${syncData.updated} employés mis à jour`)
+          }
+        }
+      } catch (syncError) {
+        console.warn('⚠️ Erreur synchronisation (non bloquante):', syncError)
+      }
+      
+      // 2. Ensuite, charger les données mises à jour
+      console.log('📊 Chargement des données mises à jour...')
       const response = await fetch(`/api/cout-par-salaire?mois=${selectedMonth}&annee=${selectedYear}`)
       const data = await response.json()
       
@@ -155,6 +178,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         const withoutRevenue = data.couts.filter((cout: any) => !cout.total_genere || cout.total_genere === 0)
         
         console.log(`📊 Statistiques: ${withRevenue.length} avec recettes, ${withoutRevenue.length} sans recettes`)
+        
+        // Afficher un message si des totaux ont été synchronisés
+        if (withRevenue.length > 0) {
+          console.log(`🎯 Total Généré synchronisé pour ${withRevenue.length} employés`)
+        }
       } else {
         console.error('❌ Erreur chargement données:', data.error)
         alert(`Erreur lors du chargement: ${data.error}`)
@@ -1011,10 +1039,28 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       {/* Table des coûts */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="w-5 h-5" />
-            Coûts pour {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Coûts pour {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={loadData}
+                disabled={loading}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                {loading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                Synchroniser Total Généré
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (

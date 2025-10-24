@@ -43,26 +43,26 @@ def read_data_file(file_path):
 
 def read_excel_file(file_path):
     """Lire un fichier Excel"""
-    print(f"📊 Lecture du fichier Excel: {file_path}")
+    print(f"[INFO] Lecture du fichier Excel: {file_path}")
     
     try:
         # Essayer de lire avec skiprows=1 d'abord (format standard)
         df = pd.read_excel(file_path, sheet_name=0, skiprows=1)
-        print(f"✅ Excel lu avec succès (skiprows=1): {len(df)} lignes, {len(df.columns)} colonnes")
+        print(f"[SUCCESS] Excel lu avec succès (skiprows=1): {len(df)} lignes, {len(df.columns)} colonnes")
         return df
     except Exception as e1:
         try:
             # Essayer sans skiprows
             df = pd.read_excel(file_path, sheet_name=0)
-            print(f"✅ Excel lu avec succès (sans skiprows): {len(df)} lignes, {len(df.columns)} colonnes")
+            print(f"[SUCCESS] Excel lu avec succès (sans skiprows): {len(df)} lignes, {len(df.columns)} colonnes")
             return df
         except Exception as e2:
-            print(f"❌ Erreur lors de la lecture Excel: {e1}, {e2}")
+            print(f"[ERROR] Erreur lors de la lecture Excel: {e1}, {e2}")
             raise
 
 def read_csv_file(file_path):
     """Lire un fichier CSV avec détection automatique de l'encodage"""
-    print(f"📊 Lecture du fichier CSV: {file_path}")
+    print(f"[INFO] Lecture du fichier CSV: {file_path}")
     
     encodings = ['utf-8', 'iso-8859-1', 'windows-1252', 'cp1252', 'latin-1']
     separators = [',', ';', '\t']
@@ -71,17 +71,17 @@ def read_csv_file(file_path):
         for sep in separators:
             try:
                 df = pd.read_csv(file_path, sep=sep, encoding=encoding)
-                print(f"✅ CSV lu avec succès (encodage: '{encoding}', séparateur: '{sep}'): {len(df)} lignes, {len(df.columns)} colonnes")
+                print(f"[SUCCESS] CSV lu avec succès (encodage: '{encoding}', séparateur: '{sep}'): {len(df)} lignes, {len(df.columns)} colonnes")
                 return df
             except Exception as e:
-                print(f"⚠️ Échec avec encodage '{encoding}' et séparateur '{sep}': {e}")
+                print(f"[WARNING] Échec avec encodage '{encoding}' et séparateur '{sep}': {e}")
                 continue
     
     raise ValueError("Impossible de lire le fichier CSV avec les encodages testés")
 
 def map_columns_to_database(df):
     """Mapper les colonnes du fichier vers la base de données"""
-    print("🔍 Mapping des colonnes...")
+    print("[INFO] Mapping des colonnes...")
     
     # Dictionnaire de mapping flexible
     column_mapping = {
@@ -123,14 +123,14 @@ def map_columns_to_database(df):
             mapped_data[db_column] = pd.Series([''] * len(df))  # Valeur par défaut
     
     if missing_columns:
-        print(f"⚠️ Colonnes manquantes (remplies avec des valeurs vides): {missing_columns}")
+        print(f"[WARNING] Colonnes manquantes (remplies avec des valeurs vides): {missing_columns}")
     
-    print(f"✅ Mapping terminé: {len(mapped_data)} colonnes mappées")
+    print(f"[SUCCESS] Mapping terminé: {len(mapped_data)} colonnes mappées")
     return pd.DataFrame(mapped_data)
 
 def import_carburant_universal(file_path, clear_table=True):
     """Importer les données de carburant depuis n'importe quel format supporté"""
-    print(f"🚀 Début de l'import universel: {file_path}")
+    print(f"[INFO] Début de l'import universel: {file_path}")
     print("=" * 60)
     
     try:
@@ -141,7 +141,7 @@ def import_carburant_universal(file_path, clear_table=True):
         df_mapped = map_columns_to_database(df)
         
         # Afficher les premières lignes pour vérification
-        print("\n📄 Premières lignes après mapping:")
+        print("\n[INFO] Premières lignes après mapping:")
         print(df_mapped.head(3).to_string())
         
         # Connexion à la base
@@ -151,7 +151,7 @@ def import_carburant_universal(file_path, clear_table=True):
         try:
             # Vider la table si demandé
             if clear_table:
-                print("\n🗑️ Vidage de la table carburant_consommation...")
+                print("\n[INFO] Vidage de la table carburant_consommation...")
                 cursor.execute("DELETE FROM carburant_consommation;")
                 conn.commit()
             
@@ -203,10 +203,10 @@ def import_carburant_universal(file_path, clear_table=True):
                     carburant_data.append(carburant_record)
                     
                 except Exception as e:
-                    print(f"⚠️ Erreur ligne {index}: {e}")
+                    print(f"[WARNING] Erreur ligne {index}: {e}")
                     continue
             
-            print(f"\n📊 Statistiques de l'import:")
+            print(f"\n[INFO] Statistiques de l'import:")
             print(f"   - Données préparées: {len(carburant_data)} enregistrements")
             print(f"   - Lignes vides ignorées: {empty_rows}")
             print(f"   - Doublons ignorés: {duplicates_ignored}")
@@ -230,14 +230,14 @@ def import_carburant_universal(file_path, clear_table=True):
                 )
                 
                 conn.commit()
-                print(f"\n✅ SUCCES: {len(carburant_data)} enregistrements de carburant importés!")
+                print(f"\n[SUCCESS] SUCCES: {len(carburant_data)} enregistrements de carburant importés!")
             else:
-                print("\n⚠️ Aucune donnée valide trouvée pour l'import")
+                print("\n[WARNING] Aucune donnée valide trouvée pour l'import")
             
             return True
             
         except Exception as e:
-            print(f"\n❌ ERREUR: {e}")
+            print(f"\n[ERROR] ERREUR: {e}")
             conn.rollback()
             return False
         finally:
@@ -245,7 +245,7 @@ def import_carburant_universal(file_path, clear_table=True):
             conn.close()
             
     except Exception as e:
-        print(f"❌ Erreur lors de l'import: {e}")
+        print(f"[ERROR] Erreur lors de l'import: {e}")
         return False
 
 def main():
@@ -256,16 +256,16 @@ def main():
     args = parser.parse_args()
     
     if not os.path.exists(args.file):
-        print(f"❌ Fichier non trouvé: {args.file}")
+        print(f"[ERROR] Fichier non trouvé: {args.file}")
         sys.exit(1)
     
     clear_table = not args.no_clear
     success = import_carburant_universal(args.file, clear_table)
     
     if success:
-        print("\n🎉 Import universel terminé avec succès!")
+        print("\n[SUCCESS] Import universel terminé avec succès!")
     else:
-        print("\n💥 Import universel échoué!")
+        print("\n[ERROR] Import universel échoué!")
         sys.exit(1)
 
 if __name__ == "__main__":

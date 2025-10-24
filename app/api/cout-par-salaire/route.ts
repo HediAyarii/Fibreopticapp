@@ -25,36 +25,45 @@ export async function GET(request: NextRequest) {
       params.push(parseInt(annee))
     }
     
-    // Récupérer les données de base avec calcul automatique des RAP
+    // Récupérer les données de base avec synchronisation automatique des taxes
     const result = await query(`
       SELECT 
-        id,
-        nom,
-        prenom,
-        salaire_net,
-        salaire_brut,
-        cout_total,
-        charge,
-        mois,
-        annee,
-        matricule,
-        -- Afficher le pourcentage de taxe (50% par défaut)
+        cps.id,
+        cps.nom,
+        cps.prenom,
+        cps.salaire_net,
+        cps.salaire_brut,
+        cps.cout_total,
+        cps.charge,
+        cps.mois,
+        cps.annee,
+        cps.matricule,
+        -- Synchroniser automatiquement avec la table employes
+        COALESCE(e.pourcentage_taxe, cps.taxe, 0) as taxe,
+        -- Recalculer l'impôt basé sur la taxe synchronisée
         CASE 
-          WHEN charge > 0 THEN 50.0
-          ELSE 0.0
-        END as taxe,
-        -- Calculer automatiquement l'impôt (50% de la charge)
-        (charge * 0.5) as impot,
-        penalite,
-        prime,
-        total_genere,
+          WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0) - 100) < 0.01 THEN 0
+          WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0) - 50) < 0.01 THEN cps.charge / 2
+          WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0)) < 0.01 THEN cps.charge
+          ELSE cps.charge * (COALESCE(e.pourcentage_taxe, cps.taxe, 0) / 100)
+        END as impot,
+        cps.penalite,
+        cps.prime,
+        cps.total_genere,
         -- Calculer automatiquement le RAP avec la formule correcte (incluant la prime)
-        (total_genere - salaire_net - (charge * 0.5) + COALESCE(prime, 0)) as rap,
-        created_at,
-        updated_at
-      FROM cout_par_salaire 
+        (cps.total_genere - cps.salaire_net - 
+         CASE 
+           WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0) - 100) < 0.01 THEN 0
+           WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0) - 50) < 0.01 THEN cps.charge / 2
+           WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0)) < 0.01 THEN cps.charge
+           ELSE cps.charge * (COALESCE(e.pourcentage_taxe, cps.taxe, 0) / 100)
+         END + COALESCE(cps.prime, 0)) as rap,
+        cps.created_at,
+        cps.updated_at
+      FROM cout_par_salaire cps
+      LEFT JOIN employes e ON cps.matricule = e.matricule AND e.statut = 'actif'
       ${whereClause}
-      ORDER BY annee DESC, mois DESC, nom, prenom
+      ORDER BY cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
     `, params)
     
     // Calculer le total des paiements et le RAP final pour chaque employé

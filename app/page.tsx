@@ -48,6 +48,7 @@ import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
 import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
+import AutoSyncTotalGenere from "@/components/AutoSyncTotalGenere"
 import SyncButton from "@/components/SyncButton"
 import AutoDetectButton from "@/components/AutoDetectButton"
 import RapAutoCorrectButton from "@/components/RapAutoCorrectButton"
@@ -55,6 +56,7 @@ import FailureStatistics from "@/components/FailureStatistics"
 import EmployeeSyncManager from "@/components/EmployeeSyncManager"
 import UserManagement from "@/components/UserManagement"
 import { useUserPermissions } from "@/hooks/useUserPermissions"
+import { useSmartRealtime } from "@/hooks/useSmartRealtime"
 // import { useEmployeeUpdates } from "@/hooks/useEmployeeUpdates" // Désactivé pour éviter les erreurs de build
 import {
   Building2,
@@ -181,6 +183,17 @@ export default function EmployeeTracker() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [user, setUser] = useState<any>(null)
+  
+  // Système de temps réel intelligent
+  const { isConnected: realtimeConnected } = useSmartRealtime({
+    interval: 30000, // 30 secondes
+    enabled: isLoggedIn,
+    onUpdate: () => {
+      // Mise à jour seulement des données critiques
+      loadPenaltiesFromDatabase()
+      loadClaimsFromDatabase()
+    }
+  })
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -411,13 +424,6 @@ export default function EmployeeTracker() {
       // Synchronisation automatique des employés
       autoSyncEmployees()
       
-      // Mise à jour automatique des données toutes les 2 secondes pour la synchronisation en temps réel
-      const dataInterval = setInterval(() => {
-        console.log('🔄 Mise à jour automatique des données admin...')
-        loadAllCRUDData()
-      }, 2000) // 2 secondes pour une synchronisation plus rapide
-      
-      return () => clearInterval(dataInterval)
     }
   }, [isLoggedIn])
 
@@ -5023,6 +5029,10 @@ La page va se recharger automatiquement...`)
            </div>
            
            <RapAutoCorrectButton />
+           
+           {/* Synchronisation Automatique du Total Généré */}
+           <AutoSyncTotalGenere />
+           
             <CoutParSalaireManager />
           </div>
         )}

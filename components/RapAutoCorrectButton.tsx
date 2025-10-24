@@ -10,9 +10,9 @@ interface RapStatus {
     id: number
     nom: string
     prenom: string
-    rap_actuel: number
-    rap_calcule: number
-    difference: number
+    rap_actuel: number | null
+    rap_calcule: number | null
+    difference: number | null
     est_coherent: boolean
   }>
 }
@@ -28,7 +28,18 @@ const RapAutoCorrectButton: React.FC = () => {
     setLastAction('Vérification en cours...')
     
     try {
-      const response = await fetch('/api/rap/auto-correct')
+      // Utiliser GET pour la vérification
+      const response = await fetch('/api/rap/auto-correct', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
       const data = await response.json()
       
       if (data.success) {
@@ -39,7 +50,7 @@ const RapAutoCorrectButton: React.FC = () => {
       }
     } catch (error) {
       console.error('Erreur vérification RAP:', error)
-      setLastAction('Erreur lors de la vérification')
+      setLastAction(`Erreur lors de la vérification: ${error.message}`)
     } finally {
       setChecking(false)
     }
@@ -164,9 +175,9 @@ const RapAutoCorrectButton: React.FC = () => {
                 <div key={index} className="text-sm text-orange-700">
                   <span className="font-medium">{detail.nom} {detail.prenom}</span>
                   <span className="ml-2">
-                    : {detail.rap_actuel.toFixed(2)}€ → {detail.rap_calcule.toFixed(2)}€
+                    : {detail.rap_actuel?.toFixed(2) || '0.00'}€ → {detail.rap_calcule?.toFixed(2) || '0.00'}€
                     <span className="text-orange-600 ml-1">
-                      (diff: {detail.difference.toFixed(2)}€)
+                      (diff: {detail.difference?.toFixed(2) || '0.00'}€)
                     </span>
                   </span>
                 </div>

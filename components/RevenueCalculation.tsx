@@ -179,8 +179,8 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
         </Card>
         <Card className="glass-card border border-white/20">
           <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-orange-600">{formatCurrency(totalStats.total_recette_generale)}</div>
-            <div className="text-sm text-gray-600">Recette Totale</div>
+            <div className="text-2xl font-bold text-orange-600">{formatCurrency(totalStats.total_recette_entreprise - totalStats.total_recette_technicien)}</div>
+            <div className="text-sm text-gray-600">BÉNÉFICE BRUT</div>
           </CardContent>
         </Card>
       </div>

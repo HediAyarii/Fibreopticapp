@@ -236,15 +236,19 @@ export async function PUT(request: NextRequest) {
       try {
         console.log(`🔄 Synchronisation automatique des taxes pour l'employé ${result.rows[0].nom} ${result.rows[0].prenom}`)
         
-        // Mettre à jour les enregistrements cout_par_salaire correspondants
-        const syncResult = await query(`
-          UPDATE cout_par_salaire 
-          SET 
-            taxe = $1,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE matricule = $2
-          RETURNING id, nom, prenom, mois, annee, taxe
-        `, [updateData.pourcentage_taxe, result.rows[0].matricule])
+        // Désactiver temporairement les triggers pour éviter les conflits
+        await query('ALTER TABLE cout_par_salaire DISABLE TRIGGER ALL;')
+        
+        try {
+          // Mettre à jour les enregistrements cout_par_salaire correspondants
+          const syncResult = await query(`
+            UPDATE cout_par_salaire 
+            SET 
+              taxe = $1,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE matricule = $2
+            RETURNING id, nom, prenom, mois, annee, taxe, charge
+          `, [updateData.pourcentage_taxe, result.rows[0].matricule])
         
         if (syncResult.rows.length > 0) {
           console.log(`✅ ${syncResult.rows.length} enregistrement(s) cout_par_salaire mis à jour`)
@@ -253,39 +257,38 @@ export async function PUT(request: NextRequest) {
           for (const cout of syncResult.rows) {
             let impot = 0
             const taxe = parseFloat(updateData.pourcentage_taxe) || 0
+            const charge = parseFloat(cout.charge) || 0
             
-            // Récupérer la charge pour ce cout
-            const chargeResult = await query(`
-              SELECT charge FROM cout_par_salaire WHERE id = $1
-            `, [cout.id])
-            
-            if (chargeResult.rows.length > 0) {
-              const charge = parseFloat(chargeResult.rows[0].charge) || 0
-              
-              if (Math.abs(taxe - 100) < 0.01) {
-                impot = 0
-              } else if (Math.abs(taxe - 50) < 0.01) {
-                impot = charge / 2
-              } else if (Math.abs(taxe) < 0.01) {
-                impot = charge
-              } else {
-                impot = charge
-              }
-              
-              // Mettre à jour l'impôt
-              await query(`
-                UPDATE cout_par_salaire 
-                SET 
-                  impot = $1,
-                  updated_at = CURRENT_TIMESTAMP
-                WHERE id = $2
-              `, [impot, cout.id])
+            if (Math.abs(taxe - 100) < 0.01) {
+              impot = 0
+            } else if (Math.abs(taxe - 50) < 0.01) {
+              impot = charge / 2
+            } else if (Math.abs(taxe) < 0.01) {
+              impot = charge
+            } else {
+              impot = charge * (taxe / 100)
             }
+            
+            // Mettre à jour l'impôt
+            await query(`
+              UPDATE cout_par_salaire 
+              SET 
+                impot = $1,
+                updated_at = CURRENT_TIMESTAMP
+              WHERE id = $2
+            `, [impot, cout.id])
+            
+            console.log(`     - ${cout.nom} ${cout.prenom} (${cout.mois}/${cout.annee}): impôt = ${impot}€`)
           }
           
           console.log(`✅ Impôts recalculés pour ${syncResult.rows.length} enregistrement(s)`)
         } else {
           console.log(`⚠️ Aucun enregistrement cout_par_salaire trouvé pour le matricule ${result.rows[0].matricule}`)
+        }
+        
+        } finally {
+          // Réactiver les triggers
+          await query('ALTER TABLE cout_par_salaire ENABLE TRIGGER ALL;')
         }
         
       } catch (syncError) {
