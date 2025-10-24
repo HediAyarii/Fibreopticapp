@@ -6478,6 +6478,7 @@ function CostsManagement() {
   const [showFixedModal, setShowFixedModal] = useState(false)
   const [showVariableModal, setShowVariableModal] = useState(false)
   const [editingCost, setEditingCost] = useState<any>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Charger les données
   const loadData = async () => {
@@ -6508,6 +6509,13 @@ function CostsManagement() {
   }, [selectedMonth, selectedYear])
 
   const handleSaveCost = async (costData: any, type: 'fixed' | 'variable') => {
+    if (loading || isSubmitting) {
+      console.log('⏳ Requête en cours, veuillez patienter...')
+      return
+    }
+    
+    setLoading(true)
+    setIsSubmitting(true)
     try {
       const url = '/api/costs'
       const method = editingCost ? 'PUT' : 'POST'
@@ -6523,6 +6531,8 @@ function CostsManagement() {
         payload.id = editingCost.id
       }
 
+      console.log('🔄 Envoi de la requête:', { method, payload })
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -6530,13 +6540,23 @@ function CostsManagement() {
       })
 
       if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Réponse reçue:', result)
         await loadData()
         setShowFixedModal(false)
         setShowVariableModal(false)
         setEditingCost(null)
+      } else {
+        const error = await response.json()
+        console.error('❌ Erreur API:', error)
+        alert(`Erreur: ${error.error || 'Erreur inconnue'}`)
       }
     } catch (error) {
-      console.error('Erreur sauvegarde charge:', error)
+      console.error('❌ Erreur sauvegarde charge:', error)
+      alert('Erreur lors de la sauvegarde')
+    } finally {
+      setLoading(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -6637,9 +6657,12 @@ function CostsManagement() {
               <CardTitle>Charges Fixes</CardTitle>
               <CardDescription>Charges récurrentes chaque mois</CardDescription>
             </div>
-            <Button onClick={() => setShowFixedModal(true)}>
+            <Button 
+              onClick={() => setShowFixedModal(true)}
+              disabled={loading || isSubmitting}
+            >
               <UserPlus className="w-4 h-4 mr-2" />
-              Ajouter
+              {loading || isSubmitting ? 'Chargement...' : 'Ajouter'}
             </Button>
           </div>
         </CardHeader>
@@ -6657,6 +6680,7 @@ function CostsManagement() {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={loading || isSubmitting}
                     onClick={() => {
                       setEditingCost(cost)
                       setShowFixedModal(true)
@@ -6667,6 +6691,7 @@ function CostsManagement() {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={loading || isSubmitting}
                     onClick={() => handleDeleteCost(cost.id, 'fixed')}
                   >
                     Supprimer
@@ -6686,9 +6711,12 @@ function CostsManagement() {
               <CardTitle>Charges Variables</CardTitle>
               <CardDescription>Charges spécifiques à {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}</CardDescription>
             </div>
-            <Button onClick={() => setShowVariableModal(true)}>
+            <Button 
+              onClick={() => setShowVariableModal(true)}
+              disabled={loading || isSubmitting}
+            >
               <UserPlus className="w-4 h-4 mr-2" />
-              Ajouter
+              {loading || isSubmitting ? 'Chargement...' : 'Ajouter'}
             </Button>
           </div>
         </CardHeader>
@@ -6706,6 +6734,7 @@ function CostsManagement() {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={loading || isSubmitting}
                     onClick={() => {
                       setEditingCost(cost)
                       setShowVariableModal(true)
@@ -6716,6 +6745,7 @@ function CostsManagement() {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={loading || isSubmitting}
                     onClick={() => handleDeleteCost(cost.id, 'variable')}
                   >
                     Supprimer

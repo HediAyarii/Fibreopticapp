@@ -24,7 +24,7 @@ DB_CONFIG = {
     'password': os.getenv('POSTGRES_PASSWORD', 'finalfibre_password_2024')
 }
 
-def import_carburant_excel(excel_file_path):
+def import_carburant_excel(excel_file_path, clear_table=True):
     """Importer les données de carburant depuis un fichier Excel"""
     print(f"Lecture du fichier Excel: {excel_file_path}")
     
@@ -53,10 +53,13 @@ def import_carburant_excel(excel_file_path):
         cursor = conn.cursor()
         
         try:
-            # Vider la table d'abord
-            print("\nVidage de la table carburant_consommation...")
-            cursor.execute("DELETE FROM carburant_consommation;")
-            conn.commit()
+            # Vider la table seulement si demandé
+            if clear_table:
+                print("\nVidage de la table carburant_consommation...")
+                cursor.execute("DELETE FROM carburant_consommation;")
+                conn.commit()
+            else:
+                print("\nConservation des données existantes...")
             
             # Préparer les données et gérer les doublons dans le Excel
             carburant_data = []
@@ -161,6 +164,7 @@ def import_carburant_excel(excel_file_path):
 def main():
     parser = argparse.ArgumentParser(description='Import des données de carburant depuis Excel')
     parser.add_argument('--file', required=True, help='Chemin vers le fichier Excel')
+    parser.add_argument('--no-clear', action='store_true', help='Ne pas vider la table avant import')
     
     args = parser.parse_args()
     
@@ -168,7 +172,10 @@ def main():
         print(f"Fichier non trouvé: {args.file}")
         sys.exit(1)
     
-    success = import_carburant_excel(args.file)
+    # Déterminer si on doit vider la table
+    clear_table = not args.no_clear
+    
+    success = import_carburant_excel(args.file, clear_table)
     if success:
         print("\n[SUCCES] Import carburant termine avec succes!")
     else:
