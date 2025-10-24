@@ -135,8 +135,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Type de charge invalide' }, { status: 400 })
     }
 
-    // Pour les charges fixes, vérifier s'il existe déjà une charge avec le même nom pour ce mois
+    // Pour les charges fixes, créer une nouvelle charge pour ce mois
+    // Le système ne met pas à jour les mois précédents, seulement ce mois et les suivants
     if (type === 'fixed') {
+      // Vérifier s'il existe déjà une charge avec le même nom pour ce mois exact
       const existingFixed = await query(`
         SELECT id FROM frais_entreprise 
         WHERE fournisseur = $1 
@@ -147,7 +149,7 @@ export async function POST(request: NextRequest) {
       `, [name, parseInt(month || new Date().getMonth() + 1), parseInt(year || new Date().getFullYear())])
       
       if (existingFixed.rows.length > 0) {
-        // Mettre à jour la charge fixe existante
+        // Mettre à jour seulement cette charge fixe pour ce mois
         const result = await query(`
           UPDATE frais_entreprise 
           SET 
