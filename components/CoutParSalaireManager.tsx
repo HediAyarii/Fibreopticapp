@@ -576,12 +576,22 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     if (!editingField) return
 
     try {
+      // Déterminer la valeur à envoyer selon le type de champ
+      let valueToSend
+      if (editingField.field === 'nom' || editingField.field === 'prenom') {
+        // Pour les champs texte, envoyer la valeur telle quelle
+        valueToSend = editValue.trim()
+      } else {
+        // Pour les champs numériques, convertir en nombre
+        valueToSend = parseFloat(editValue) || 0
+      }
+
       const response = await fetch('/api/cout-par-salaire', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: editingField.id,
-          [editingField.field]: parseFloat(editValue) || 0
+          [editingField.field]: valueToSend
         })
       })
 
@@ -1114,8 +1124,60 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                         ? 'bg-green-50 border-green-200' 
                         : ''
                     }`}>
-                      <td className="p-3 font-medium">{cout.nom}</td>
-                      <td className="p-3">{cout.prenom}</td>
+                      <td className="p-3 font-medium">
+                        {editingField?.id === cout.id && editingField?.field === 'nom' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-32"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSaveEdit}>
+                              <Save className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span 
+                            className="cursor-pointer hover:bg-gray-100 p-1 rounded"
+                            onDoubleClick={() => handleDoubleClick(cout.id, 'nom', cout.nom)}
+                            title="Double-clic pour modifier"
+                          >
+                            {cout.nom}
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {editingField?.id === cout.id && editingField?.field === 'prenom' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-32"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSaveEdit}>
+                              <Save className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span 
+                            className="cursor-pointer hover:bg-gray-100 p-1 rounded"
+                            onDoubleClick={() => handleDoubleClick(cout.id, 'prenom', cout.prenom)}
+                            title="Double-clic pour modifier"
+                          >
+                            {cout.prenom}
+                          </span>
+                        )}
+                      </td>
                       
                       <td className="p-3 text-center">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
