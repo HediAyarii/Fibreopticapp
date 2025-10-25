@@ -164,6 +164,26 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         console.warn('⚠️ Erreur synchronisation (non bloquante):', syncError)
       }
       
+      // 2. Synchroniser automatiquement les taxes
+      console.log('🔄 Synchronisation automatique des taxes...')
+      try {
+        const taxSyncResponse = await fetch('/api/sync/taxes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (taxSyncResponse.ok) {
+          const taxSyncData = await taxSyncResponse.json()
+          if (taxSyncData.success) {
+            console.log(`✅ Synchronisation taxes terminée: ${taxSyncData.updated} employés mis à jour`)
+          }
+        }
+      } catch (taxSyncError) {
+        console.warn('⚠️ Erreur synchronisation taxes (non bloquante):', taxSyncError)
+      }
+      
       // 2. Ensuite, charger les données mises à jour
       console.log('📊 Chargement des données mises à jour...')
       const response = await fetch(`/api/cout-par-salaire?mois=${selectedMonth}&annee=${selectedYear}`)

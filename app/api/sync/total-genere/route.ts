@@ -51,23 +51,37 @@ export async function POST(request: NextRequest) {
               END
             ) as total_recettes_reel
           FROM interventions i
-          WHERE LOWER(i.nom_technicien) = LOWER($1) AND LOWER(i.prenom_technicien) = LOWER($2)
+          WHERE (
+            (LOWER(i.nom_technicien) = LOWER($1) AND LOWER(i.prenom_technicien) = LOWER($2)) OR
+            (LOWER(i.nom_technicien) LIKE LOWER($3) AND LOWER(i.prenom_technicien) LIKE LOWER($4)) OR
+            (LOWER(i.nom_technicien) LIKE LOWER($4) AND LOWER(i.prenom_technicien) LIKE LOWER($3)) OR
+            (LOWER(REPLACE(i.nom_technicien, ' ', '')) = LOWER(REPLACE($1, ' ', '')) AND LOWER(REPLACE(i.prenom_technicien, ' ', '')) = LOWER(REPLACE($2, ' ', ''))) OR
+            (LOWER(REPLACE(i.nom_technicien, ' ', '')) LIKE LOWER(REPLACE($3, ' ', '')) AND LOWER(REPLACE(i.prenom_technicien, ' ', '')) LIKE LOWER(REPLACE($4, ' ', ''))) OR
+            (LOWER(REPLACE(i.nom_technicien, ' ', '')) LIKE LOWER(REPLACE($4, ' ', '')) AND LOWER(REPLACE(i.prenom_technicien, ' ', '')) LIKE LOWER(REPLACE($3, ' ', '')))
+          )
           AND (
             (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
              i.cloture_tech ~ '^[0-9]' AND 
-             (i.cloture_tech::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-              i.cloture_tech::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
+             (i.cloture_tech::date >= DATE($5 || '-' || LPAD($6::text, 2, '0') || '-01') AND 
+              i.cloture_tech::date <= (DATE($5 || '-' || LPAD($6::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
             (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
              i.cloture_hotline ~ '^[0-9]' AND 
-             (i.cloture_hotline::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-              i.cloture_hotline::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
+             (i.cloture_hotline::date >= DATE($5 || '-' || LPAD($6::text, 2, '0') || '-01') AND 
+              i.cloture_hotline::date <= (DATE($5 || '-' || LPAD($6::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
             (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
              i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
              i.date_rdv ~ '^[0-9]' AND 
-             (i.date_rdv::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-              i.date_rdv::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day')))
+             (i.date_rdv::date >= DATE($5 || '-' || LPAD($6::text, 2, '0') || '-01') AND 
+              i.date_rdv::date <= (DATE($5 || '-' || LPAD($6::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day')))
           )
-        `, [employee.nom, employee.prenom, employee.annee, employee.mois])
+        `, [
+          employee.nom, 
+          employee.prenom,
+          `%${employee.nom}%`, 
+          `%${employee.prenom}%`,
+          employee.annee, 
+          employee.mois
+        ])
         
         const totalReel = parseFloat(realTimeCalculation.rows[0]?.total_recettes_reel) || 0
         const current = parseFloat(employee.total_genere) || 0

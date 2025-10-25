@@ -39,13 +39,13 @@ export async function GET(request: NextRequest) {
         cps.annee,
         cps.matricule,
         -- Synchroniser automatiquement avec la table employes
-        COALESCE(e.pourcentage_taxe, cps.taxe, 0) as taxe,
+        COALESCE(e.pourcentage_taxe, 50) as taxe,
         -- Recalculer l'impôt basé sur la taxe synchronisée
         CASE 
-          WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0) - 100) < 0.01 THEN 0
-          WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0) - 50) < 0.01 THEN cps.charge / 2
-          WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0)) < 0.01 THEN cps.charge
-          ELSE cps.charge * (COALESCE(e.pourcentage_taxe, cps.taxe, 0) / 100)
+          WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
+          WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
+          WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
+          ELSE cps.charge * (COALESCE(e.pourcentage_taxe, 50) / 100)
         END as impot,
         cps.penalite,
         cps.prime,
@@ -53,15 +53,15 @@ export async function GET(request: NextRequest) {
         -- Calculer automatiquement le RAP avec la formule correcte (incluant la prime)
         (cps.total_genere - cps.salaire_net - 
          CASE 
-           WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0) - 100) < 0.01 THEN 0
-           WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0) - 50) < 0.01 THEN cps.charge / 2
-           WHEN ABS(COALESCE(e.pourcentage_taxe, cps.taxe, 0)) < 0.01 THEN cps.charge
-           ELSE cps.charge * (COALESCE(e.pourcentage_taxe, cps.taxe, 0) / 100)
+           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
+           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
+           WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
+           ELSE cps.charge * (COALESCE(e.pourcentage_taxe, 50) / 100)
          END + COALESCE(cps.prime, 0)) as rap,
         cps.created_at,
         cps.updated_at
       FROM cout_par_salaire cps
-      LEFT JOIN employes e ON cps.matricule = e.matricule AND e.statut = 'actif'
+      LEFT JOIN employes e ON LOWER(cps.nom) = LOWER(e.nom) AND LOWER(cps.prenom) = LOWER(e.prenom) AND e.statut = 'actif'
       ${whereClause}
       ORDER BY cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
     `, params)

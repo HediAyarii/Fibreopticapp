@@ -120,7 +120,8 @@ export async function POST(request: NextRequest) {
       date_embauche
     } = await request.json()
 
-    if (!prenom || !nom || !matricule) {
+    if (!prenom || !nom || !matricule || 
+        prenom.trim() === '' || nom.trim() === '' || matricule.trim() === '') {
       return NextResponse.json({ error: 'Prénom, nom et matricule requis' }, { status: 400 })
     }
 

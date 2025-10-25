@@ -184,6 +184,7 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
   const [formData, setFormData] = useState({
     nom: employee?.nom || '',
     prenom: employee?.prenom || '',
+    matricule: employee?.matricule || '',
     email: employee?.email || '',
     telephone: employee?.telephone || '',
     poste: employee?.poste || '',
@@ -242,27 +243,15 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="matricule">Matricule *</Label>
             <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => handleChange('email', e.target.value)}
-              placeholder="email@exemple.com"
+              id="matricule"
+              value={formData.matricule}
+              onChange={(e) => handleChange('matricule', e.target.value)}
+              placeholder="Ex: TECH_ABC123"
+              required
             />
           </div>
-          <div>
-            <Label htmlFor="telephone">Téléphone</Label>
-            <Input
-              id="telephone"
-              value={formData.telephone}
-              onChange={(e) => handleChange('telephone', e.target.value)}
-              placeholder="+33 1 23 45 67 89"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
           <div>
             <Label htmlFor="poste">Poste *</Label>
             <Input
@@ -273,6 +262,30 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
               required
             />
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="telephone">Téléphone</Label>
+            <Input
+              id="telephone"
+              value={formData.telephone}
+              onChange={(e) => handleChange('telephone', e.target.value)}
+              placeholder="+33 1 23 45 67 89"
+            />
+          </div>
+          <div>
+            <Label htmlFor="date_embauche">Date d'Embauche</Label>
+            <Input
+              id="date_embauche"
+              type="date"
+              value={formData.date_embauche}
+              onChange={(e) => handleChange('date_embauche', e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <Label htmlFor="departement">Département</Label>
             <Input
@@ -280,6 +293,16 @@ export function EmployeeForm({ employee, onSave, onCancel }: {
               value={formData.departement}
               onChange={(e) => handleChange('departement', e.target.value)}
               placeholder="Ex: Installation"
+            />
+          </div>
+          <div>
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              value={formData.email}
+              onChange={(e) => handleChange('email', e.target.value)}
+              placeholder="email@exemple.com"
             />
           </div>
         </div>
