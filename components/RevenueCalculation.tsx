@@ -318,7 +318,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                     <TableHead className="text-center">Interventions</TableHead>
                     <TableHead className="text-right">Recette Entreprise</TableHead>
                     <TableHead className="text-right">Recette Technicien</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Bénéfice Brut</TableHead>
                     <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -347,7 +347,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                         <TableCell className="text-right font-bold text-blue-600">
                           <div className="flex items-center justify-end gap-1">
                             <Euro className="w-3 h-3" />
-                            {formatCurrency(employee.total_recette_generale)}
+                            {formatCurrency(employee.total_recette_entreprise - employee.total_recette_technicien)}
                           </div>
                         </TableCell>
                         <TableCell className="text-center">
