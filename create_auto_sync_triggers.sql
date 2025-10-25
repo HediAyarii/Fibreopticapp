@@ -1,4 +1,4 @@
--- Créer une fonction pour synchroniser automatiquement les taxes
+n-- Créer une fonction pour synchroniser automatiquement les taxes
 CREATE OR REPLACE FUNCTION sync_taxes_automatique()
 RETURNS TRIGGER AS $$
 BEGIN

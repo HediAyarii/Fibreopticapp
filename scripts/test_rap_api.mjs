@@ -144,3 +144,4 @@ async function testRapAPI() {
 
 // Exécuter le test
 testRapAPI().catch(console.error)
+

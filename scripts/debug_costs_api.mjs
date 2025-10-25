@@ -177,3 +177,4 @@ async function debugCostsAPI() {
 
 // Exécuter le diagnostic
 debugCostsAPI().catch(console.error)
+

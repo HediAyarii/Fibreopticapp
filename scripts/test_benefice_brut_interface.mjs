@@ -189,3 +189,4 @@ async function testBeneficeBrutInterface() {
 
 // Exécuter le test
 testBeneficeBrutInterface().catch(console.error)
+

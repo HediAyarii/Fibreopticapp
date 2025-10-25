@@ -174,3 +174,4 @@ async function testBeneficeBrutFormula() {
 
 // Exécuter le test
 testBeneficeBrutFormula().catch(console.error)
+

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar, RefreshCw, TrendingUp, Calculator, DollarSign, TrendingDown, Users, BarChart3 } from "lucide-react"
+import { Calendar, RefreshCw, TrendingUp, Calculator, DollarSign, TrendingDown, Users, BarChart3, Fuel, Zap } from "lucide-react"
 import { useAutoSync } from "@/hooks/useAutoSync"
 
 interface RecapCalculData {
@@ -17,6 +17,33 @@ interface RecapCalculData {
   employe_matricule: string
   nombre_interventions: number
   total_recette_technicien: number
+  total_recette_entreprise: number
+  nombre_transactions_carburant: number
+  consommation_totale_carburant: number
+  consommation_moyenne_carburant: number
+  nombre_affectations_materiel: number
+  quantite_totale_materiel: number
+  valeur_totale_materiel: number
+  prix_moyen_materiel: number
+}
+
+interface ChargesData {
+  month: number
+  year: number
+  total_fixed_costs: number
+  total_variable_costs: number
+  total_frais_entreprise: number
+  total_charges: number
+  nombre_charges_variables: number
+  nombre_frais: number
+}
+
+interface ChargesSummary {
+  totalChargesFixes: number
+  totalChargesVariables: number
+  totalFraisEntreprise: number
+  totalChargesGlobal: number
+  nombreMois: number
 }
 
 export function RecapCalculTable() {
@@ -25,6 +52,8 @@ export function RecapCalculTable() {
   const [selectedEmployee, setSelectedEmployee] = useState('all')
   const [selectedGrille, setSelectedGrille] = useState('tout')
   const [employees, setEmployees] = useState<any[]>([])
+  const [chargesData, setChargesData] = useState<ChargesData[]>([])
+  const [chargesSummary, setChargesSummary] = useState<ChargesSummary | null>(null)
 
   // Hook personnalisé pour la synchronisation automatique avec filtres
   const fetchRecapData = useCallback(async () => {
@@ -39,6 +68,21 @@ export function RecapCalculTable() {
     const data = await response.json()
     return data.recettesParTechnicien || []
   }, [startDate, endDate, selectedEmployee, selectedGrille])
+
+  // Fonction pour récupérer les charges
+  const fetchChargesData = useCallback(async () => {
+    if (!startDate || !endDate) return
+
+    try {
+      const response = await fetch(`/api/charges-totales?startDate=${startDate}&endDate=${endDate}`)
+      if (!response.ok) throw new Error('Erreur lors du chargement des charges')
+      const data = await response.json()
+      setChargesData(data.chargesByMonth || [])
+      setChargesSummary(data.summary || null)
+    } catch (error) {
+      console.error('Erreur chargement charges:', error)
+    }
+  }, [startDate, endDate])
 
   // Utiliser le hook personnalisé avec les filtres
   const { data: recapData, loading, triggerSync } = useAutoSync({
@@ -56,6 +100,13 @@ export function RecapCalculTable() {
       'penalites-updated'
     ]
   })
+
+  // Charger les charges quand les dates changent
+  useEffect(() => {
+    if (startDate && endDate) {
+      fetchChargesData()
+    }
+  }, [fetchChargesData])
 
   useEffect(() => {
     loadEmployees()
@@ -89,14 +140,18 @@ export function RecapCalculTable() {
   }
 
   const getTotalRecettesEntreprise = () => {
-    return recapData.reduce((sum, item: any) => sum + (item.total_recette_technicien || 0), 0)
+    return recapData.reduce((sum, item: any) => sum + (item.total_recette_entreprise || 0), 0)
   }
 
   const getBeneficeBrut = () => {
-    // BÉNÉFICE BRUT = Recette Entreprise - Recette Technicien
+    // BÉNÉFICE NET = Recettes Entreprise - Recettes Technicien - Consommation Carburant - Valeur Matériel - Charges Totales
     const recetteEntreprise = recapData.reduce((sum, item: any) => sum + (item.total_recette_entreprise || 0), 0)
     const recetteTechnicien = recapData.reduce((sum, item: any) => sum + (item.total_recette_technicien || 0), 0)
-    return recetteEntreprise - recetteTechnicien
+    const consommationCarburant = recapData.reduce((sum, item: any) => sum + (item.consommation_totale_carburant || 0), 0)
+    const valeurMateriel = recapData.reduce((sum, item: any) => sum + (item.valeur_totale_materiel || 0), 0)
+    const chargesTotales = chargesSummary?.totalChargesGlobal || 0
+    
+    return recetteEntreprise - recetteTechnicien - consommationCarburant - valeurMateriel - chargesTotales
   }
 
   const getTotalInterventions = () => {
@@ -110,6 +165,38 @@ export function RecapCalculTable() {
   const getMoyenneMarge = () => {
     if (recapData.length === 0) return 0
     return 100 // Marge fixe pour l'instant
+  }
+
+  const getTotalConsommationCarburant = () => {
+    return recapData.reduce((sum, item: any) => sum + (item.consommation_totale_carburant || 0), 0)
+  }
+
+  const getTotalTransactionsCarburant = () => {
+    return recapData.reduce((sum, item: any) => sum + (item.nombre_transactions_carburant || 0), 0)
+  }
+
+  const getMoyenneConsommationCarburant = () => {
+    const total = getTotalConsommationCarburant()
+    const count = recapData.filter((item: any) => item.consommation_totale_carburant > 0).length
+    return count > 0 ? total / count : 0
+  }
+
+  const getTotalAffectationsMateriel = () => {
+    return recapData.reduce((sum, item: any) => sum + (item.nombre_affectations_materiel || 0), 0)
+  }
+
+  const getTotalQuantiteMateriel = () => {
+    return recapData.reduce((sum, item: any) => sum + (item.quantite_totale_materiel || 0), 0)
+  }
+
+  const getTotalValeurMateriel = () => {
+    return recapData.reduce((sum, item: any) => sum + (item.valeur_totale_materiel || 0), 0)
+  }
+
+  const getMoyennePrixMateriel = () => {
+    if (recapData.length === 0) return 0
+    const total = recapData.reduce((sum, item: any) => sum + (item.prix_moyen_materiel || 0), 0)
+    return total / recapData.length
   }
 
   const clearFilters = () => {
@@ -145,7 +232,7 @@ export function RecapCalculTable() {
             <div>
               <CardTitle className="text-xl font-bold">Récap Calcul</CardTitle>
               <CardDescription>
-                Calcul du bénéfice net par employé (Recettes - Coûts)
+                Analyse des recettes par technicien : recettes technicien vs recettes entreprise
               </CardDescription>
             </div>
           </div>
@@ -265,7 +352,7 @@ export function RecapCalculTable() {
         </div>
 
         {/* Statistiques globales */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-7 gap-4 mb-6">
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -273,7 +360,7 @@ export function RecapCalculTable() {
                   <DollarSign className="w-5 h-5 text-green-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Recettes Totales</p>
+                  <p className="text-sm text-muted-foreground">Recettes Technicien</p>
                   <p className="text-2xl font-bold text-green-500">
                     {formatCurrency(Number(getTotalRecettes()))}
                   </p>
@@ -299,12 +386,12 @@ export function RecapCalculTable() {
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-500/10 rounded-lg">
-                  <Users className="w-5 h-5 text-blue-500" />
+                <div className="p-2 bg-purple-500/10 rounded-lg">
+                  <Users className="w-5 h-5 text-purple-500" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Interventions Totales</p>
-                  <p className="text-2xl font-bold text-blue-500">
+                  <p className="text-2xl font-bold text-purple-500">
                     {getTotalInterventions()}
                   </p>
                 </div>
@@ -314,13 +401,13 @@ export function RecapCalculTable() {
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-500/10 rounded-lg">
-                  <TrendingUp className="w-5 h-5 text-blue-500" />
+                <div className="p-2 bg-orange-500/10 rounded-lg">
+                  <TrendingUp className="w-5 h-5 text-orange-500" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Bénéfice Net</p>
-                  <p className={`text-2xl font-bold ${getBeneficeColor(getTotalBenefice())}`}>
-                    {formatCurrency(Number(getTotalBenefice()))}
+                  <p className={`text-2xl font-bold ${getBeneficeColor(getBeneficeBrut())}`}>
+                    {formatCurrency(Number(getBeneficeBrut()))}
                   </p>
                 </div>
               </div>
@@ -329,8 +416,8 @@ export function RecapCalculTable() {
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-500/10 rounded-lg">
-                  <BarChart3 className="w-5 h-5 text-purple-500" />
+                <div className="p-2 bg-indigo-500/10 rounded-lg">
+                  <TrendingDown className="w-5 h-5 text-indigo-500" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Marge Moyenne</p>
@@ -341,6 +428,71 @@ export function RecapCalculTable() {
               </div>
             </CardContent>
           </Card>
+          <Card className="glass-card border border-white/20">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-500/10 rounded-lg">
+                  <Fuel className="w-5 h-5 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Consommation Carburant</p>
+                  <p className="text-2xl font-bold text-red-500">
+                    {formatCurrency(Number(getTotalConsommationCarburant()))}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card border border-white/20">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-500/10 rounded-lg">
+                  <Calculator className="w-5 h-5 text-purple-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Valeur Matériel</p>
+                  <p className="text-2xl font-bold text-purple-500">
+                    {formatCurrency(Number(getTotalValeurMateriel()))}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card border border-white/20">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-500/10 rounded-lg">
+                  <DollarSign className="w-5 h-5 text-gray-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Charges Totales</p>
+                  <p className="text-2xl font-bold text-gray-500">
+                    {formatCurrency(Number(chargesSummary?.totalChargesGlobal || 0))}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Information sur le calcul du Bénéfice Net */}
+        <div className="mb-6 p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-blue-500/20 rounded-lg">
+              <Calculator className="w-5 h-5 text-blue-500" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-blue-400 mb-2">Calcul du Bénéfice Net</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                <strong>Bénéfice Net Global</strong> = Recettes Entreprise - Recettes Technicien - Consommation Carburant - Valeur Matériel - Charges Totales
+              </p>
+              <p className="text-sm text-muted-foreground">
+                <strong>Bénéfice Net par Employé</strong> = Recettes Entreprise - Recettes Technicien - Carburant - Matériel
+                <br />
+                <span className="text-xs text-muted-foreground">(Les charges totales ne sont pas réparties par employé car ce sont des charges globales)</span>
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Table du récap calcul */}
@@ -351,12 +503,16 @@ export function RecapCalculTable() {
                 <th className="text-left p-3 font-medium text-muted-foreground">Employé</th>
                 <th className="text-right p-3 font-medium text-muted-foreground">Interventions</th>
                 <th className="text-right p-3 font-medium text-muted-foreground">Recettes Technicien</th>
+                <th className="text-right p-3 font-medium text-muted-foreground">Recettes Entreprise</th>
+                <th className="text-right p-3 font-medium text-muted-foreground">Bénéfice Net</th>
+                <th className="text-right p-3 font-medium text-muted-foreground">Carburant</th>
+                <th className="text-right p-3 font-medium text-muted-foreground">Matériel</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={3} className="text-center p-8">
+                  <td colSpan={7} className="text-center p-8">
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
                       Chargement...
@@ -365,7 +521,7 @@ export function RecapCalculTable() {
                 </tr>
               ) : recapData.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="text-center p-8 text-muted-foreground">
+                  <td colSpan={7} className="text-center p-8 text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
                       <Calculator className="w-8 h-8 text-muted-foreground" />
                       <div>
@@ -381,32 +537,58 @@ export function RecapCalculTable() {
                   </td>
                 </tr>
               ) : (
-                recapData.map((employee: any) => (
-                  <tr key={employee.employe_id} className="border-b border-white/5 hover:bg-white/5">
-                    <td className="p-3">
-                      <div className="font-medium">
-                        {employee.employe_nom} {employee.employe_prenom}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {employee.employe_matricule}
-                      </div>
-                    </td>
-                    <td className="p-3 text-right">
-                      <span className="text-sm font-medium text-blue-600">
-                        {employee.nombre_interventions}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right">
-                      <span className="text-sm font-medium text-green-600">
-                        {formatCurrency(employee.total_recette_technicien)}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                recapData.map((employee: any) => {
+                  // Bénéfice Net par employé = Recettes Entreprise - Recettes Technicien - Carburant - Matériel
+                  // Note: Les charges totales ne sont pas réparties par employé car ce sont des charges globales
+                  const beneficeNet = (employee.total_recette_entreprise || 0) - (employee.total_recette_technicien || 0) - (employee.consommation_totale_carburant || 0) - (employee.valeur_totale_materiel || 0)
+                  return (
+                    <tr key={employee.employe_id} className="border-b border-white/5 hover:bg-white/5">
+                      <td className="p-3">
+                        <div className="font-medium">
+                          {employee.employe_nom} {employee.employe_prenom}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {employee.employe_matricule}
+                        </div>
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className="text-sm font-medium text-blue-600">
+                          {employee.nombre_interventions}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className="text-sm font-medium text-green-600">
+                          {formatCurrency(employee.total_recette_technicien)}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className="text-sm font-medium text-blue-600">
+                          {formatCurrency(employee.total_recette_entreprise)}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className={`text-sm font-medium ${getBeneficeColor(beneficeNet)}`}>
+                          {formatCurrency(beneficeNet)}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className="text-sm font-medium text-red-600">
+                          {formatCurrency(employee.consommation_totale_carburant)}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className="text-sm font-medium text-purple-600">
+                          {formatCurrency(employee.valeur_totale_materiel)}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
         </div>
+
       </CardContent>
     </Card>
   )

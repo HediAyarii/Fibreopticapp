@@ -359,45 +359,22 @@ export async function GET(request: NextRequest) {
     let result
 
     if (type === 'fixed') {
-      // Récupérer les coûts fixes depuis frais_entreprise
-      // Si month et year sont spécifiés, récupérer pour ce mois spécifique
-      if (month && year) {
-        result = await query(`
-          SELECT 
-            id,
-            fournisseur as name,
-            description,
-            montant_ttc as amount,
-            type_frais as category,
-            date_facture as date_facturation,
-            statut,
-            created_at,
-            updated_at
-          FROM frais_entreprise 
-          WHERE statut = 'actif' 
-          AND type_frais = 'Charge Fixe'
-          AND EXTRACT(MONTH FROM date_facture) = $1 
-          AND EXTRACT(YEAR FROM date_facture) = $2
-          ORDER BY fournisseur
-        `, [parseInt(month), parseInt(year)])
-      } else {
-        // Récupérer toutes les charges fixes
-        result = await query(`
-          SELECT 
-            id,
-            fournisseur as name,
-            description,
-            montant_ttc as amount,
-            type_frais as category,
-            date_facture as date_facturation,
-            statut,
-            created_at,
-            updated_at
-          FROM frais_entreprise 
-          WHERE statut = 'actif' AND type_frais = 'Charge Fixe'
-          ORDER BY date_facture DESC, fournisseur
-        `)
-      }
+      // Récupérer les coûts fixes depuis la table fixed_costs
+      result = await query(`
+        SELECT 
+          id,
+          name,
+          description,
+          amount,
+          category,
+          created_at,
+          updated_at,
+          is_active,
+          frequency
+        FROM fixed_costs 
+        WHERE is_active = true
+        ORDER BY name
+      `)
     } else if (type === 'variable' && month && year) {
       // Récupérer les coûts variables pour un mois spécifique depuis frais_entreprise
       result = await query(`
@@ -480,73 +457,58 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Type de charge invalide' }, { status: 400 })
     }
 
-    // Pour les charges fixes, créer/mettre à jour pour ce mois et les mois suivants
+    // Pour les charges fixes, utiliser la table fixed_costs
     if (type === 'fixed') {
-      const currentMonth = parseInt(month || new Date().getMonth() + 1)
-      const currentYear = parseInt(year || new Date().getFullYear())
-      
-      // Vérifier s'il existe déjà une charge avec le même nom pour ce mois exact
+      // Vérifier s'il existe déjà une charge avec le même nom
       const existingFixed = await query(`
-        SELECT id FROM frais_entreprise 
-        WHERE fournisseur = $1 
-        AND type_frais = 'Charge Fixe'
-        AND EXTRACT(MONTH FROM date_facture) = $2 
-        AND EXTRACT(YEAR FROM date_facture) = $3
-        AND statut = 'actif'
-      `, [name, currentMonth, currentYear])
+        SELECT id FROM fixed_costs 
+        WHERE name = $1 AND is_active = true
+      `, [name])
       
       let result
       
       if (existingFixed.rows.length > 0) {
-        // Mettre à jour cette charge fixe pour ce mois
+        // Mettre à jour cette charge fixe
         result = await query(`
-          UPDATE frais_entreprise 
+          UPDATE fixed_costs 
           SET 
-            montant_ht = $1,
-            montant_ttc = $2,
-            tva = $3,
-            description = $4,
+            amount = $1,
+            description = $2,
+            category = $3,
             updated_at = CURRENT_TIMESTAMP
-          WHERE id = $5
+          WHERE id = $4
           RETURNING *
         `, [
-          parseFloat(amount) * 0.8, // montant_ht
-          parseFloat(amount), // montant_ttc
-          Math.min(parseFloat(amount) * 0.2, 999.99), // tva (limité à 999.99)
+          parseFloat(amount),
           description,
+          category,
           existingFixed.rows[0].id
         ])
       } else {
-        // Créer la charge pour ce mois
+        // Créer une nouvelle charge fixe
         result = await query(`
-          INSERT INTO frais_entreprise (
-            company_name, service_code, category, numero_facture, date_facture,
-            fournisseur, type_frais, montant_ht, montant_ttc, tva, description, statut
+          INSERT INTO fixed_costs (
+            name,
+            description,
+            amount,
+            category,
+            is_active,
+            frequency
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'actif')
+          VALUES ($1, $2, $3, $4, true, 'monthly')
           RETURNING *
         `, [
-          'FinalFibre', // company_name
-          serviceCode, // service_code
-          category, // category
-          `FACT-${Date.now()}`, // numero_facture
-          dateFacturation, // date_facture
-          name, // fournisseur
-          typeFrais, // type_frais
-          parseFloat(amount) * 0.8, // montant_ht
-          parseFloat(amount), // montant_ttc
-          Math.min(parseFloat(amount) * 0.2, 999.99), // tva (limité à 999.99)
-          description, // description
+          name,
+          description,
+          parseFloat(amount),
+          category
         ])
       }
-      
-            // Pour les charges fixes, ne pas créer de charges multiples
-            // Une seule charge fixe est suffisante
       
       return NextResponse.json({
         success: true,
         cost: result.rows[0],
-        message: `Charge fixe ${existingFixed.rows.length > 0 ? 'mise à jour' : 'créée'} pour ${currentMonth}/${currentYear} et tous les mois futurs`
+        message: `Charge fixe ${existingFixed.rows.length > 0 ? 'mise à jour' : 'créée'} avec succès`
       })
     }
 
@@ -679,10 +641,17 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'ID et type requis' }, { status: 400 })
     }
 
-    // Vérifier d'abord si le frais existe
-    const existingCost = await query(`
-      SELECT id, fournisseur, statut, type_frais FROM frais_entreprise WHERE id = $1
-    `, [parseInt(id)])
+    // Vérifier d'abord si la charge existe
+    let existingCost
+    if (type === 'fixed') {
+      existingCost = await query(`
+        SELECT id, name, is_active FROM fixed_costs WHERE id = $1
+      `, [parseInt(id)])
+    } else {
+      existingCost = await query(`
+        SELECT id, fournisseur, statut, type_frais FROM frais_entreprise WHERE id = $1
+      `, [parseInt(id)])
+    }
     
     if (existingCost.rows.length === 0) {
       return NextResponse.json({ error: 'Charge non trouvée' }, { status: 404 })
@@ -690,21 +659,31 @@ export async function DELETE(request: NextRequest) {
     
     const cost = existingCost.rows[0]
     
-    // Vérifier que le type correspond
-    const expectedType = type === 'fixed' ? 'Charge Fixe' : 'Charge Variable'
-    if (cost.type_frais !== expectedType) {
-      return NextResponse.json({ 
-        error: `Type de charge incorrect. Attendu: ${expectedType}, trouvé: ${cost.type_frais}` 
-      }, { status: 400 })
-    }
-    
-    // Si déjà désactivé, retourner un message approprié
-    if (cost.statut === 'inactif') {
-      return NextResponse.json({ 
-        success: true,
-        message: 'Charge déjà désactivée',
-        cost: cost
-      })
+    if (type === 'fixed') {
+      // Si déjà désactivé, retourner un message approprié
+      if (!cost.is_active) {
+        return NextResponse.json({ 
+          success: true,
+          message: 'Charge déjà désactivée',
+          cost: cost
+        })
+      }
+    } else {
+      // Vérifier que le type correspond pour les charges variables
+      if (cost.type_frais !== 'Charge Variable') {
+        return NextResponse.json({ 
+          error: `Type de charge incorrect. Attendu: Charge Variable, trouvé: ${cost.type_frais}` 
+        }, { status: 400 })
+      }
+      
+      // Si déjà désactivé, retourner un message approprié
+      if (cost.statut === 'inactif') {
+        return NextResponse.json({ 
+          success: true,
+          message: 'Charge déjà désactivée',
+          cost: cost
+        })
+      }
     }
     
     // Pour les charges variables, supprimer complètement
@@ -718,9 +697,9 @@ export async function DELETE(request: NextRequest) {
       `, [parseInt(id)])
     } else {
       result = await query(`
-        UPDATE frais_entreprise 
-        SET statut = 'inactif', updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND statut = 'actif' AND type_frais = 'Charge Fixe'
+        UPDATE fixed_costs 
+        SET is_active = false, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND is_active = true
         RETURNING *
       `, [parseInt(id)])
     }

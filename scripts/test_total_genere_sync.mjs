@@ -187,3 +187,4 @@ async function testTotalGenereSync() {
 
 // Exécuter le test
 testTotalGenereSync().catch(console.error)
+
