@@ -416,21 +416,6 @@ export function RecapCalculTable() {
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-500/10 rounded-lg">
-                  <TrendingDown className="w-5 h-5 text-indigo-500" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Marge Moyenne</p>
-                  <p className={`text-2xl font-bold ${getMargeColor(getMoyenneMarge())}`}>
-                    {formatPercentage(getMoyenneMarge())}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card border border-white/20">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
                 <div className="p-2 bg-red-500/10 rounded-lg">
                   <Fuel className="w-5 h-5 text-red-500" />
                 </div>
@@ -475,25 +460,6 @@ export function RecapCalculTable() {
           </Card>
         </div>
 
-        {/* Information sur le calcul du Bénéfice Net */}
-        <div className="mb-6 p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <Calculator className="w-5 h-5 text-blue-500" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-blue-400 mb-2">Calcul du Bénéfice Net</h3>
-              <p className="text-sm text-muted-foreground mb-2">
-                <strong>Bénéfice Net Global</strong> = Recettes Entreprise - Recettes Technicien - Consommation Carburant - Valeur Matériel - Charges Totales
-              </p>
-              <p className="text-sm text-muted-foreground">
-                <strong>Bénéfice Net par Employé</strong> = Recettes Entreprise - Recettes Technicien - Carburant - Matériel
-                <br />
-                <span className="text-xs text-muted-foreground">(Les charges totales ne sont pas réparties par employé car ce sont des charges globales)</span>
-              </p>
-            </div>
-          </div>
-        </div>
 
         {/* Table du récap calcul */}
         <div className="overflow-x-auto">

@@ -1,6 +1,8 @@
 import { Pool, PoolClient } from 'pg'
 
-// Configuration de la base de données
+// Configuration de la base de données optimisée pour le développement
+const isDevelopment = process.env.NODE_ENV === 'development'
+
 const dbConfig = {
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432'),
@@ -8,24 +10,50 @@ const dbConfig = {
   user: process.env.POSTGRES_USER || 'finalfibre_user',
   password: process.env.POSTGRES_PASSWORD || 'finalfibre_password_2024',
   ssl: false, // Désactiver SSL pour le développement local
-  max: 50, // Augmenter le nombre maximum de connexions
-  min: 5, // Nombre minimum de connexions maintenues
-  idleTimeoutMillis: 10000, // Fermer les connexions inactives après 10 secondes
-  connectionTimeoutMillis: 5000, // Augmenter le timeout de connexion à 5 secondes
-  acquireTimeoutMillis: 10000, // Timeout pour acquérir une connexion
-  allowExitOnIdle: true, // Permettre la fermeture du pool quand il est inactif
+  // Configuration optimisée pour éviter les fuites de connexions en développement
+  max: isDevelopment ? 10 : 50, // Réduire le nombre de connexions en développement
+  min: isDevelopment ? 1 : 5, // Réduire le minimum en développement
+  idleTimeoutMillis: isDevelopment ? 5000 : 10000, // Fermer plus rapidement en développement
+  connectionTimeoutMillis: 5000,
+  acquireTimeoutMillis: 10000,
+  allowExitOnIdle: true,
+  // Nouvelles options pour éviter les fuites
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 0,
 }
 
-// Pool de connexions PostgreSQL
+// Pattern Singleton Global pour éviter les fuites lors du hot reload
+declare global {
+  var __postgresPool: Pool | undefined
+  var __postgresPoolInitialized: boolean | undefined
+}
+
+// Pool de connexions PostgreSQL avec gestion globale
 let pool: Pool | null = null
 
 export function getPool(): Pool {
-  if (!pool) {
+  // Utiliser le pattern singleton global pour éviter les fuites lors du hot reload
+  if (global.__postgresPool && !global.__postgresPool.ended) {
+    pool = global.__postgresPool
+    return pool
+  }
+
+  if (!pool || pool.ended) {
+    console.log('🔄 Création d\'un nouveau pool PostgreSQL...')
     pool = new Pool(dbConfig)
+    
+    // Stocker dans la variable globale pour éviter les fuites
+    global.__postgresPool = pool
     
     // Gestion des erreurs de connexion
     pool.on('error', (err) => {
-      console.error('Erreur inattendue sur le client PostgreSQL:', err)
+      console.error('❌ Erreur inattendue sur le client PostgreSQL:', err)
+    })
+
+    // Gestion de la fermeture du pool
+    pool.on('end', () => {
+      console.log('🔌 Pool PostgreSQL fermé')
+      global.__postgresPool = undefined
     })
     
     // Test de connexion au démarrage
@@ -99,12 +127,130 @@ export function getPoolStats(): any {
 
 // Fonction pour fermer le pool (utile pour les tests)
 export async function closePool(): Promise<void> {
-  if (pool) {
+  if (pool && !pool.ended) {
     await pool.end()
     pool = null
+    global.__postgresPool = undefined
     console.log('🔌 Pool de connexions PostgreSQL fermé')
   }
 }
+
+// Fonction pour nettoyer les connexions orphelines
+export async function cleanupOrphanedConnections(): Promise<void> {
+  try {
+    const pool = getPool()
+    const result = await pool.query(`
+      SELECT 
+        pid,
+        usename,
+        application_name,
+        state,
+        query_start
+      FROM pg_stat_activity 
+      WHERE datname = current_database()
+        AND state = 'idle'
+        AND query_start < NOW() - INTERVAL '30 seconds'
+      ORDER BY query_start
+    `)
+    
+    if (result.rows.length > 0) {
+      console.log(`🧹 Nettoyage de ${result.rows.length} connexions orphelines...`)
+      
+      for (const row of result.rows) {
+        try {
+          await pool.query('SELECT pg_terminate_backend($1)', [row.pid])
+          console.log(`   ✅ Connexion ${row.pid} fermée`)
+        } catch (error) {
+          console.log(`   ⚠️  Impossible de fermer la connexion ${row.pid}:`, error.message)
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Erreur lors du nettoyage des connexions:', error)
+  }
+}
+
+// Fonction pour surveiller l'état des connexions
+export async function monitorConnections(): Promise<any> {
+  try {
+    const pool = getPool()
+    const result = await pool.query(`
+      SELECT 
+        (SELECT setting::int FROM pg_settings WHERE name = 'max_connections') as max_connections,
+        (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()) as current_connections,
+        (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'active') as active_connections,
+        (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'idle') as idle_connections,
+        (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'idle in transaction') as idle_in_transaction_connections
+    `)
+    
+    const stats = result.rows[0]
+    const maxConnections = parseInt(stats.max_connections)
+    const currentConnections = parseInt(stats.current_connections)
+    const activeConnections = parseInt(stats.active_connections)
+    const idleConnections = parseInt(stats.idle_connections)
+    const idleInTransactionConnections = parseInt(stats.idle_in_transaction_connections)
+    const usagePercentage = ((currentConnections / maxConnections) * 100).toFixed(1)
+    
+    const poolStats = getPoolStats()
+    
+    return {
+      maxConnections,
+      currentConnections,
+      activeConnections,
+      idleConnections,
+      idleInTransactionConnections,
+      usagePercentage: `${usagePercentage}%`,
+      poolStats,
+      isHealthy: currentConnections < maxConnections * 0.8
+    }
+  } catch (error) {
+    console.error('❌ Erreur lors du monitoring des connexions:', error)
+    return null
+  }
+}
+
+// Handlers de nettoyage automatique
+function setupCleanupHandlers() {
+  // Nettoyage lors de l'arrêt du processus
+  process.on('SIGINT', async () => {
+    console.log('🔄 Arrêt du serveur - Nettoyage des connexions...')
+    await closePool()
+    process.exit(0)
+  })
+
+  process.on('SIGTERM', async () => {
+    console.log('🔄 Arrêt du serveur - Nettoyage des connexions...')
+    await closePool()
+    process.exit(0)
+  })
+
+  // Nettoyage lors des erreurs non gérées
+  process.on('uncaughtException', async (error) => {
+    console.error('❌ Erreur non gérée:', error)
+    await closePool()
+    process.exit(1)
+  })
+
+  process.on('unhandledRejection', async (reason, promise) => {
+    console.error('❌ Promesse rejetée non gérée:', reason)
+    await closePool()
+    process.exit(1)
+  })
+
+  // Nettoyage périodique des connexions orphelines (en développement)
+  if (isDevelopment) {
+    setInterval(async () => {
+      try {
+        await cleanupOrphanedConnections()
+      } catch (error) {
+        console.error('❌ Erreur lors du nettoyage périodique:', error)
+      }
+    }, 30000) // Toutes les 30 secondes
+  }
+}
+
+// Initialiser les handlers de nettoyage
+setupCleanupHandlers()
 
 // Types pour les tables principales
 export interface Intervention {
