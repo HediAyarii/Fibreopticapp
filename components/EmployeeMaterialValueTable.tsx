@@ -20,6 +20,8 @@ interface EmployeeMaterialValue {
   valeur_totale: number
   premiere_affectation: string
   derniere_affectation: string
+  ert_label: string
+  axecom_label: string
 }
 
 export function EmployeeMaterialValueTable() {
@@ -73,6 +75,25 @@ export function EmployeeMaterialValueTable() {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR')
+  }
+
+  const formatEmployeeName = (employee: any) => {
+    const ertLabel = employee.ert_label || ''
+    const axecomLabel = employee.axecom_label || ''
+    
+    let displayName = `${employee.employe_nom} ${employee.employe_prenom}`
+    
+    // Ajouter l'étiquette ERT devant le nom
+    if (ertLabel) {
+      displayName = `[${ertLabel}] ${displayName}`
+    }
+    
+    // Ajouter l'étiquette AXECOM après le nom
+    if (axecomLabel) {
+      displayName = `${displayName} (${axecomLabel})`
+    }
+    
+    return displayName
   }
 
   const getTotalValue = () => {
@@ -321,7 +342,7 @@ export function EmployeeMaterialValueTable() {
                   <tr key={employee.employe_id} className="border-b border-white/5 hover:bg-white/5">
                     <td className="p-3">
                       <div className="font-medium">
-                        {employee.employe_nom} {employee.employe_prenom}
+                        {formatEmployeeName(employee)}
                       </div>
                     </td>
                     <td className="p-3">

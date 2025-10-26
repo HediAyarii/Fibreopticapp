@@ -25,6 +25,8 @@ interface RecapCalculData {
   quantite_totale_materiel: number
   valeur_totale_materiel: number
   prix_moyen_materiel: number
+  ert_label: string
+  axecom_label: string
 }
 
 interface ChargesData {
@@ -219,6 +221,25 @@ export function RecapCalculTable() {
     if (margeNum > 10) return 'text-yellow-600'
     if (margeNum > 0) return 'text-orange-600'
     return 'text-red-600'
+  }
+
+  const formatEmployeeName = (employee: any) => {
+    const ertLabel = employee.ert_label || ''
+    const axecomLabel = employee.axecom_label || ''
+    
+    let displayName = `${employee.employe_nom} ${employee.employe_prenom}`
+    
+    // Ajouter l'étiquette ERT devant le nom
+    if (ertLabel) {
+      displayName = `[${ertLabel}] ${displayName}`
+    }
+    
+    // Ajouter l'étiquette AXECOM après le nom
+    if (axecomLabel) {
+      displayName = `${displayName} (${axecomLabel})`
+    }
+    
+    return displayName
   }
 
   return (
@@ -511,7 +532,7 @@ export function RecapCalculTable() {
                     <tr key={employee.employe_id} className="border-b border-white/5 hover:bg-white/5">
                       <td className="p-3">
                         <div className="font-medium">
-                          {employee.employe_nom} {employee.employe_prenom}
+                          {formatEmployeeName(employee)}
                         </div>
                         <div className="text-sm text-muted-foreground">
                           {employee.employe_matricule}
