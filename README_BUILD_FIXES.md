@@ -124,3 +124,5 @@ La solution de **polling automatique** offre une synchronisation en temps réel 
 
 
 
+
+

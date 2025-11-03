@@ -283,10 +283,43 @@ export default function EmployeeTracker() {
   const [showCardHistoryModal, setShowCardHistoryModal] = useState(false)
   const [selectedEmployeeHistory, setSelectedEmployeeHistory] = useState<any>(null)
   
+  // Fonction helper pour obtenir les dates du mois précédent
+  const getDefaultDates = () => {
+    const today = new Date()
+    const currentYear = today.getFullYear()
+    const currentMonth = today.getMonth() // 0-11
+    
+    // Calculer le mois précédent
+    let previousMonth = currentMonth - 1
+    let yearForPreviousMonth = currentYear
+    
+    // Gérer le cas de janvier (mois 0) -> décembre de l'année précédente
+    if (previousMonth < 0) {
+      previousMonth = 11 // Décembre
+      yearForPreviousMonth = currentYear - 1
+    }
+    
+    // Premier jour du mois précédent
+    const startMonth = (previousMonth + 1).toString().padStart(2, '0')
+    const startYear = yearForPreviousMonth
+    
+    // Dernier jour du mois précédent
+    const lastDay = new Date(yearForPreviousMonth, previousMonth + 1, 0).getDate()
+    const endMonth = startMonth
+    const endYear = yearForPreviousMonth
+    
+    return {
+      start: `${startYear}-${startMonth}-01`,
+      end: `${endYear}-${endMonth}-${lastDay.toString().padStart(2, '0')}`
+    }
+  }
+
+  const defaultDates = getDefaultDates()
+  
   // États pour les filtres de consommation carburant
   const [consumptionFilters, setConsumptionFilters] = useState({
-    date_debut: '',
-    date_fin: '',
+    date_debut: defaultDates.start,
+    date_fin: defaultDates.end,
     employe_id: 'all',
     numero_carte: 'all'
   })
@@ -795,6 +828,10 @@ export default function EmployeeTracker() {
 
   // Check and remove duplicates
   const handleCheckDuplicates = async () => {
+    if (!confirm('⚠️ Cette action va supprimer les doublons définitivement.\n\nVoulez-vous continuer ?')) {
+      return
+    }
+
     setLoadingDuplicates(true)
     try {
       const response = await fetch('/api/duplicates-check', {
@@ -810,17 +847,28 @@ export default function EmployeeTracker() {
 
       const data = await response.json()
       
-      // Afficher un message de confirmation
-      alert(`Vérification des doublons terminée !\n\n${data.message}\n\n- ${data.totalDuplicates} groupes de doublons trouvés\n- ${data.deletedCount} lignes supprimées`)
+      // Message amélioré avec les statistiques
+      const stats = `
+✅ NETTOYAGE TERMINÉ EN ${data.executionTime}
+
+📊 Résultats:
+• ${data.totalDuplicateGroups} groupes de doublons traités
+• ${data.deletedCount} doublons supprimés
+• ${data.dupCleanedCount || 0} entrées _DUP_ nettoyées
+
+${data.summary && data.summary.length > 0 ? '\n🔍 Exemples de doublons trouvés:\n' + data.summary.slice(0, 3).map((s: any) => `  • ${s.num_inter} (${s.count} fois)`).join('\n') : ''}
+      `
       
-      console.log('Résultat de la vérification des doublons:', data)
+      alert(stats)
+      
+      console.log('✅ Résultat du nettoyage:', data)
       
       // Recharger les données
       await loadDataFromDatabase()
       
     } catch (error) {
-      console.error('Erreur lors de la vérification des doublons:', error)
-      alert('Erreur lors de la vérification des doublons')
+      console.error('❌ Erreur lors de la vérification des doublons:', error)
+      alert('Erreur lors de la vérification des doublons: ' + (error instanceof Error ? error.message : 'Erreur inconnue'))
     } finally {
       setLoadingDuplicates(false)
     }
@@ -2182,9 +2230,10 @@ La page va se recharger automatiquement...`)
 
   // Fonction pour réinitialiser les filtres
   const resetConsumptionFilters = () => {
+    const dates = getDefaultDates()
     setConsumptionFilters({
-      date_debut: '',
-      date_fin: '',
+      date_debut: dates.start,
+      date_fin: dates.end,
       employe_id: 'all',
       numero_carte: 'all'
     })
@@ -3508,12 +3557,12 @@ La page va se recharger automatiquement...`)
                     {loadingDuplicates ? (
                       <>
                         <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Vérification...
+                        Nettoyage...
                       </>
                     ) : (
                       <>
                         <AlertCircle className="h-4 w-4 mr-2" />
-                        Vérifier Doublons
+                        Nettoyer Doublons
                       </>
                     )}
                   </Button>
@@ -6474,6 +6523,7 @@ function CostsManagement() {
   const [categories, setCategories] = useState<any[]>([])
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [selectedAttribution, setSelectedAttribution] = useState<'TOTAL' | 'AXECOM' | 'ERT'>('TOTAL')
   const [loading, setLoading] = useState(false)
   const [showFixedModal, setShowFixedModal] = useState(false)
   const [showVariableModal, setShowVariableModal] = useState(false)
@@ -6576,17 +6626,88 @@ function CostsManagement() {
     }
   }
 
-  const totalFixed = fixedCosts.reduce((sum, cost) => sum + parseFloat(cost.amount), 0)
-  const totalVariable = variableCosts.reduce((sum, cost) => sum + parseFloat(cost.amount), 0)
+  // Filtrer les charges selon l'attribution sélectionnée
+  const filteredFixedCosts = fixedCosts.filter(cost => {
+    if (selectedAttribution === 'TOTAL') return true
+    if (selectedAttribution === 'AXECOM') return cost.attribution === 'AXECOM' || cost.attribution === 'LES_DEUX'
+    if (selectedAttribution === 'ERT') return cost.attribution === 'ERT' || cost.attribution === 'LES_DEUX'
+    return true
+  })
+
+  const filteredVariableCosts = variableCosts.filter(cost => {
+    if (selectedAttribution === 'TOTAL') return true
+    if (selectedAttribution === 'AXECOM') return cost.attribution === 'AXECOM' || cost.attribution === 'LES_DEUX'
+    if (selectedAttribution === 'ERT') return cost.attribution === 'ERT' || cost.attribution === 'LES_DEUX'
+    return true
+  })
+
+  const totalFixed = filteredFixedCosts.reduce((sum, cost) => {
+    // Si c'est LES_DEUX, diviser par 2 pour le calcul du total de l'entreprise spécifique
+    if (selectedAttribution !== 'TOTAL' && cost.attribution === 'LES_DEUX') {
+      return sum + (parseFloat(cost.amount) / 2)
+    }
+    return sum + parseFloat(cost.amount)
+  }, 0)
+  const totalVariable = filteredVariableCosts.reduce((sum, cost) => {
+    // Si c'est LES_DEUX, diviser par 2 pour le calcul du total de l'entreprise spécifique
+    if (selectedAttribution !== 'TOTAL' && cost.attribution === 'LES_DEUX') {
+      return sum + (parseFloat(cost.amount) / 2)
+    }
+    return sum + parseFloat(cost.amount)
+  }, 0)
   const totalCosts = totalFixed + totalVariable
+
+  // Calculer les totaux par attribution (pour la vue TOTAL) - Fixes + Variables
+  const totalAxecom = 
+    // Charges fixes AXECOM
+    fixedCosts
+      .filter(cost => cost.attribution === 'AXECOM')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount), 0) +
+    fixedCosts
+      .filter(cost => cost.attribution === 'LES_DEUX')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount) / 2, 0) +
+    // Charges variables AXECOM
+    variableCosts
+      .filter(cost => cost.attribution === 'AXECOM')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount), 0) +
+    variableCosts
+      .filter(cost => cost.attribution === 'LES_DEUX')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount) / 2, 0)
+  
+  const totalErt = 
+    // Charges fixes ERT
+    fixedCosts
+      .filter(cost => cost.attribution === 'ERT')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount), 0) +
+    fixedCosts
+      .filter(cost => cost.attribution === 'LES_DEUX')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount) / 2, 0) +
+    // Charges variables ERT
+    variableCosts
+      .filter(cost => cost.attribution === 'ERT')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount), 0) +
+    variableCosts
+      .filter(cost => cost.attribution === 'LES_DEUX')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount) / 2, 0)
+  
+  const totalLesDeux = 
+    // Charges fixes LES_DEUX
+    fixedCosts
+      .filter(cost => cost.attribution === 'LES_DEUX')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount), 0) +
+    // Charges variables LES_DEUX
+    variableCosts
+      .filter(cost => cost.attribution === 'LES_DEUX')
+      .reduce((sum, cost) => sum + parseFloat(cost.amount), 0)
 
   return (
     <div className="space-y-6">
-      {/* Sélecteur de mois/année */}
-      <div className="flex gap-4 items-center">
-        <div className="flex gap-2">
+      {/* Sélecteurs de mois/année/attribution */}
+      <div className="flex gap-3 items-center flex-wrap">
+        <div className="flex gap-2 items-center">
+          <Label className="text-sm font-medium">Mois:</Label>
           <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(parseInt(value))}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -6597,9 +6718,12 @@ function CostsManagement() {
               ))}
             </SelectContent>
           </Select>
+        </div>
           
+        <div className="flex gap-2 items-center">
+          <Label className="text-sm font-medium">Année:</Label>
           <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(parseInt(value))}>
-            <SelectTrigger className="w-24">
+            <SelectTrigger className="w-28">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -6614,11 +6738,40 @@ function CostsManagement() {
             </SelectContent>
           </Select>
         </div>
+
+        <div className="flex gap-2 items-center">
+          <Label className="text-sm font-medium">Vue:</Label>
+          <Select value={selectedAttribution} onValueChange={(value: any) => setSelectedAttribution(value)}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="TOTAL">
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-gray-500"></span>
+                  Total (Tous)
+                </span>
+              </SelectItem>
+              <SelectItem value="AXECOM">
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  AXECOM
+                </span>
+              </SelectItem>
+              <SelectItem value="ERT">
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                  ERT
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Résumé des charges */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
+        <Card className={selectedAttribution === 'TOTAL' ? '' : selectedAttribution === 'AXECOM' ? 'border-blue-300 bg-blue-50/30' : 'border-green-300 bg-green-50/30'}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Charges Fixes</CardTitle>
           </CardHeader>
@@ -6628,34 +6781,110 @@ function CostsManagement() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={selectedAttribution === 'TOTAL' ? '' : selectedAttribution === 'AXECOM' ? 'border-blue-300 bg-blue-50/30' : 'border-green-300 bg-green-50/30'}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Charges Variables</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Charges Variables
+              {selectedAttribution !== 'TOTAL' && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  ({selectedAttribution})
+                </span>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">{totalVariable.toLocaleString('fr-FR')} €</div>
-            <p className="text-xs text-muted-foreground">Spécifiques à ce mois</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedAttribution === 'TOTAL' ? 'Spécifiques à ce mois' : `Charges ${selectedAttribution}`}
+            </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={selectedAttribution === 'TOTAL' ? '' : selectedAttribution === 'AXECOM' ? 'border-blue-300 bg-blue-50/30' : 'border-green-300 bg-green-50/30'}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total
+              {selectedAttribution !== 'TOTAL' && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  ({selectedAttribution})
+                </span>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{totalCosts.toLocaleString('fr-FR')} €</div>
-            <p className="text-xs text-muted-foreground">Charges totales</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedAttribution === 'TOTAL' ? 'Charges totales' : `Total ${selectedAttribution}`}
+            </p>
           </CardContent>
         </Card>
       </div>
+
+      {/* Résumé par attribution - Affiché uniquement en vue TOTAL */}
+      {selectedAttribution === 'TOTAL' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                AXECOM
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{totalAxecom.toLocaleString('fr-FR')} €</div>
+              <p className="text-xs text-muted-foreground">Charges AXECOM</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-green-200 bg-green-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                ERT
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{totalErt.toLocaleString('fr-FR')} €</div>
+              <p className="text-xs text-muted-foreground">Charges ERT</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-purple-200 bg-purple-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-purple-500"></span>
+                Les Deux (Divisé)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">{totalLesDeux.toLocaleString('fr-FR')} €</div>
+              <p className="text-xs text-muted-foreground">{(totalLesDeux / 2).toLocaleString('fr-FR')}€ chacun</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Charges fixes */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Charges Fixes</CardTitle>
-              <CardDescription>Charges récurrentes chaque mois</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                Charges Fixes
+                {selectedAttribution !== 'TOTAL' && (
+                  <span className={`text-sm px-2 py-1 rounded-full font-semibold ${
+                    selectedAttribution === 'AXECOM' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                  }`}>
+                    {selectedAttribution}
+                  </span>
+                )}
+              </CardTitle>
+              <CardDescription>
+                {selectedAttribution === 'TOTAL' 
+                  ? 'Charges récurrentes chaque mois'
+                  : `Charges fixes ${selectedAttribution} récurrentes`
+                }
+              </CardDescription>
             </div>
             <Button 
               onClick={() => setShowFixedModal(true)}
@@ -6668,37 +6897,64 @@ function CostsManagement() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {fixedCosts.map((cost) => (
-              <div key={cost.id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex-1">
-                  <div className="font-medium">{cost.name}</div>
-                  <div className="text-sm text-muted-foreground">{cost.description}</div>
-                  <div className="text-sm text-blue-600">{cost.category_name}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-lg font-bold">{parseFloat(cost.amount).toLocaleString('fr-FR')} €</div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={loading || isSubmitting}
-                    onClick={() => {
-                      setEditingCost(cost)
-                      setShowFixedModal(true)
-                    }}
-                  >
-                    Modifier
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={loading || isSubmitting}
-                    onClick={() => handleDeleteCost(cost.id, 'fixed')}
-                  >
-                    Supprimer
-                  </Button>
-                </div>
+            {filteredFixedCosts.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                Aucune charge fixe pour {selectedAttribution === 'TOTAL' ? 'afficher' : selectedAttribution}
               </div>
-            ))}
+            ) : (
+              filteredFixedCosts.map((cost) => (
+                <div key={cost.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium">{cost.name}</div>
+                      {cost.attribution && (
+                        <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                          cost.attribution === 'AXECOM' ? 'bg-blue-100 text-blue-700' :
+                          cost.attribution === 'ERT' ? 'bg-green-100 text-green-700' :
+                          'bg-purple-100 text-purple-700'
+                        }`}>
+                          {cost.attribution === 'LES_DEUX' ? 'AXECOM + ERT' : cost.attribution}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground">{cost.description}</div>
+                    <div className="text-sm text-blue-600">{cost.category_name || cost.category}</div>
+                    {selectedAttribution !== 'TOTAL' && cost.attribution === 'LES_DEUX' && (
+                      <div className="text-xs text-purple-600 mt-1">
+                        Part {selectedAttribution}: {(parseFloat(cost.amount) / 2).toLocaleString('fr-FR')} €
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-lg font-bold">
+                      {selectedAttribution !== 'TOTAL' && cost.attribution === 'LES_DEUX' 
+                        ? `${(parseFloat(cost.amount) / 2).toLocaleString('fr-FR')} €`
+                        : `${parseFloat(cost.amount).toLocaleString('fr-FR')} €`
+                      }
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={loading || isSubmitting}
+                      onClick={() => {
+                        setEditingCost(cost)
+                        setShowFixedModal(true)
+                      }}
+                    >
+                      Modifier
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={loading || isSubmitting}
+                      onClick={() => handleDeleteCost(cost.id, 'fixed')}
+                    >
+                      Supprimer
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
@@ -6708,8 +6964,22 @@ function CostsManagement() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Charges Variables</CardTitle>
-              <CardDescription>Charges spécifiques à {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                Charges Variables
+                {selectedAttribution !== 'TOTAL' && (
+                  <span className={`text-sm px-2 py-1 rounded-full font-semibold ${
+                    selectedAttribution === 'AXECOM' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                  }`}>
+                    {selectedAttribution}
+                  </span>
+                )}
+              </CardTitle>
+              <CardDescription>
+                {selectedAttribution === 'TOTAL' 
+                  ? `Charges spécifiques à ${new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} ${selectedYear}`
+                  : `Charges ${selectedAttribution} pour ${new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} ${selectedYear}`
+                }
+              </CardDescription>
             </div>
             <Button 
               onClick={() => setShowVariableModal(true)}
@@ -6722,37 +6992,64 @@ function CostsManagement() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {variableCosts.map((cost) => (
-              <div key={cost.id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex-1">
-                  <div className="font-medium">{cost.name}</div>
-                  <div className="text-sm text-muted-foreground">{cost.description}</div>
-                  <div className="text-sm text-orange-600">{cost.category_name}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-lg font-bold">{parseFloat(cost.amount).toLocaleString('fr-FR')} €</div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={loading || isSubmitting}
-                    onClick={() => {
-                      setEditingCost(cost)
-                      setShowVariableModal(true)
-                    }}
-                  >
-                    Modifier
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={loading || isSubmitting}
-                    onClick={() => handleDeleteCost(cost.id, 'variable')}
-                  >
-                    Supprimer
-                  </Button>
-                </div>
+            {filteredVariableCosts.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                Aucune charge variable pour {selectedAttribution === 'TOTAL' ? 'ce mois' : selectedAttribution}
               </div>
-            ))}
+            ) : (
+              filteredVariableCosts.map((cost) => (
+                <div key={cost.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium">{cost.name}</div>
+                      {cost.attribution && (
+                        <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                          cost.attribution === 'AXECOM' ? 'bg-blue-100 text-blue-700' :
+                          cost.attribution === 'ERT' ? 'bg-green-100 text-green-700' :
+                          'bg-purple-100 text-purple-700'
+                        }`}>
+                          {cost.attribution === 'LES_DEUX' ? 'AXECOM + ERT' : cost.attribution}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground">{cost.description}</div>
+                    <div className="text-sm text-orange-600">{cost.category_name}</div>
+                    {selectedAttribution !== 'TOTAL' && cost.attribution === 'LES_DEUX' && (
+                      <div className="text-xs text-purple-600 mt-1">
+                        Part {selectedAttribution}: {(parseFloat(cost.amount) / 2).toLocaleString('fr-FR')} €
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-lg font-bold">
+                      {selectedAttribution !== 'TOTAL' && cost.attribution === 'LES_DEUX' 
+                        ? `${(parseFloat(cost.amount) / 2).toLocaleString('fr-FR')} €`
+                        : `${parseFloat(cost.amount).toLocaleString('fr-FR')} €`
+                      }
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={loading || isSubmitting}
+                      onClick={() => {
+                        setEditingCost(cost)
+                        setShowVariableModal(true)
+                      }}
+                    >
+                      Modifier
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={loading || isSubmitting}
+                      onClick={() => handleDeleteCost(cost.id, 'variable')}
+                    >
+                      Supprimer
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
@@ -6798,7 +7095,8 @@ function CostModal({ isOpen, onClose, onSave, categories, editingCost, type }: {
     name: '',
     description: '',
     amount: '',
-    category: ''
+    category: '',
+    attribution: 'LES_DEUX'
   })
 
   useEffect(() => {
@@ -6807,14 +7105,16 @@ function CostModal({ isOpen, onClose, onSave, categories, editingCost, type }: {
         name: editingCost.name || '',
         description: editingCost.description || '',
         amount: editingCost.amount?.toString() || '',
-        category: editingCost.category || ''
+        category: editingCost.category || '',
+        attribution: editingCost.attribution || 'LES_DEUX'
       })
     } else {
       setFormData({
         name: '',
         description: '',
         amount: '',
-        category: categories[0]?.name || ''
+        category: categories[0]?.name || '',
+        attribution: 'LES_DEUX'
       })
     }
   }, [editingCost, categories])
@@ -6888,6 +7188,28 @@ function CostModal({ isOpen, onClose, onSave, categories, editingCost, type }: {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="attribution">Attribution</Label>
+            <Select
+              value={formData.attribution}
+              onValueChange={(value) => setFormData({ ...formData, attribution: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="AXECOM">AXECOM uniquement</SelectItem>
+                <SelectItem value="ERT">ERT uniquement</SelectItem>
+                <SelectItem value="LES_DEUX">Les deux (divisé)</SelectItem>
+              </SelectContent>
+            </Select>
+            {formData.attribution === 'LES_DEUX' && formData.amount && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Le montant sera divisé : {(parseFloat(formData.amount) / 2).toFixed(2)}€ pour AXECOM et {(parseFloat(formData.amount) / 2).toFixed(2)}€ pour ERT
+              </p>
+            )}
           </div>
 
           <DialogFooter>

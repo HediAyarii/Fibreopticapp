@@ -142,3 +142,5 @@ async function fixFixedCostsTable() {
 // Exécuter la correction
 fixFixedCostsTable().catch(console.error)
 
+
+

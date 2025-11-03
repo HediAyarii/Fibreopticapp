@@ -164,3 +164,5 @@ module.exports = {
 ---
 
 *Cette solution résout définitivement le problème des fuites de connexions PostgreSQL lors du hot reload de Next.js en mode développement.*
+
+

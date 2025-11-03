@@ -144,3 +144,5 @@ async function fixFixedCostsComplete() {
 // Exécuter la correction complète
 fixFixedCostsComplete().catch(console.error)
 
+
+

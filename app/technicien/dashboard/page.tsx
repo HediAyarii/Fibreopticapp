@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -112,8 +112,47 @@ export default function TechnicienDashboard() {
     penalites: 0,
     reclamations: 0
   })
+  const [recetteGeneree, setRecetteGeneree] = useState({
+    total_recette_technicien: 0,
+    nombre_interventions: 0
+  })
+  // Fonction helper pour obtenir les dates du mois précédent
+  const getDefaultDates = () => {
+    const today = new Date()
+    const currentYear = today.getFullYear()
+    const currentMonth = today.getMonth() // 0-11
+    
+    // Calculer le mois précédent
+    let previousMonth = currentMonth - 1
+    let yearForPreviousMonth = currentYear
+    
+    // Gérer le cas de janvier (mois 0) -> décembre de l'année précédente
+    if (previousMonth < 0) {
+      previousMonth = 11 // Décembre
+      yearForPreviousMonth = currentYear - 1
+    }
+    
+    // Premier jour du mois précédent
+    const startMonth = (previousMonth + 1).toString().padStart(2, '0')
+    const startYear = yearForPreviousMonth
+    
+    // Dernier jour du mois précédent
+    const lastDay = new Date(yearForPreviousMonth, previousMonth + 1, 0).getDate()
+    const endMonth = startMonth
+    const endYear = yearForPreviousMonth
+    
+    return {
+      start: `${startYear}-${startMonth}-01`,
+      end: `${endYear}-${endMonth}-${lastDay.toString().padStart(2, '0')}`
+    }
+  }
+
+  const defaultDates = getDefaultDates()
+
   const [activeTab, setActiveTab] = useState('overview')
   const [searchTerm, setSearchTerm] = useState('')
+  const [dateDebut, setDateDebut] = useState(defaultDates.start)
+  const [dateFin, setDateFin] = useState(defaultDates.end)
   const [currentPage, setCurrentPage] = useState(1)
   const [isUpdating, setIsUpdating] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
@@ -155,17 +194,24 @@ export default function TechnicienDashboard() {
       loadData()
       loadPersonalData()
       loadDocuments()
-      
-      // Mise à jour automatique des données toutes les 2 secondes pour la synchronisation en temps réel
-      const dataInterval = setInterval(() => {
-        console.log('🔄 Mise à jour automatique des données...')
-        loadData()
-        loadDocuments()
-      }, 2000) // 2 secondes pour une synchronisation plus rapide
-      
-      return () => clearInterval(dataInterval)
     }
-  }, [user])
+  }, [user, dateDebut, dateFin, activeTab])
+
+  // Mise à jour automatique des données toutes les 2 secondes pour la synchronisation en temps réel
+  // Cette mise à jour doit respecter les filtres de date actuels
+  useEffect(() => {
+    if (!user) return
+    
+    const dataInterval = setInterval(() => {
+      // Ne faire la mise à jour automatique que si on n'est pas en train de changer les dates
+      // Les dates sont déjà mises à jour par le useEffect ci-dessus
+      console.log('🔄 Mise à jour automatique des données...')
+      loadData()
+      loadDocuments()
+    }, 2000) // 2 secondes pour une synchronisation plus rapide
+    
+    return () => clearInterval(dataInterval)
+  }, [user, dateDebut, dateFin, activeTab])
 
   // Écouter l'événement pour ouvrir le modal de résolution
   useEffect(() => {
@@ -206,29 +252,40 @@ export default function TechnicienDashboard() {
     }
   }
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!user) return
 
     try {
       setIsUpdating(true)
-      console.log(`📊 Chargement des données pour l'employé ${user.id}...`)
+      console.log(`📊 Chargement des données pour l'employé ${user.id}... (Dates: ${dateDebut} - ${dateFin})`)
+      
+      // Construire les paramètres de date pour les APIs
+      const dateParams = activeTab === 'overview' && dateDebut && dateFin
+        ? `&date_debut=${dateDebut}&date_fin=${dateFin}`
+        : ''
+      
+      // Construire les paramètres de date pour l'API revenue (format différent)
+      const revenueDateParams = activeTab === 'overview' && dateDebut && dateFin
+        ? `&date_from=${dateDebut}&date_to=${dateFin}`
+        : ''
       
       // Charger toutes les données en parallèle pour de meilleures performances
-      const [interventionsResponse, reclamationsResponse, penalitesResponse] = await Promise.all([
-        fetchWithAuth(`/api/interventions?employe_id=${user.id}`),
-        fetchWithAuth(`/api/reclamations?employe_id=${user.id}`),
-        fetchWithAuth(`/api/penalites?employe_id=${user.id}`)
+      const [interventionsResponse, reclamationsResponse, penalitesResponse, revenueResponse] = await Promise.all([
+        fetchWithAuth(`/api/interventions?employe_id=${user.id}${dateParams}`),
+        fetchWithAuth(`/api/reclamations?employe_id=${user.id}${dateParams}`),
+        fetchWithAuth(`/api/penalites?employe_id=${user.id}${dateParams}`),
+        fetchWithAuth(`/api/revenue-calculation?employe_id=${user.id}${revenueDateParams}`)
       ])
 
       // Vérifier si l'une des réponses indique une session expirée
-      if (!interventionsResponse.ok || !reclamationsResponse.ok || !penalitesResponse.ok) {
+      if (!interventionsResponse.ok || !reclamationsResponse.ok || !penalitesResponse.ok || !revenueResponse.ok) {
         console.log('Session expirée détectée lors du chargement des données')
         setUser(null)
         router.push('/logintech')
         return
       }
 
-      // Traiter les interventions
+      // Traiter les interventions (déjà filtrées par l'API si dates fournies)
       const interventionsData = await interventionsResponse.json()
       if (interventionsData.interventions) {
         const previousCount = interventions.length
@@ -238,24 +295,17 @@ export default function TechnicienDashboard() {
           console.log(`📈 Interventions mises à jour: ${previousCount} → ${interventionsData.interventions.length}`)
         }
         
-        // Calculer les statistiques
+        // Les statistiques utilisent directement les données de l'API (déjà filtrées)
         const totalInterventions = interventionsData.interventions.length
-        const currentMonth = new Date().getMonth()
-        const currentYear = new Date().getFullYear()
-        
-        const interventionsMois = interventionsData.interventions.filter((inter: Intervention) => {
-          const interDate = new Date(inter.date_rdv)
-          return interDate.getMonth() === currentMonth && interDate.getFullYear() === currentYear
-        }).length
 
         setStats(prev => ({
           ...prev,
           totalInterventions,
-          interventionsMois
+          interventionsMois: totalInterventions // Dans la vue d'ensemble, c'est la période filtrée
         }))
       }
 
-      // Traiter les réclamations
+      // Traiter les réclamations (déjà filtrées par l'API si dates fournies)
       const reclamationsData = await reclamationsResponse.json()
       if (reclamationsData.reclamations) {
         const previousCount = reclamations.length
@@ -283,7 +333,7 @@ export default function TechnicienDashboard() {
         }))
       }
 
-      // Traiter les pénalités
+      // Traiter les pénalités (déjà filtrées par l'API si dates fournies)
       const penalitesData = await penalitesResponse.json()
       if (penalitesData.penalites) {
         const previousCount = penalites.length
@@ -297,6 +347,23 @@ export default function TechnicienDashboard() {
           ...prev,
           penalites: penalitesData.penalites.length
         }))
+      }
+
+      // Traiter les recettes générées
+      const revenueData = await revenueResponse.json()
+      if (revenueData.success && revenueData.revenue_data && revenueData.revenue_data.length > 0) {
+        // Trouver les données pour le technicien connecté
+        const technicienRevenue = revenueData.revenue_data.find((rev: any) => rev.employe_id === user.id) || revenueData.revenue_data[0]
+        
+        setRecetteGeneree({
+          total_recette_technicien: parseFloat(technicienRevenue.total_recette_technicien || 0),
+          nombre_interventions: parseInt(technicienRevenue.nombre_interventions || 0)
+        })
+      } else {
+        setRecetteGeneree({
+          total_recette_technicien: 0,
+          nombre_interventions: 0
+        })
       }
 
       console.log('✅ Données mises à jour avec succès')
@@ -313,7 +380,7 @@ export default function TechnicienDashboard() {
     } finally {
       setIsUpdating(false)
     }
-  }
+  }, [user, dateDebut, dateFin, activeTab])
 
   const handleLogout = async () => {
     try {
@@ -908,6 +975,65 @@ export default function TechnicienDashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* Filtres de date */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Calendar className="w-5 h-5 mr-2" />
+                  Filtres de Date
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1">
+                    <Label htmlFor="dateDebut" className="text-sm font-medium text-gray-700 mb-2 block">
+                      Date de début
+                    </Label>
+                    <Input
+                      id="dateDebut"
+                      type="date"
+                      value={dateDebut}
+                      onChange={(e) => {
+                        setDateDebut(e.target.value)
+                        // Le useEffect se chargera de recharger les données automatiquement
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Label htmlFor="dateFin" className="text-sm font-medium text-gray-700 mb-2 block">
+                      Date de fin
+                    </Label>
+                    <Input
+                      id="dateFin"
+                      type="date"
+                      value={dateFin}
+                      onChange={(e) => {
+                        setDateFin(e.target.value)
+                        // Le useEffect se chargera de recharger les données automatiquement
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const dates = getDefaultDates()
+                        setDateDebut(dates.start)
+                        setDateFin(dates.end)
+                        // Le useEffect se chargera de recharger les données automatiquement
+                      }}
+                      className="w-full sm:w-auto"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Réinitialiser
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Statistiques */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
               <Card>
@@ -931,7 +1057,9 @@ export default function TechnicienDashboard() {
                       <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
                     </div>
                     <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Ce Mois</p>
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">
+                        {dateDebut && dateFin ? 'Période sélectionnée' : 'Ce Mois'}
+                      </p>
                       <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.interventionsMois}</p>
                     </div>
                   </div>
@@ -945,8 +1073,13 @@ export default function TechnicienDashboard() {
                       <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600" />
                     </div>
                     <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Chiffre d'Affaires</p>
-                      <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.chiffreAffaire}€</p>
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Recette Générée</p>
+                      <p className="text-lg sm:text-2xl font-bold text-gray-900">
+                        {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {recetteGeneree.nombre_interventions} intervention{recetteGeneree.nombre_interventions > 1 ? 's' : ''}
+                      </p>
                     </div>
                   </div>
                 </CardContent>

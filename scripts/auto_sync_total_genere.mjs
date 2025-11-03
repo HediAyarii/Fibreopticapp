@@ -148,3 +148,5 @@ async function autoSyncTotalGenere() {
 // Exécuter la synchronisation
 autoSyncTotalGenere().catch(console.error)
 
+
+

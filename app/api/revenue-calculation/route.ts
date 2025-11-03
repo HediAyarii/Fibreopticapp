@@ -36,6 +36,10 @@ export async function GET(request: NextRequest) {
               COALESCE(
                 (SELECT SUM(
                   CASE 
+                    -- Exception: Si l'intervention contient à la fois DEP_OFFE et SAV, ignorer DEP_OFFE
+                    WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
+                         AND i.articles LIKE '%SAV%' THEN 0
+                    -- Sinon, calculer normalement
                     WHEN cp.prix_tech IS NOT NULL THEN cp.prix_tech
                     ELSE 0
                   END
@@ -54,6 +58,10 @@ export async function GET(request: NextRequest) {
               COALESCE(
                 (SELECT SUM(
                   CASE 
+                    -- Exception: Si l'intervention contient à la fois DEP_OFFE et SAV, ignorer DEP_OFFE
+                    WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
+                         AND i.articles LIKE '%SAV%' THEN 0
+                    -- Sinon, calculer normalement
                     WHEN cp.prix_base IS NOT NULL THEN cp.prix_base
                     ELSE 0
                   END

@@ -52,6 +52,39 @@ interface RevenueCalculationProps {
 }
 
 export function RevenueCalculation({ employees }: RevenueCalculationProps) {
+  // Fonction helper pour obtenir les dates du mois précédent
+  const getDefaultDates = () => {
+    const today = new Date()
+    const currentYear = today.getFullYear()
+    const currentMonth = today.getMonth() // 0-11
+    
+    // Calculer le mois précédent
+    let previousMonth = currentMonth - 1
+    let yearForPreviousMonth = currentYear
+    
+    // Gérer le cas de janvier (mois 0) -> décembre de l'année précédente
+    if (previousMonth < 0) {
+      previousMonth = 11 // Décembre
+      yearForPreviousMonth = currentYear - 1
+    }
+    
+    // Premier jour du mois précédent
+    const startMonth = (previousMonth + 1).toString().padStart(2, '0')
+    const startYear = yearForPreviousMonth
+    
+    // Dernier jour du mois précédent
+    const lastDay = new Date(yearForPreviousMonth, previousMonth + 1, 0).getDate()
+    const endMonth = startMonth
+    const endYear = yearForPreviousMonth
+    
+    return {
+      start: `${startYear}-${startMonth}-01`,
+      end: `${endYear}-${endMonth}-${lastDay.toString().padStart(2, '0')}`
+    }
+  }
+
+  const defaultDates = getDefaultDates()
+  
   const [revenueData, setRevenueData] = useState<RevenueData[]>([])
   const [totalStats, setTotalStats] = useState<RevenueStats>({
     total_interventions: 0,
@@ -61,8 +94,8 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
   })
   const [loading, setLoading] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all")
-  const [dateFrom, setDateFrom] = useState("")
-  const [dateTo, setDateTo] = useState("")
+  const [dateFrom, setDateFrom] = useState(defaultDates.start)
+  const [dateTo, setDateTo] = useState(defaultDates.end)
   const [selectedGrille, setSelectedGrille] = useState<string>("all")
   const [expandedEmployee, setExpandedEmployee] = useState<number | null>(null)
 
@@ -266,11 +299,12 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setDateFrom("")
-                  setDateTo("")
+                  const dates = getDefaultDates()
+                  setDateFrom(dates.start)
+                  setDateTo(dates.end)
                   setSelectedEmployee("all")
                   setSelectedGrille("all")
-                  console.log('Filtres réinitialisés')
+                  console.log('Filtres réinitialisés avec dates du mois précédent:', dates)
                 }}
                 disabled={loading}
                 className="px-3"

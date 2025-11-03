@@ -370,7 +370,8 @@ export async function GET(request: NextRequest) {
           created_at,
           updated_at,
           is_active,
-          frequency
+          frequency,
+          attribution
         FROM fixed_costs 
         WHERE is_active = true
         ORDER BY name
@@ -386,6 +387,7 @@ export async function GET(request: NextRequest) {
           type_frais as category,
           date_facture as date_facturation,
           statut,
+          attribution,
           created_at,
           updated_at
         FROM frais_entreprise 
@@ -427,10 +429,17 @@ export async function GET(request: NextRequest) {
 // POST - Créer un nouveau coût
 export async function POST(request: NextRequest) {
   try {
-    const { name, description, amount, category, type, month, year } = await request.json()
+    const { name, description, amount, category, type, month, year, attribution } = await request.json()
 
     if (!name || !amount || !category || !type) {
       return NextResponse.json({ error: 'Données manquantes' }, { status: 400 })
+    }
+
+    // Valider l'attribution
+    const validAttributions = ['AXECOM', 'ERT', 'LES_DEUX']
+    const selectedAttribution = attribution || 'LES_DEUX'
+    if (!validAttributions.includes(selectedAttribution)) {
+      return NextResponse.json({ error: 'Attribution invalide' }, { status: 400 })
     }
 
     // Créer une date de facturation
@@ -475,13 +484,15 @@ export async function POST(request: NextRequest) {
             amount = $1,
             description = $2,
             category = $3,
+            attribution = $4,
             updated_at = CURRENT_TIMESTAMP
-          WHERE id = $4
+          WHERE id = $5
           RETURNING *
         `, [
           parseFloat(amount),
           description,
           category,
+          selectedAttribution,
           existingFixed.rows[0].id
         ])
       } else {
@@ -493,27 +504,36 @@ export async function POST(request: NextRequest) {
             amount,
             category,
             is_active,
-            frequency
+            frequency,
+            attribution
           )
-          VALUES ($1, $2, $3, $4, true, 'monthly')
+          VALUES ($1, $2, $3, $4, true, 'monthly', $5)
           RETURNING *
         `, [
           name,
           description,
           parseFloat(amount),
-          category
+          category,
+          selectedAttribution
         ])
       }
       
       return NextResponse.json({
         success: true,
         cost: result.rows[0],
-        message: `Charge fixe ${existingFixed.rows.length > 0 ? 'mise à jour' : 'créée'} avec succès`
+        attribution: selectedAttribution,
+        message: `Charge fixe ${existingFixed.rows.length > 0 ? 'mise à jour' : 'créée'} avec succès pour ${selectedAttribution}`
       })
     }
 
+    // Gérer l'attribution (AXECOM, ERT, ou LES_DEUX)
+    const amountFloat = parseFloat(amount)
+    const dividedAmount = selectedAttribution === 'LES_DEUX' ? amountFloat / 2 : amountFloat
+
+    let results = []
+
     // Créer un frais dans la table frais_entreprise
-    const result = await query(`
+    const fraisEntrepriseResult = await query(`
       INSERT INTO frais_entreprise (
         company_name,
         service_code,
@@ -526,9 +546,10 @@ export async function POST(request: NextRequest) {
         montant_ttc,
         tva,
         description,
-        statut
+        statut,
+        attribution
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'actif')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'actif', $12)
       RETURNING *
     `, [
       'FinalFibre', // company_name
@@ -538,16 +559,79 @@ export async function POST(request: NextRequest) {
       dateFacturation, // date_facture
       name, // fournisseur
       typeFrais, // type_frais
-      parseFloat(amount) * 0.8, // montant_ht (80% du montant TTC)
-      parseFloat(amount), // montant_ttc
-      parseFloat(amount) * 0.2, // tva (20% du montant TTC)
+      dividedAmount * 0.8, // montant_ht (80% du montant TTC)
+      dividedAmount, // montant_ttc
+      dividedAmount * 0.2, // tva (20% du montant TTC)
       description, // description
+      selectedAttribution // attribution
     ])
+    results.push(fraisEntrepriseResult.rows[0])
+
+    // Si AXECOM ou LES_DEUX, créer dans frais_axecom
+    if (selectedAttribution === 'AXECOM' || selectedAttribution === 'LES_DEUX') {
+      const axecomResult = await query(`
+        INSERT INTO frais_axecom (
+          article,
+          intitule,
+          description,
+          montant_ht,
+          montant_ttc,
+          tva,
+          date_facture,
+          type_frais,
+          statut
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'actif')
+        RETURNING *
+      `, [
+        serviceCode, // article
+        name, // intitule
+        description, // description
+        dividedAmount * 0.8, // montant_ht
+        dividedAmount, // montant_ttc
+        dividedAmount * 0.2, // tva
+        dateFacturation, // date_facture
+        typeFrais // type_frais
+      ])
+      results.push(axecomResult.rows[0])
+    }
+
+    // Si ERT ou LES_DEUX, créer dans frais_ert
+    if (selectedAttribution === 'ERT' || selectedAttribution === 'LES_DEUX') {
+      const ertResult = await query(`
+        INSERT INTO frais_ert (
+          article,
+          intitule,
+          description,
+          montant_ht,
+          montant_ttc,
+          tva,
+          date_facture,
+          type_frais,
+          statut
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'actif')
+        RETURNING *
+      `, [
+        serviceCode, // article
+        name, // intitule
+        description, // description
+        dividedAmount * 0.8, // montant_ht
+        dividedAmount, // montant_ttc
+        dividedAmount * 0.2, // tva
+        dateFacturation, // date_facture
+        typeFrais // type_frais
+      ])
+      results.push(ertResult.rows[0])
+    }
 
     return NextResponse.json({
       success: true,
-      cost: result.rows[0],
-      message: `Charge ${type === 'fixed' ? 'fixe' : 'variable'} créée avec succès`
+      costs: results,
+      attribution: selectedAttribution,
+      message: selectedAttribution === 'LES_DEUX' 
+        ? `Charge ${type === 'fixed' ? 'fixe' : 'variable'} créée et divisée entre AXECOM et ERT (${dividedAmount.toFixed(2)}€ chacun)`
+        : `Charge ${type === 'fixed' ? 'fixe' : 'variable'} créée pour ${selectedAttribution}`
     })
 
   } catch (error) {

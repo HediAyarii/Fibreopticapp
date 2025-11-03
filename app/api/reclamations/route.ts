@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const employeId = searchParams.get('employe_id')
+    const date_debut = searchParams.get('date_debut')
+    const date_fin = searchParams.get('date_fin')
     
     let queryText = `
       SELECT r.*, 
@@ -21,10 +23,30 @@ export async function GET(request: NextRequest) {
       LEFT JOIN interventions i ON r.intervention_id = i.id
     `
     let params: any[] = []
+    let whereConditions: string[] = []
+    let paramIndex = 1
     
     if (employeId) {
-      queryText += ' WHERE r.employe_id = $1'
-      params = [employeId]
+      whereConditions.push(`r.employe_id = $${paramIndex}`)
+      params.push(employeId)
+      paramIndex++
+    }
+    
+    // Filtres de date sur created_at ou date_reclamation
+    if (date_debut) {
+      whereConditions.push(`(r.created_at >= $${paramIndex}::date OR COALESCE(r.date_reclamation, r.created_at) >= $${paramIndex}::date)`)
+      params.push(date_debut)
+      paramIndex++
+    }
+    
+    if (date_fin) {
+      whereConditions.push(`(r.created_at <= $${paramIndex}::date OR COALESCE(r.date_reclamation, r.created_at) <= $${paramIndex}::date)`)
+      params.push(date_fin)
+      paramIndex++
+    }
+    
+    if (whereConditions.length > 0) {
+      queryText += ' WHERE ' + whereConditions.join(' AND ')
     }
     
     queryText += ' ORDER BY r.created_at DESC'

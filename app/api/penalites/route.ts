@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const employeId = searchParams.get('employe_id')
+    const date_debut = searchParams.get('date_debut')
+    const date_fin = searchParams.get('date_fin')
     
     let queryText = `
       SELECT p.*, 
@@ -31,10 +33,30 @@ export async function GET(request: NextRequest) {
       LEFT JOIN materiel m ON p.materiel_concerne = m.id
     `
     let params: any[] = []
+    let whereConditions: string[] = []
+    let paramIndex = 1
     
     if (employeId) {
-      queryText += ' WHERE p.employe_id = $1'
-      params = [employeId]
+      whereConditions.push(`p.employe_id = $${paramIndex}`)
+      params.push(employeId)
+      paramIndex++
+    }
+    
+    // Filtres de date sur date_attribution
+    if (date_debut) {
+      whereConditions.push(`p.date_attribution >= $${paramIndex}::date`)
+      params.push(date_debut)
+      paramIndex++
+    }
+    
+    if (date_fin) {
+      whereConditions.push(`p.date_attribution <= $${paramIndex}::date`)
+      params.push(date_fin)
+      paramIndex++
+    }
+    
+    if (whereConditions.length > 0) {
+      queryText += ' WHERE ' + whereConditions.join(' AND ')
     }
     
     queryText += ' ORDER BY p.date_attribution DESC'

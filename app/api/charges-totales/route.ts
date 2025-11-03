@@ -3,12 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-// GET - Récupérer les charges totales par mois
+// GET - Récupérer les charges totales par mois avec filtrage par attribution
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
+    const attribution = searchParams.get('attribution') || 'TOTAL' // TOTAL, AXECOM, ou ERT
 
     if (!startDate || !endDate) {
       return NextResponse.json({ error: 'Dates de début et fin requises' }, { status: 400 })
@@ -22,31 +23,124 @@ export async function GET(request: NextRequest) {
     const endMonth = endDateObj.getMonth() + 1
     const endYear = endDateObj.getFullYear()
 
-    console.log(`🔍 Recherche des charges pour la période: ${startMonth}/${startYear} à ${endMonth}/${endYear}`)
+    console.log(`🔍 Recherche des charges pour la période: ${startMonth}/${startYear} à ${endMonth}/${endYear} (Attribution: ${attribution})`)
 
-    // Récupérer les charges fixes (toujours actives)
-    const fixedCostsResult = await query(`
-      SELECT 
-        SUM(amount) as total_fixed_costs
-      FROM fixed_costs 
-      WHERE is_active = true
-    `)
+    // Récupérer les charges fixes selon l'attribution
+    let fixedCostsQuery = ''
+    if (attribution === 'AXECOM') {
+      // Charges AXECOM + moitié des LES_DEUX
+      fixedCostsQuery = `
+        SELECT 
+          SUM(
+            CASE 
+              WHEN attribution = 'AXECOM' THEN amount
+              WHEN attribution = 'LES_DEUX' THEN amount / 2
+              ELSE 0
+            END
+          ) as total_fixed_costs
+        FROM fixed_costs 
+        WHERE is_active = true
+          AND (attribution = 'AXECOM' OR attribution = 'LES_DEUX')
+      `
+    } else if (attribution === 'ERT') {
+      // Charges ERT + moitié des LES_DEUX
+      fixedCostsQuery = `
+        SELECT 
+          SUM(
+            CASE 
+              WHEN attribution = 'ERT' THEN amount
+              WHEN attribution = 'LES_DEUX' THEN amount / 2
+              ELSE 0
+            END
+          ) as total_fixed_costs
+        FROM fixed_costs 
+        WHERE is_active = true
+          AND (attribution = 'ERT' OR attribution = 'LES_DEUX')
+      `
+    } else {
+      // TOTAL - toutes les charges
+      fixedCostsQuery = `
+        SELECT 
+          SUM(amount) as total_fixed_costs
+        FROM fixed_costs 
+        WHERE is_active = true
+      `
+    }
+    
+    const fixedCostsResult = await query(fixedCostsQuery)
 
-    // Récupérer les charges variables depuis frais_entreprise
-    const variableCostsResult = await query(`
-      SELECT 
-        EXTRACT(MONTH FROM date_facture) as month,
-        EXTRACT(YEAR FROM date_facture) as year,
-        SUM(montant_ttc) as total_variable_costs,
-        COUNT(*) as nombre_charges_variables
-      FROM frais_entreprise 
-      WHERE date_facture >= $1::date 
-        AND date_facture <= $2::date
-        AND statut = 'actif'
-        AND type_frais = 'Charge Variable'
-      GROUP BY EXTRACT(MONTH FROM date_facture), EXTRACT(YEAR FROM date_facture)
-      ORDER BY year, month
-    `, [startDate, endDate])
+    // Récupérer les charges variables selon l'attribution
+    let variableCostsQuery = ''
+    let variableCostsParams: any[] = []
+    
+    if (attribution === 'AXECOM') {
+      // Charges AXECOM + moitié des LES_DEUX
+      variableCostsQuery = `
+        SELECT 
+          EXTRACT(MONTH FROM date_facture) as month,
+          EXTRACT(YEAR FROM date_facture) as year,
+          SUM(
+            CASE 
+              WHEN attribution = 'AXECOM' THEN montant_ttc
+              WHEN attribution = 'LES_DEUX' THEN montant_ttc / 2
+              ELSE 0
+            END
+          ) as total_variable_costs,
+          COUNT(*) as nombre_charges_variables
+        FROM frais_entreprise 
+        WHERE date_facture >= $1::date 
+          AND date_facture <= $2::date
+          AND statut = 'actif'
+          AND type_frais = 'Charge Variable'
+          AND (attribution = 'AXECOM' OR attribution = 'LES_DEUX')
+        GROUP BY EXTRACT(MONTH FROM date_facture), EXTRACT(YEAR FROM date_facture)
+        ORDER BY year, month
+      `
+      variableCostsParams = [startDate, endDate]
+    } else if (attribution === 'ERT') {
+      // Charges ERT + moitié des LES_DEUX
+      variableCostsQuery = `
+        SELECT 
+          EXTRACT(MONTH FROM date_facture) as month,
+          EXTRACT(YEAR FROM date_facture) as year,
+          SUM(
+            CASE 
+              WHEN attribution = 'ERT' THEN montant_ttc
+              WHEN attribution = 'LES_DEUX' THEN montant_ttc / 2
+              ELSE 0
+            END
+          ) as total_variable_costs,
+          COUNT(*) as nombre_charges_variables
+        FROM frais_entreprise 
+        WHERE date_facture >= $1::date 
+          AND date_facture <= $2::date
+          AND statut = 'actif'
+          AND type_frais = 'Charge Variable'
+          AND (attribution = 'ERT' OR attribution = 'LES_DEUX')
+        GROUP BY EXTRACT(MONTH FROM date_facture), EXTRACT(YEAR FROM date_facture)
+        ORDER BY year, month
+      `
+      variableCostsParams = [startDate, endDate]
+    } else {
+      // TOTAL - toutes les charges
+      variableCostsQuery = `
+        SELECT 
+          EXTRACT(MONTH FROM date_facture) as month,
+          EXTRACT(YEAR FROM date_facture) as year,
+          SUM(montant_ttc) as total_variable_costs,
+          COUNT(*) as nombre_charges_variables
+        FROM frais_entreprise 
+        WHERE date_facture >= $1::date 
+          AND date_facture <= $2::date
+          AND statut = 'actif'
+          AND type_frais = 'Charge Variable'
+        GROUP BY EXTRACT(MONTH FROM date_facture), EXTRACT(YEAR FROM date_facture)
+        ORDER BY year, month
+      `
+      variableCostsParams = [startDate, endDate]
+    }
+    
+    const variableCostsResult = await query(variableCostsQuery, variableCostsParams)
 
     // Ne plus inclure les frais d'entreprise dans le calcul
     const fraisEntrepriseResult = { rows: [] }
@@ -107,7 +201,7 @@ export async function GET(request: NextRequest) {
     const totalFraisEntreprise = 0 // Plus inclus
     const totalChargesGlobal = totalChargesFixes + totalChargesVariables
 
-    console.log(`✅ Charges récupérées: ${chargesArray.length} mois, Total: ${totalChargesGlobal}€`)
+    console.log(`✅ Charges récupérées: ${chargesArray.length} mois, Total: ${totalChargesGlobal}€ (Attribution: ${attribution})`)
 
     return NextResponse.json({
       success: true,
@@ -117,7 +211,8 @@ export async function GET(request: NextRequest) {
         totalChargesVariables,
         totalFraisEntreprise,
         totalChargesGlobal,
-        nombreMois: chargesArray.length
+        nombreMois: chargesArray.length,
+        attribution: attribution
       }
     })
 

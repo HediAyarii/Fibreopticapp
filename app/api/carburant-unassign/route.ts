@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     
     // Vérifier si l'employé a une carte assignée
     const checkQuery = `
-      SELECT id, numero_carte, statut, employe_nom, date_assignation
+      SELECT id, carte_id, statut, date_assignation
       FROM carburant_assignations 
       WHERE employe_id = $1 AND statut = 'active'
     `
@@ -36,10 +36,10 @@ export async function POST(request: NextRequest) {
     }
     
     const currentAssignment = checkResult.rows[0]
-    const cardToUnassign = numero_carte || currentAssignment.numero_carte
+    const cardToUnassign = numero_carte || currentAssignment.carte_id
     
     // Vérifier si la carte spécifiée correspond à l'assignation actuelle
-    if (numero_carte && numero_carte !== currentAssignment.numero_carte) {
+    if (numero_carte && numero_carte !== currentAssignment.carte_id) {
       return NextResponse.json(
         { error: `L'employé n'a pas la carte ${numero_carte} assignée` },
         { status: 400 }

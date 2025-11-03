@@ -740,12 +740,18 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       const text = await importFile.text()
       const lines = text.split('\n').filter(line => line.trim())
       
-      // Détecter le séparateur (virgule ou tabulation)
+      // Détecter le séparateur (virgule, point-virgule ou tabulation)
       const firstLine = lines[0]
-      const isCommaSeparated = firstLine.includes(',') && !firstLine.includes('\t')
-      const separator = isCommaSeparated ? ',' : '\t'
+      let separator = '\t' // Par défaut: tabulation
+      
+      if (firstLine.includes(';')) {
+        separator = ';' // Point-virgule (prioritaire)
+      } else if (firstLine.includes(',')) {
+        separator = ',' // Virgule
+      }
       
       const headers = firstLine.split(separator)
+      console.log('Séparateur détecté:', separator === ';' ? 'point-virgule' : separator === ',' ? 'virgule' : 'tabulation')
       console.log('Headers détectés:', headers)
       
       const data = await Promise.all(lines.slice(1).map(async (line, index) => {

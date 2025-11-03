@@ -49,8 +49,41 @@ interface ChargesSummary {
 }
 
 export function RecapCalculTable() {
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  // Initialiser les dates pour le mois précédent complet
+  const getDefaultDates = () => {
+    const today = new Date()
+    const currentYear = today.getFullYear()
+    const currentMonth = today.getMonth() // 0-11
+    
+    // Calculer le mois précédent
+    let previousMonth = currentMonth - 1
+    let yearForPreviousMonth = currentYear
+    
+    // Gérer le cas de janvier (mois 0) -> décembre de l'année précédente
+    if (previousMonth < 0) {
+      previousMonth = 11 // Décembre
+      yearForPreviousMonth = currentYear - 1
+    }
+    
+    // Premier jour du mois précédent
+    const startDay = 1
+    const startMonth = (previousMonth + 1).toString().padStart(2, '0') // +1 car les mois JS sont 0-11
+    const startYear = yearForPreviousMonth
+    
+    // Dernier jour du mois précédent
+    const lastDay = new Date(yearForPreviousMonth, previousMonth + 1, 0).getDate()
+    const endMonth = startMonth
+    const endYear = yearForPreviousMonth
+    
+    return {
+      start: `${startYear}-${startMonth}-01`,
+      end: `${endYear}-${endMonth}-${lastDay.toString().padStart(2, '0')}`
+    }
+  }
+
+  const defaultDates = getDefaultDates()
+  const [startDate, setStartDate] = useState(defaultDates.start)
+  const [endDate, setEndDate] = useState(defaultDates.end)
   const [selectedEmployee, setSelectedEmployee] = useState('all')
   const [selectedGrille, setSelectedGrille] = useState('tout')
   const [employees, setEmployees] = useState<any[]>([])
@@ -71,12 +104,20 @@ export function RecapCalculTable() {
     return data.recettesParTechnicien || []
   }, [startDate, endDate, selectedEmployee, selectedGrille])
 
-  // Fonction pour récupérer les charges
+  // Fonction pour récupérer les charges avec filtrage par grille
   const fetchChargesData = useCallback(async () => {
     if (!startDate || !endDate) return
 
     try {
-      const response = await fetch(`/api/charges-totales?startDate=${startDate}&endDate=${endDate}`)
+      // Mapper selectedGrille vers l'attribution des charges
+      let attribution = 'TOTAL'
+      if (selectedGrille === 'AXECOM' || selectedGrille === 'axecom') {
+        attribution = 'AXECOM'
+      } else if (selectedGrille === 'ERT' || selectedGrille === 'ert') {
+        attribution = 'ERT'
+      }
+
+      const response = await fetch(`/api/charges-totales?startDate=${startDate}&endDate=${endDate}&attribution=${attribution}`)
       if (!response.ok) throw new Error('Erreur lors du chargement des charges')
       const data = await response.json()
       setChargesData(data.chargesByMonth || [])
@@ -84,7 +125,7 @@ export function RecapCalculTable() {
     } catch (error) {
       console.error('Erreur chargement charges:', error)
     }
-  }, [startDate, endDate])
+  }, [startDate, endDate, selectedGrille])
 
   // Utiliser le hook personnalisé avec les filtres
   const { data: recapData, loading, triggerSync } = useAutoSync({
