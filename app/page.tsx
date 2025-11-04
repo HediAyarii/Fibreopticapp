@@ -209,6 +209,7 @@ export default function EmployeeTracker() {
   const [affectations, setAffectations] = useState<any[]>([])
   const [consommationCarburant, setConsommationCarburant] = useState<any[]>([])
   const [employeesFromInterventions, setEmployeesFromInterventions] = useState<any[]>([])
+  const [totalRevenue, setTotalRevenue] = useState<number>(0) // CA Total réel
 
   // Loading states
   const [loadingInterventions, setLoadingInterventions] = useState(false)
@@ -1203,18 +1204,41 @@ La page va se recharger automatiquement...`)
     }
   }
 
+  const loadRevenueFromDatabase = async () => {
+    try {
+      // Charger les recettes des 12 derniers mois
+      const dateFrom = new Date()
+      dateFrom.setMonth(dateFrom.getMonth() - 12)
+      const dateTo = new Date()
+      
+      const response = await fetch(
+        `/api/revenue-calculation?date_from=${dateFrom.toISOString().split('T')[0]}&date_to=${dateTo.toISOString().split('T')[0]}`
+      )
+      if (!response.ok) throw new Error("Erreur lors du chargement des recettes")
+      const data = await response.json()
+      
+      // Récupérer le total général
+      return data.total_stats?.total_recette_generale || 0
+    } catch (error) {
+      console.error("[v0] Erreur chargement recettes:", error)
+      return 0
+    }
+  }
+
   const loadDataFromDatabase = async () => {
     setLoadingInterventions(true)
     setLoadingFuel(true)
     
     try {
-      const [interventionsData, fuelConsumptionData] = await Promise.all([
+      const [interventionsData, fuelConsumptionData, revenueData] = await Promise.all([
         loadInterventionsFromDatabase(),
-        loadFuelDataFromDatabase()
+        loadFuelDataFromDatabase(),
+        loadRevenueFromDatabase()
       ])
       
       setInterventions(interventionsData || [])
       setFuelData(fuelConsumptionData || [])
+      setTotalRevenue(revenueData || 0)
       
       // Generate employee data from interventions
       const employeeMap = new Map()
@@ -1234,8 +1258,6 @@ La page va se recharger automatiquement...`)
               })
             }
             employeeMap.get(techName).interventions++
-            // Estimate revenue (this would need proper calculation in real app)
-            employeeMap.get(techName).revenue += Math.floor(Math.random() * 500) + 200
           }
         })
       }
@@ -2813,10 +2835,10 @@ La page va se recharger automatiquement...`)
                   </CardHeader>
                   <CardContent className="relative">
                     <div className="text-3xl font-bold">
-                      {employeesFromInterventions.reduce((sum, emp) => sum + (emp.revenue || 0), 0).toLocaleString()} €
+                      {totalRevenue.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Chiffre d'affaires estimé
+                      Chiffre d'affaires (12 derniers mois)
                     </p>
                   </CardContent>
                 </Card>
@@ -5227,6 +5249,8 @@ La page va se recharger automatiquement...`)
         {/* Section Charges par Salarié */}
         {activeTab === "cout-par-salaire" && (
           <div className="space-y-6">
+            {/* Section de synchronisation masquée */}
+            {/* 
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <h3 className="text-lg font-semibold mb-4">Synchronisation des données</h3>
               <p className="text-sm text-gray-600 mb-4">
@@ -5235,7 +5259,10 @@ La page va se recharger automatiquement...`)
               </p>
               <SyncButton />
             </div>
+            */}
             
+           {/* Détection automatique des noms - masqué */}
+           {/*
            <div className="bg-white rounded-lg shadow-sm border p-6">
              <h3 className="text-lg font-semibold mb-4">Détection automatique des noms</h3>
              <p className="text-sm text-gray-600 mb-4">
@@ -5244,11 +5271,13 @@ La page va se recharger automatiquement...`)
              </p>
              <AutoDetectButton />
            </div>
+           */}
            
-           <RapAutoCorrectButton />
+           {/* Correction automatique des RAP - masqué */}
+           {/* <RapAutoCorrectButton /> */}
            
-           {/* Synchronisation Automatique du Total Généré */}
-           <AutoSyncTotalGenere />
+           {/* Synchronisation Automatique du Total Généré - masqué */}
+           {/* <AutoSyncTotalGenere /> */}
            
             <CoutParSalaireManager />
           </div>
