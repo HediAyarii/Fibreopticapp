@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -268,6 +268,14 @@ export default function EmployeeTracker() {
   const [loadingDuplicates, setLoadingDuplicates] = useState(false)
   const [showCardAssignmentModal, setShowCardAssignmentModal] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
+  
+  // Pagination states for interventions
+  const [interventionsPage, setInterventionsPage] = useState(1)
+  const [interventionsPerPage] = useState(50)
+
+  // Pagination states for consommation carburant
+  const [consommationPage, setConsommationPage] = useState(1)
+  const [consommationPerPage] = useState(50)
   const [availableCards, setAvailableCards] = useState<any[]>([])
   const [selectedCardNumber, setSelectedCardNumber] = useState('')
   const [assignmentStartDate, setAssignmentStartDate] = useState('')
@@ -471,8 +479,15 @@ export default function EmployeeTracker() {
   useEffect(() => {
     if (interventions.length > 0) {
       applyInterventionFilters()
+      // Reset to first page when filters change
+      setInterventionsPage(1)
     }
   }, [interventions, interventionFilters])
+
+  // Reset consommation page when filters change
+  useEffect(() => {
+    setConsommationPage(1)
+  }, [consumptionFilters])
 
   // Pagination functions for fuel transactions
   const getFuelPaginatedData = () => {
@@ -3383,7 +3398,10 @@ La page va se recharger automatiquement...`)
                           </tr>
                         </thead>
                         <tbody>
-                          {consumptionData.consommations.slice(0, 50).map((consommation: any, index: number) => (
+                          {(() => {
+                            const startIndex = (consommationPage - 1) * consommationPerPage
+                            const endIndex = startIndex + consommationPerPage
+                            return consumptionData.consommations.slice(startIndex, endIndex).map((consommation: any, index: number) => (
                             <tr key={index} className="border-b border-white/10 hover:bg-white/5">
                               <td className="p-3">
                                 <div className="flex flex-col">
@@ -3436,13 +3454,106 @@ La page va se recharger automatiquement...`)
                                 )}
                               </td>
                             </tr>
-                          ))}
+                          ))
+                          })()}
                         </tbody>
                       </table>
                       
-                      {consumptionData.consommations.length > 50 && (
-                        <div className="text-center p-4 text-sm text-gray-500">
-                          Affichage des 50 premières consommations sur {consumptionData.consommations.length} au total
+                      {/* Pagination Controls for Consommation Carburant */}
+                      {consumptionData.consommations.length > consommationPerPage && (
+                        <div className="flex flex-col items-center gap-4 mt-6">
+                          <div className="text-sm text-gray-600">
+                            Affichage de {((consommationPage - 1) * consommationPerPage) + 1} à{' '}
+                            {Math.min(consommationPage * consommationPerPage, consumptionData.consommations.length)} sur{' '}
+                            {consumptionData.consommations.length} consommations
+                          </div>
+                          
+                          <div className="flex gap-2 items-center">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setConsommationPage(1)}
+                              disabled={consommationPage === 1}
+                              className="glass-card border border-white/20"
+                            >
+                              Première
+                            </Button>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setConsommationPage(prev => Math.max(1, prev - 1))}
+                              disabled={consommationPage === 1}
+                              className="glass-card border border-white/20"
+                            >
+                              Précédent
+                            </Button>
+
+                            {/* Page Numbers with Ellipses */}
+                            {(() => {
+                              const totalPages = Math.ceil(consumptionData.consommations.length / consommationPerPage)
+                              const pages = []
+                              
+                              if (totalPages <= 7) {
+                                for (let i = 1; i <= totalPages; i++) {
+                                  pages.push(i)
+                                }
+                              } else {
+                                if (consommationPage <= 4) {
+                                  for (let i = 1; i <= 5; i++) pages.push(i)
+                                  pages.push('...')
+                                  pages.push(totalPages)
+                                } else if (consommationPage >= totalPages - 3) {
+                                  pages.push(1)
+                                  pages.push('...')
+                                  for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i)
+                                } else {
+                                  pages.push(1)
+                                  pages.push('...')
+                                  for (let i = consommationPage - 1; i <= consommationPage + 1; i++) pages.push(i)
+                                  pages.push('...')
+                                  pages.push(totalPages)
+                                }
+                              }
+
+                              return pages.map((page, index) => (
+                                <React.Fragment key={index}>
+                                  {page === '...' ? (
+                                    <span className="px-2 text-gray-500">...</span>
+                                  ) : (
+                                    <Button
+                                      variant={consommationPage === page ? 'default' : 'outline'}
+                                      size="sm"
+                                      onClick={() => setConsommationPage(page as number)}
+                                      className={consommationPage === page ? 'gradient-primary text-white' : 'glass-card border border-white/20'}
+                                    >
+                                      {page}
+                                    </Button>
+                                  )}
+                                </React.Fragment>
+                              ))
+                            })()}
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setConsommationPage(prev => Math.min(Math.ceil(consumptionData.consommations.length / consommationPerPage), prev + 1))}
+                              disabled={consommationPage >= Math.ceil(consumptionData.consommations.length / consommationPerPage)}
+                              className="glass-card border border-white/20"
+                            >
+                              Suivant
+                            </Button>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setConsommationPage(Math.ceil(consumptionData.consommations.length / consommationPerPage))}
+                              disabled={consommationPage >= Math.ceil(consumptionData.consommations.length / consommationPerPage)}
+                              className="glass-card border border-white/20"
+                            >
+                              Dernière
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -3864,20 +3975,26 @@ La page va se recharger automatiquement...`)
                         </tr>
                       </thead>
                       <tbody>
-                          {(filteredInterventions.length > 0 ? filteredInterventions : interventions).slice(0, 100).map((intervention, index) => {
-                            const needsArticlesFlag = needsArticles(intervention)
-                            return (
-                            <tr 
-                              key={index} 
-                              className={`border-b border-white/5 hover:bg-white/5 transition-colors ${
-                                needsArticlesFlag ? 'bg-yellow-200/20 border-yellow-300/30' : ''
-                              }`}
-                            >
-                            <td className="p-4">
-                              <span className="font-mono text-sm text-gray-600">
-                                {intervention.num_inter || 'N/A'}
-                              </span>
-                            </td>
+                          {(() => {
+                            const dataToDisplay = filteredInterventions.length > 0 ? filteredInterventions : interventions
+                            const startIndex = (interventionsPage - 1) * interventionsPerPage
+                            const endIndex = startIndex + interventionsPerPage
+                            const paginatedData = dataToDisplay.slice(startIndex, endIndex)
+                            
+                            return paginatedData.map((intervention, index) => {
+                              const needsArticlesFlag = needsArticles(intervention)
+                              return (
+                              <tr 
+                                key={index} 
+                                className={`border-b border-white/5 hover:bg-white/5 transition-colors ${
+                                  needsArticlesFlag ? 'bg-yellow-200/20 border-yellow-300/30' : ''
+                                }`}
+                              >
+                              <td className="p-4">
+                                <span className="font-mono text-sm text-gray-600">
+                                  {intervention.num_inter || 'N/A'}
+                                </span>
+                              </td>
                             <td className="p-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-chart-2 flex items-center justify-center text-gray-900 text-sm font-semibold">
@@ -3919,9 +4036,60 @@ La page va se recharger automatiquement...`)
                             </td>
                               <td className="p-4">{intervention.ville}</td>
                           </tr>
-                        )})}
+                        )
+                      })
+                    })()}
                       </tbody>
                     </table>
+                    
+                    {/* Pagination Controls */}
+                    <div className="flex items-center justify-between mt-6 px-4">
+                      <div className="text-sm text-gray-600">
+                        Affichage de {((interventionsPage - 1) * interventionsPerPage) + 1} à {Math.min(interventionsPage * interventionsPerPage, (filteredInterventions.length > 0 ? filteredInterventions : interventions).length)} sur {(filteredInterventions.length > 0 ? filteredInterventions : interventions).length} interventions
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setInterventionsPage(prev => Math.max(1, prev - 1))}
+                          disabled={interventionsPage === 1}
+                          className="h-8"
+                        >
+                          ← Précédent
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.ceil((filteredInterventions.length > 0 ? filteredInterventions : interventions).length / interventionsPerPage) }, (_, i) => i + 1)
+                            .filter(page => {
+                              const totalPages = Math.ceil((filteredInterventions.length > 0 ? filteredInterventions : interventions).length / interventionsPerPage)
+                              return page === 1 || page === totalPages || Math.abs(page - interventionsPage) <= 1
+                            })
+                            .map((page, idx, arr) => (
+                              <React.Fragment key={page}>
+                                {idx > 0 && arr[idx - 1] !== page - 1 && (
+                                  <span className="px-2 text-gray-400">...</span>
+                                )}
+                                <Button
+                                  variant={interventionsPage === page ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => setInterventionsPage(page)}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  {page}
+                                </Button>
+                              </React.Fragment>
+                            ))}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setInterventionsPage(prev => Math.min(Math.ceil((filteredInterventions.length > 0 ? filteredInterventions : interventions).length / interventionsPerPage), prev + 1))}
+                          disabled={interventionsPage >= Math.ceil((filteredInterventions.length > 0 ? filteredInterventions : interventions).length / interventionsPerPage)}
+                          className="h-8"
+                        >
+                          Suivant →
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                   )}
                 </CardContent>
