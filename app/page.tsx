@@ -2826,22 +2826,25 @@ La page va se recharger automatiquement...`)
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-white/20 hover-lift">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">
-                      CA Total Estimé
-                    </CardTitle>
-                    <DollarSign className="h-4 w-4 text-chart-4" />
-                  </CardHeader>
-                  <CardContent className="relative">
-                    <div className="text-3xl font-bold">
-                      {totalRevenue.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Chiffre d'affaires (12 derniers mois)
-                    </p>
-                  </CardContent>
-                </Card>
+                {/* CA Total Estimé - Visible uniquement pour les admins */}
+                {(user?.role === 'admin' || user?.role_id === 1) && (
+                  <Card className="glass-card border border-white/20 hover-lift">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">
+                        CA Total Estimé
+                      </CardTitle>
+                      <DollarSign className="h-4 w-4 text-chart-4" />
+                    </CardHeader>
+                    <CardContent className="relative">
+                      <div className="text-3xl font-bold">
+                        {totalRevenue.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Chiffre d'affaires (12 derniers mois)
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               {/* Recent Interventions */}
@@ -7425,7 +7428,12 @@ function CostModal({ isOpen, onClose, onSave, categories, editingCost, type }: {
 
 // Composant de tableau de bord des statistiques
 function StatisticsDashboard() {
-  const [statistics, setStatistics] = useState<any>({})
+  const [statistics, setStatistics] = useState<any>({
+    interventions: { byStatus: [], byMonth: [], byEmployee: [], total: 0 },
+    penalties: { byStatus: [], byEmployee: [] },
+    claims: { byStatus: [], byType: [], byPriority: [], byMonth: [] },
+    interventionTypes: []
+  })
   const [loading, setLoading] = useState(false)
   const [startDate, setStartDate] = useState(() => {
     const date = new Date()
@@ -7447,6 +7455,10 @@ function StatisticsDashboard() {
       if (data.success) {
         setStatistics(data.statistics)
         console.log('✅ Statistiques mises à jour:', data.statistics)
+        if (data.statistics.penalties) {
+          console.log('📊 Pénalités byStatus:', data.statistics.penalties.byStatus)
+          console.log('📊 Pénalités byEmployee:', data.statistics.penalties.byEmployee)
+        }
       } else {
         console.error('❌ Erreur API:', data.error)
       }
@@ -7650,30 +7662,48 @@ function StatisticsDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle>Pénalités par Statut</CardTitle>
+              <CardTitle>Pénalités par Type (J+1 / J+N)</CardTitle>
+              <CardDescription>
+                Distribution des pénalités selon le délai de clôture
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statistics.penalties.byStatus}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percentage }) => `${name}: ${percentage}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="count"
-                    >
-                      {statistics.penalties.byStatus.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <ChartTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+              {(() => {
+                console.log('🎨 Rendu graphique - byStatus:', statistics.penalties.byStatus);
+                console.log('🎨 byStatus length:', statistics.penalties.byStatus?.length);
+                return statistics.penalties.byStatus && statistics.penalties.byStatus.length > 0 ? (
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={statistics.penalties.byStatus}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ statut, percentage }) => `${statut}: ${percentage}%`}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="count"
+                          nameKey="statut"
+                        >
+                          {statistics.penalties.byStatus.map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <ChartTooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-80 flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <AlertTriangle className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>Aucune pénalité trouvée pour cette période</p>
+                      <p className="text-sm mt-2">Période: {startDate} au {endDate}</p>
+                    </div>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
 

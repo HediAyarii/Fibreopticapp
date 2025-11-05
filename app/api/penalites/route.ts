@@ -145,7 +145,9 @@ export async function POST(request: NextRequest) {
       materiel_concerne,
       num_inter,
       auto_calculate,
-      date_attribution
+      date_attribution,
+      j_plus_1,
+      j_plus_n
     } = await request.json()
 
     let intervention_concernee = null
@@ -265,16 +267,18 @@ export async function POST(request: NextRequest) {
       INSERT INTO penalites (
         numero_penalite, employe_id, type_penalite, motif, montant,
         manager_approbateur, commentaires, intervention_concernee,
-        reclamation_concernee, materiel_concerne, date_attribution
+        reclamation_concernee, materiel_concerne, date_attribution,
+        j_plus_1, j_plus_n
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
       ) RETURNING *
     `
 
     const values = [
       numeroPenalite, cleanedData.employe_id, type_penalite, finalMotif, cleanedData.montant,
       manager_approbateur, commentaires, cleanedData.intervention_concernee,
-      cleanedData.reclamation_concernee, cleanedData.materiel_concerne, date_attribution
+      cleanedData.reclamation_concernee, cleanedData.materiel_concerne, date_attribution,
+      j_plus_1 || false, j_plus_n || false
     ]
 
     const result = await query(insertQuery, values)

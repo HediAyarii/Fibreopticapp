@@ -141,33 +141,61 @@ export async function GET(request: NextRequest) {
       try {
         const penaltiesStats = await query(`
           SELECT 
-            statut,
+            CASE 
+              WHEN j_plus_1 = TRUE THEN 'J+1 (60€)'
+              WHEN j_plus_n = TRUE THEN 'J+N (140€)'
+              ELSE type_penalite
+            END as statut,
             COUNT(*) as count,
             SUM(montant) as total_amount,
             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) as percentage
           FROM penalites 
-          WHERE created_at >= $1 AND created_at <= $2
-          GROUP BY statut
+          WHERE date_attribution >= $1::date AND date_attribution < ($2::date + INTERVAL '1 day')
+          GROUP BY 
+            CASE 
+              WHEN j_plus_1 = TRUE THEN 'J+1 (60€)'
+              WHEN j_plus_n = TRUE THEN 'J+N (140€)'
+              ELSE type_penalite
+            END
           ORDER BY count DESC
         `, [startDateFormatted, endDateFormatted])
+
+        // Convertir les chaînes en nombres pour Recharts
+        const processedPenaltiesStats = penaltiesStats.rows.map((row: any) => ({
+          ...row,
+          count: parseInt(row.count) || 0,
+          total_amount: parseFloat(row.total_amount) || 0,
+          percentage: parseFloat(row.percentage) || 0
+        }))
 
         const penaltiesByEmployee = await query(`
           SELECT 
             e.nom,
             e.prenom,
             COUNT(p.id) as penalty_count,
-            SUM(p.montant) as total_amount
+            SUM(p.montant) as total_amount,
+            SUM(CASE WHEN p.j_plus_1 = TRUE THEN 1 ELSE 0 END) as j_plus_1_count,
+            SUM(CASE WHEN p.j_plus_n = TRUE THEN 1 ELSE 0 END) as j_plus_n_count
           FROM penalites p
           JOIN employes e ON p.employe_id = e.id
-          WHERE p.created_at >= $1 AND p.created_at <= $2
+          WHERE p.date_attribution >= $1::date AND p.date_attribution < ($2::date + INTERVAL '1 day')
           GROUP BY e.id, e.nom, e.prenom
           ORDER BY total_amount DESC
           LIMIT 10
         `, [startDateFormatted, endDateFormatted])
 
+        // Convertir les chaînes en nombres pour l'affichage
+        const processedPenaltiesByEmployee = penaltiesByEmployee.rows.map((row: any) => ({
+          ...row,
+          penalty_count: parseInt(row.penalty_count) || 0,
+          total_amount: parseFloat(row.total_amount) || 0,
+          j_plus_1_count: parseInt(row.j_plus_1_count) || 0,
+          j_plus_n_count: parseInt(row.j_plus_n_count) || 0
+        }))
+
         stats.penalties = {
-          byStatus: penaltiesStats.rows,
-          byEmployee: penaltiesByEmployee.rows
+          byStatus: processedPenaltiesStats,
+          byEmployee: processedPenaltiesByEmployee
         }
       } catch (error) {
         console.log('⚠️ Table penalites non disponible:', error)

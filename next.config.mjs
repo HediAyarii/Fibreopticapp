@@ -1,3 +1,9 @@
+import { EventEmitter } from 'events'
+
+// Augmenter la limite des Event Listeners pour Next.js
+EventEmitter.defaultMaxListeners = 20
+process.setMaxListeners(20)
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
