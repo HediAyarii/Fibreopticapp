@@ -22,84 +22,53 @@ function processValue(value: any, fieldType: 'date' | 'numeric' | 'text'): any {
 
 export async function GET() {
   try {
-    // Récupérer les employés depuis la table employes avec leurs informations complètes
+    // Requête optimisée avec LEFT JOIN pour éviter N+1 queries
     const result = await query(`
       SELECT 
-        id,
-        prenom,
-        nom,
-        matricule,
-        niveau_acces,
-        statut,
-        email,
-        telephone,
-        date_embauche,
-        salaire_base,
-        taux_horaire,
-        pourcentage_taxe,
-        heures_travaillees,
-        heures_supplementaires,
-        prime_performance,
-        penalites_total,
-        date_derniere_evaluation,
-        rib_salaire,
-        rib2,
-        created_at,
-        updated_at
-      FROM employes 
-      WHERE statut = 'actif'
-      ORDER BY nom, prenom
+        e.id,
+        e.prenom,
+        e.nom,
+        e.matricule,
+        e.niveau_acces,
+        e.statut,
+        e.email,
+        e.telephone,
+        e.date_embauche,
+        e.salaire_base,
+        e.taux_horaire,
+        e.pourcentage_taxe,
+        e.heures_travaillees,
+        e.heures_supplementaires,
+        e.prime_performance,
+        e.penalites_total,
+        e.date_derniere_evaluation,
+        e.rib_salaire,
+        e.rib2,
+        e.created_at,
+        e.updated_at,
+        ca.carte_id as numero_carte_actuelle,
+        ca.date_assignation as date_debut_assignation,
+        ca.date_fin as date_fin_prevue_assignation,
+        c.montant as montant_carte_actuelle,
+        ca.statut as statut_assignation
+      FROM employes e
+      LEFT JOIN LATERAL (
+        SELECT carte_id, date_assignation, date_fin, statut
+        FROM carburant_assignations
+        WHERE employe_id = e.id 
+          AND statut = 'active'
+          AND (date_fin IS NULL OR date_fin > CURRENT_DATE)
+        ORDER BY date_assignation DESC
+        LIMIT 1
+      ) ca ON true
+      LEFT JOIN carburant c ON ca.carte_id = c.numero_carte
+      WHERE e.statut = 'actif'
+      ORDER BY e.nom, e.prenom
     `)
-
-    // Enrichir avec les informations d'assignation de cartes
-    const employesWithCards = await Promise.all(
-      result.rows.map(async (employee: any) => {
-        try {
-          // Récupérer l'assignation active de cet employé
-          const cardResult = await query(`
-            SELECT 
-              ca.carte_id,
-              ca.date_assignation,
-              ca.date_fin,
-              ca.date_fin,
-              ca.statut,
-              c.montant as montant_carte
-            FROM carburant_assignations ca
-            LEFT JOIN carburant c ON ca.carte_id = c.numero_carte
-            WHERE ca.employe_id = $1 
-              AND ca.statut = 'active'
-              AND (ca.date_fin IS NULL OR ca.date_fin > CURRENT_DATE)
-            ORDER BY ca.date_assignation DESC
-            LIMIT 1
-          `, [employee.id])
-
-          const activeCard = cardResult.rows[0]
-          
-          return {
-            ...employee,
-            numero_carte_actuelle: activeCard?.numero_carte || null,
-            date_debut_assignation: activeCard?.date_debut || null,
-            date_fin_prevue_assignation: activeCard?.date_fin_prevue || null,
-            montant_carte_actuelle: activeCard?.montant_carte || null,
-            statut_assignation: activeCard?.statut || null
-          }
-        } catch (cardError) {
-          console.error(`Erreur récupération carte pour employé ${employee.id}:`, cardError)
-          return {
-            ...employee,
-            numero_carte_actuelle: null,
-            date_debut_assignation: null,
-            date_fin_prevue_assignation: null,
-            montant_carte_actuelle: null,
-            statut_assignation: null
-          }
-        }
-      })
-    )
 
     return NextResponse.json({
       success: true,
-      employes: employesWithCards
+      employes: result.rows
     })
   } catch (error) {
     console.error('Erreur GET employes:', error)

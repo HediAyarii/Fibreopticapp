@@ -11,15 +11,18 @@ const dbConfig = {
   password: process.env.POSTGRES_PASSWORD || 'finalfibre_password_2024',
   ssl: false, // Désactiver SSL pour le développement local
   // Configuration optimisée pour éviter les fuites de connexions en développement
-  max: isDevelopment ? 10 : 50, // Réduire le nombre de connexions en développement
-  min: isDevelopment ? 1 : 5, // Réduire le minimum en développement
-  idleTimeoutMillis: isDevelopment ? 5000 : 10000, // Fermer plus rapidement en développement
+  max: isDevelopment ? 20 : 50, // Augmenté pour meilleures performances
+  min: isDevelopment ? 2 : 5, // Minimum de connexions toujours disponibles
+  idleTimeoutMillis: isDevelopment ? 10000 : 30000, // Garder les connexions plus longtemps
   connectionTimeoutMillis: 5000,
   acquireTimeoutMillis: 10000,
   allowExitOnIdle: true,
-  // Nouvelles options pour éviter les fuites
+  // Optimisations de performance
   keepAlive: true,
-  keepAliveInitialDelayMillis: 0,
+  keepAliveInitialDelayMillis: 10000,
+  // Options de statement pour meilleures performances
+  statement_timeout: 30000, // 30 secondes timeout pour les requêtes
+  query_timeout: 30000,
 }
 
 // Pattern Singleton Global pour éviter les fuites lors du hot reload
@@ -48,12 +51,6 @@ export function getPool(): Pool {
     // Gestion des erreurs de connexion
     pool.on('error', (err) => {
       console.error('❌ Erreur inattendue sur le client PostgreSQL:', err)
-    })
-
-    // Gestion de la fermeture du pool
-    pool.on('end', () => {
-      console.log('🔌 Pool PostgreSQL fermé')
-      global.__postgresPool = undefined
     })
     
     // Test de connexion au démarrage
@@ -161,7 +158,8 @@ export async function cleanupOrphanedConnections(): Promise<void> {
           await pool.query('SELECT pg_terminate_backend($1)', [row.pid])
           console.log(`   ✅ Connexion ${row.pid} fermée`)
         } catch (error) {
-          console.log(`   ⚠️  Impossible de fermer la connexion ${row.pid}:`, error.message)
+          const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue'
+          console.log(`   ⚠️  Impossible de fermer la connexion ${row.pid}:`, errorMessage)
         }
       }
     }

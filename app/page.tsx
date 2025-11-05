@@ -184,7 +184,11 @@ export default function EmployeeTracker() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [user, setUser] = useState<any>(null)
   
-  // Système de temps réel intelligent
+  // Polling automatique DÉSACTIVÉ pour meilleures performances
+  // Les données se rechargent quand nécessaire (changement d'onglet, actions utilisateur)
+  // Si besoin de temps réel, utiliser WebSocket via useSocketIO.tsx
+  
+  /*
   const { isConnected: realtimeConnected } = useSmartRealtime({
     interval: 30000, // 30 secondes
     enabled: isLoggedIn,
@@ -194,6 +198,8 @@ export default function EmployeeTracker() {
       loadClaimsFromDatabase()
     }
   })
+  */
+  
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -456,18 +462,73 @@ export default function EmployeeTracker() {
   // Load data from database on component mount
   useEffect(() => {
     if (isLoggedIn) {
-      loadDataFromDatabase()
-      loadAllCRUDData()
-      loadAvailableCards()
-      loadFuelGroupedData()
-      loadFuelEmployeesData()
-      // Charger les données des tarifs
-      loadTarifsFromDatabase()
-      // Synchronisation automatique des employés
-      autoSyncEmployees()
-      
+      // Charger SEULEMENT les données essentielles au démarrage
+      loadEssentialData()
     }
   }, [isLoggedIn])
+
+  // Lazy loading: charger les données selon l'onglet actif
+  useEffect(() => {
+    if (!isLoggedIn) return
+    
+    switch(activeTab) {
+      case 'interventions':
+        if (interventions.length === 0) {
+          loadDataFromDatabase()
+        }
+        break
+      case 'carburant':
+        if (fuelData.length === 0) {
+          loadAvailableCards()
+          loadFuelGroupedData()
+          loadFuelEmployeesData()
+        }
+        break
+      case 'materiel':
+        if (materials.length === 0) {
+          loadMaterialsFromDatabase().then(setMaterials)
+        }
+        if (affectations.length === 0) {
+          loadAffectationsFromDatabase().then(setAffectations)
+        }
+        break
+      case 'tarifs':
+        if (tarifs.length === 0) {
+          loadTarifsFromDatabase()
+        }
+        break
+      // dashboard, employes, penalites, reclamations sont déjà chargés
+    }
+  }, [activeTab, isLoggedIn])
+
+  // Fonction pour charger les données essentielles au login
+  const loadEssentialData = async () => {
+    setLoadingEmployees(true)
+    setLoadingPenalties(true)
+    setLoadingClaims(true)
+
+    try {
+      // Charger en parallèle uniquement les données critiques pour le dashboard
+      const [employeesData, penaltiesData, claimsData] = await Promise.all([
+        loadEmployeesFromDatabase(),
+        loadPenaltiesFromDatabase(),
+        loadClaimsFromDatabase()
+      ])
+      
+      setEmployees(employeesData)
+      setPenalties(penaltiesData)
+      setClaims(claimsData)
+      
+      // Synchronisation auto en arrière-plan (non-bloquante)
+      setTimeout(() => autoSyncEmployees(), 1000)
+    } catch (error) {
+      console.error("Erreur lors du chargement des données essentielles:", error)
+    } finally {
+      setLoadingEmployees(false)
+      setLoadingPenalties(false)
+      setLoadingClaims(false)
+    }
+  }
 
   // Reload grouped data when period or date range changes
   useEffect(() => {
@@ -1033,33 +1094,9 @@ ${data.summary && data.summary.length > 0 ? '\n🔍 Exemples de doublons trouvé
       const response = await fetch("/api/employes")
       if (!response.ok) throw new Error("Erreur lors du chargement des employés")
       const data = await response.json()
-      const employeesData = data.employes || []
-      
-      // Charger les informations de carte carburant pour chaque employé
-      const employeesWithCards = await Promise.all(
-        employeesData.map(async (employee: any) => {
-          try {
-            // Récupérer la carte carburant actuelle de l'employé
-            const cardResponse = await fetch(`/api/carburant-assignation?employe_id=${employee.id}`)
-            if (cardResponse.ok) {
-              const cardData = await cardResponse.json()
-              return {
-                ...employee,
-                numero_carte_actuelle: cardData.assignation?.numero_carte || null,
-                date_debut_assignation: cardData.assignation?.date_assignation || null,
-                date_fin_prevue_assignation: cardData.assignation?.date_fin || null
-              }
-            }
-            return employee
-          } catch (error) {
-            console.error(`Erreur lors du chargement de la carte pour l'employé ${employee.id}:`, error)
-            return employee
-          }
-        })
-      )
-      
-      setEmployees(employeesWithCards)
-      return employeesWithCards
+      // L'API retourne déjà les employés avec les infos de carte (LEFT JOIN LATERAL)
+      // Pas besoin de boucle supplémentaire!
+      return data.employes || []
     } catch (error) {
       console.error("[v0] Erreur chargement employés:", error)
       return []
