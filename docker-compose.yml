@@ -34,6 +34,7 @@ services:
       - "8080:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin-backups:/backups
     networks:
       - finalfibre-network
     depends_on:

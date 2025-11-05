@@ -2930,14 +2930,6 @@ La page va se recharger automatiquement...`)
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Actualiser
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => syncTaxes()}
-                    className="glass-card border border-white/20 hover:bg-white/10"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Sync Taxes
-                  </Button>
                   
                   {/* Indicateur de connexion SSE */}
                   <div className="flex items-center space-x-2">
@@ -2952,14 +2944,6 @@ La page va se recharger automatiquement...`)
                     )}
                   </div>
                   
-                  <Button 
-                    variant="outline" 
-                    onClick={() => clearDatabase()}
-                    className="glass-card border border-red-500/50 hover:bg-red-500/10 text-red-400"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Vider Base de Données
-                  </Button>
                   <Button 
                     onClick={() => {
                       setEditingItem(null)
@@ -3701,14 +3685,6 @@ La page va se recharger automatiquement...`)
                         Nettoyer Doublons
                       </>
                     )}
-                  </Button>
-                  
-                  <Button 
-                    onClick={handleClearAllInterventions}
-                    className="bg-red-500/90 border border-red-300/30 hover:bg-red-600 text-white font-medium"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Supprimer Tout
                   </Button>
                   </div>
               </div>
@@ -7435,14 +7411,41 @@ function StatisticsDashboard() {
     interventionTypes: []
   })
   const [loading, setLoading] = useState(false)
-  const [startDate, setStartDate] = useState(() => {
-    const date = new Date()
-    date.setMonth(date.getMonth() - 3)
-    return date.toISOString().split('T')[0]
-  })
-  const [endDate, setEndDate] = useState(() => {
-    return new Date().toISOString().split('T')[0]
-  })
+  
+  // Fonction pour obtenir les dates du mois précédent
+  const getStatisticsDefaultDates = () => {
+    const today = new Date()
+    const currentYear = today.getFullYear()
+    const currentMonth = today.getMonth() // 0-11
+    
+    // Calculer le mois précédent
+    let previousMonth = currentMonth - 1
+    let yearForPreviousMonth = currentYear
+    
+    // Gérer le cas de janvier (mois 0) -> décembre de l'année précédente
+    if (previousMonth < 0) {
+      previousMonth = 11 // Décembre
+      yearForPreviousMonth = currentYear - 1
+    }
+    
+    // Premier jour du mois précédent
+    const startMonth = (previousMonth + 1).toString().padStart(2, '0')
+    const startYear = yearForPreviousMonth
+    
+    // Dernier jour du mois précédent
+    const lastDay = new Date(yearForPreviousMonth, previousMonth + 1, 0).getDate()
+    const endMonth = startMonth
+    const endYear = yearForPreviousMonth
+    
+    return {
+      start: `${startYear}-${startMonth}-01`,
+      end: `${endYear}-${endMonth}-${lastDay.toString().padStart(2, '0')}`
+    }
+  }
+  
+  const statisticsDefaultDates = getStatisticsDefaultDates()
+  const [startDate, setStartDate] = useState(statisticsDefaultDates.start)
+  const [endDate, setEndDate] = useState(statisticsDefaultDates.end)
   const [selectedType, setSelectedType] = useState('all')
 
   const loadStatistics = async () => {
