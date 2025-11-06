@@ -47,7 +47,10 @@ export async function GET(request: NextRequest) {
                 FROM unnest(string_to_array(i.articles, ',')) as article_item
                 LEFT JOIN company_pricing cp ON 
                   TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
-                  AND cp.company_name = 'ERT OUEST'
+                  AND cp.company_name = CASE 
+                    WHEN i.grille LIKE '%AXECOM MANCHE%' THEN 'AXECOM'
+                    ELSE 'ERT OUEST'
+                  END
                   AND cp.category = i.type_intervention  -- Utiliser la catégorie de l'intervention
                 ), 0
               )
@@ -69,7 +72,10 @@ export async function GET(request: NextRequest) {
                 FROM unnest(string_to_array(i.articles, ',')) as article_item
                 LEFT JOIN company_pricing cp ON 
                   TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
-                  AND cp.company_name = 'ERT OUEST'
+                  AND cp.company_name = CASE 
+                    WHEN i.grille LIKE '%AXECOM MANCHE%' THEN 'AXECOM'
+                    ELSE 'ERT OUEST'
+                  END
                   AND cp.category = i.type_intervention  -- Utiliser la catégorie de l'intervention
                 ), 0
               )

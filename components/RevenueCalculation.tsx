@@ -93,6 +93,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
     total_recette_generale: 0
   })
   const [loading, setLoading] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all")
   const [dateFrom, setDateFrom] = useState(defaultDates.start)
   const [dateTo, setDateTo] = useState(defaultDates.end)
@@ -129,6 +130,39 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
       console.error("Erreur lors du chargement des recettes:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const recalculateBeneficeBrut = async () => {
+    if (!confirm('⚠️ Cette opération va recalculer TOUTES les recettes générées dans "Charges par Salarié" avec les tarifs corrigés (AXECOM/ERT).\n\nCela peut prendre plusieurs minutes.\n\nContinuer ?')) {
+      return
+    }
+
+    setRecalculating(true)
+    try {
+      const response = await fetch('/api/sync/benefice-brut', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      const data = await response.json()
+      
+      if (data.success) {
+        alert(`✅ Recalcul terminé !\n\n` +
+              `• ${data.synchronisations.length} enregistrements mis à jour\n` +
+              `• ${data.employes_sans_match} employés non trouvés\n\n` +
+              `Les données "Charges par Salarié" ont été synchronisées avec succès.`)
+        // Recharger les données affichées
+        await loadRevenueData()
+      } else {
+        alert(`❌ Erreur lors du recalcul:\n${data.error || 'Erreur inconnue'}`)
+      }
+    } catch (error) {
+      console.error("Erreur lors du recalcul:", error)
+      alert(`❌ Erreur lors du recalcul:\n${error}`)
+    } finally {
+      setRecalculating(false)
     }
   }
 
@@ -290,11 +324,21 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                   console.log('Actualisation avec dates:', { dateFrom, dateTo })
                   loadRevenueData()
                 }}
-                disabled={loading}
+                disabled={loading || recalculating}
                 className="flex-1"
               >
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Actualiser
+              </Button>
+              <Button
+                variant="default"
+                onClick={recalculateBeneficeBrut}
+                disabled={loading || recalculating}
+                className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
+                title="Recalculer toutes les recettes avec les tarifs AXECOM/ERT corrigés"
+              >
+                <TrendingUp className={`w-4 h-4 mr-2 ${recalculating ? 'animate-spin' : ''}`} />
+                {recalculating ? 'Recalcul en cours...' : 'Recalculer'}
               </Button>
               <Button
                 variant="outline"
@@ -306,7 +350,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                   setSelectedGrille("all")
                   console.log('Filtres réinitialisés avec dates du mois précédent:', dates)
                 }}
-                disabled={loading}
+                disabled={loading || recalculating}
                 className="px-3"
                 title="Réinitialiser les filtres"
               >
