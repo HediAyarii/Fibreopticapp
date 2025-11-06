@@ -124,6 +124,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [primeAmount, setPrimeAmount] = useState('')
   const [isEditingPrime, setIsEditingPrime] = useState(false)
 
+  // États pour la synchronisation des noms
+  const [syncingNames, setSyncingNames] = useState(false)
+  const [nameSyncResult, setNameSyncResult] = useState<any>(null)
+
   // Fonction utilitaire pour formater l'impôt
   const formatImpot = (impot: any): string => {
     if (!impot) return '0.00€'
@@ -559,6 +563,59 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       alert('❌ Erreur lors de la synchronisation des pénalités')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  // Fonction pour synchroniser les noms via matricule
+  const syncNames = async () => {
+    setSyncingNames(true)
+    setNameSyncResult(null)
+    
+    try {
+      console.log('🔄 Synchronisation des noms via matricule...')
+      
+      const response = await fetch('/api/sync/names', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        setNameSyncResult(result)
+        
+        console.log('✅ Synchronisation réussie:', result)
+        
+        let message = `✅ Synchronisation terminée !\n\n`
+        message += `📊 ${result.corrected} entrées corrigées\n`
+        
+        if (result.sync_status && result.sync_status.length > 0) {
+          message += `\n📈 État de synchronisation:\n`
+          result.sync_status.forEach((status: any) => {
+            if (status.statut === 'OK') {
+              message += `✅ ${status.statut}: ${status.nombre}\n`
+            } else {
+              message += `⚠️ ${status.statut}: ${status.nombre}\n`
+            }
+          })
+        }
+        
+        if (result.without_matricule > 0) {
+          message += `\n⚠️ ${result.without_matricule} entrées sans matricule (correction manuelle requise)`
+        }
+        
+        alert(message)
+        
+        // Recharger les données
+        await loadData()
+      } else {
+        const error = await response.json()
+        alert(`❌ Erreur synchronisation: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Erreur synchronisation noms:', error)
+      alert('❌ Erreur lors de la synchronisation des noms')
+    } finally {
+      setSyncingNames(false)
     }
   }
 
@@ -1000,6 +1057,26 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
               <>
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Sync Pénalités
+              </>
+            )}
+          </Button>
+
+          <Button 
+            onClick={syncNames} 
+            variant="outline" 
+            disabled={syncingNames}
+            className="bg-blue-100 hover:bg-blue-200 border-blue-300 text-blue-800"
+            title="Synchroniser les noms et prénoms depuis la table employés via matricule"
+          >
+            {syncingNames ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                Correction...
+              </>
+            ) : (
+              <>
+                <Users className="w-4 h-4 mr-2" />
+                Corriger Noms
               </>
             )}
           </Button>

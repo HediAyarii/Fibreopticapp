@@ -1,13 +1,29 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const result = await query(`
+    // Récupérer le paramètre de filtre depot depuis l'URL
+    const { searchParams } = new URL(request.url)
+    const depotFilter = searchParams.get('depot')
+    
+    // Construire la requête SQL avec ou sans filtre depot
+    let sqlQuery = `
       SELECT m.*
-      FROM materiel m 
-      ORDER BY m.created_at DESC
-    `)
+      FROM materiel m
+    `
+    const queryParams: string[] = []
+    
+    if (depotFilter && ['AXECOM', 'ERT'].includes(depotFilter.toUpperCase())) {
+      sqlQuery += ` WHERE m.depot = $1`
+      queryParams.push(depotFilter.toUpperCase())
+    }
+    
+    sqlQuery += ` ORDER BY m.created_at DESC`
+    
+    console.log('📊 Query executed:', sqlQuery, 'params:', queryParams)
+    
+    const result = await query(sqlQuery, queryParams.length > 0 ? queryParams : undefined)
     
     // Convertir les valeurs numériques en nombres
     const materiel = result.rows.map(row => ({
@@ -38,6 +54,7 @@ export async function POST(request: NextRequest) {
       modele,
       statut,
       localisation,
+      depot,
       quantite,
       prix_unitaire,
       date_acquisition,
@@ -63,6 +80,10 @@ export async function POST(request: NextRequest) {
     
     if (!type_materiel || type_materiel.trim() === '') {
       return NextResponse.json({ error: "Le type de matériel est obligatoire" }, { status: 400 })
+    }
+
+    if (!depot || !['AXECOM', 'ERT'].includes(depot)) {
+      return NextResponse.json({ error: "Le dépôt est obligatoire (AXECOM ou ERT)" }, { status: 400 })
     }
 
     // Vérifier si le matériel existe déjà (par numéro de série)
@@ -104,20 +125,20 @@ export async function POST(request: NextRequest) {
     const insertQuery = `
       INSERT INTO materiel (
         numero_serie, nom_equipement, type_materiel, marque, modele, statut,
-        localisation, quantite, prix_unitaire, date_acquisition, cout_acquisition,
+        localisation, depot, quantite, prix_unitaire, date_acquisition, cout_acquisition,
         garantie_jusqu_a, maintenance_derniere, maintenance_prochaine,
         kilometrage_vehicule, consommation_carburant, capacite_reservoir,
         niveau_carburant, etat_general, notes_maintenance, accessoires_inclus,
         certificats_conformite, photos
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, $21, $22, $23
+        $17, $18, $19, $20, $21, $22, $23, $24
       ) RETURNING *
     `
 
     const values = [
       numero_serie, nom_equipement, type_materiel, marque, modele, statut || 'disponible',
-      localisation, cleanedData.quantite, cleanedData.prix_unitaire, cleanedData.date_acquisition, cleanedData.cout_acquisition,
+      localisation, depot, cleanedData.quantite, cleanedData.prix_unitaire, cleanedData.date_acquisition, cleanedData.cout_acquisition,
       cleanedData.garantie_jusqu_a, cleanedData.maintenance_derniere, cleanedData.maintenance_prochaine,
       cleanedData.kilometrage_vehicule, cleanedData.consommation_carburant, cleanedData.capacite_reservoir,
       cleanedData.niveau_carburant, etat_general || 'bon', notes_maintenance, cleanedArrayFields.accessoires_inclus,

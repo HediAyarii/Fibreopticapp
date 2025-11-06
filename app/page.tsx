@@ -210,6 +210,7 @@ export default function EmployeeTracker() {
   const [fuelData, setFuelData] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
   const [materials, setMaterials] = useState<any[]>([])
+  const [depotFilter, setDepotFilter] = useState<'ALL' | 'AXECOM' | 'ERT'>('ALL')
   const [penalties, setPenalties] = useState<any[]>([])
   const [claims, setClaims] = useState<any[]>([])
   const [affectations, setAffectations] = useState<any[]>([])
@@ -257,6 +258,15 @@ export default function EmployeeTracker() {
   const [selectedClaim, setSelectedClaim] = useState<any>(null)
   const [showImageModal, setShowImageModal] = useState(false)
   const [selectedImage, setSelectedImage] = useState<string>('')
+
+  // Transfer material states
+  const [showTransferModal, setShowTransferModal] = useState(false)
+  const [selectedMaterialForTransfer, setSelectedMaterialForTransfer] = useState<any>(null)
+  const [transferQuantity, setTransferQuantity] = useState<number>(0)
+  const [transferDepotDestination, setTransferDepotDestination] = useState<'AXECOM' | 'ERT'>('AXECOM')
+  const [transferMotif, setTransferMotif] = useState<string>('')
+  const [transferComments, setTransferComments] = useState<string>('')
+  const [transferring, setTransferring] = useState(false)
 
   // Interventions filtering states
   const [interventionFilters, setInterventionFilters] = useState({
@@ -501,32 +511,56 @@ export default function EmployeeTracker() {
     }
   }, [activeTab, isLoggedIn])
 
+  // Reload materials when depot filter changes while on materials tab
+  useEffect(() => {
+    if (!isLoggedIn) return
+    if (activeTab !== 'materials') return
+    // Fetch materials for selected depot
+    (async () => {
+      try {
+        const params = depotFilter && depotFilter !== 'ALL' ? `?depot=${encodeURIComponent(depotFilter)}` : ''
+        const response = await fetch(`/api/materiel${params}`)
+        if (!response.ok) throw new Error('Erreur lors du chargement du matériel')
+        const data = await response.json()
+        setMaterials(data.materiel || [])
+      } catch (err) {
+        console.error('Erreur rechargement materiel après changement de dépôt:', err)
+        setMaterials([])
+      }
+    })()
+  }, [depotFilter, activeTab, isLoggedIn])
+
   // Fonction pour charger les données essentielles au login
   const loadEssentialData = async () => {
-    setLoadingEmployees(true)
-    setLoadingPenalties(true)
-    setLoadingClaims(true)
-
     try {
       // Charger en parallèle uniquement les données critiques pour le dashboard
-      const [employeesData, penaltiesData, claimsData] = await Promise.all([
+      // Note: loadEmployeesFromDatabase gère déjà son propre loading state
+      await Promise.all([
         loadEmployeesFromDatabase(),
-        loadPenaltiesFromDatabase(),
-        loadClaimsFromDatabase()
+        (async () => {
+          setLoadingPenalties(true)
+          try {
+            const data = await loadPenaltiesFromDatabase()
+            setPenalties(data)
+          } finally {
+            setLoadingPenalties(false)
+          }
+        })(),
+        (async () => {
+          setLoadingClaims(true)
+          try {
+            const data = await loadClaimsFromDatabase()
+            setClaims(data)
+          } finally {
+            setLoadingClaims(false)
+          }
+        })()
       ])
-      
-      setEmployees(employeesData)
-      setPenalties(penaltiesData)
-      setClaims(claimsData)
       
       // Synchronisation auto en arrière-plan (non-bloquante)
       setTimeout(() => autoSyncEmployees(), 1000)
     } catch (error) {
       console.error("Erreur lors du chargement des données essentielles:", error)
-    } finally {
-      setLoadingEmployees(false)
-      setLoadingPenalties(false)
-      setLoadingClaims(false)
     }
   }
 
@@ -1091,15 +1125,20 @@ ${data.summary && data.summary.length > 0 ? '\n🔍 Exemples de doublons trouvé
   // Load data functions for CRUD operations
   const loadEmployeesFromDatabase = async () => {
     try {
+      setLoadingEmployees(true)
       const response = await fetch("/api/employes")
       if (!response.ok) throw new Error("Erreur lors du chargement des employés")
       const data = await response.json()
       // L'API retourne déjà les employés avec les infos de carte (LEFT JOIN LATERAL)
       // Pas besoin de boucle supplémentaire!
-      return data.employes || []
+      const employeesData = data.employes || []
+      setEmployees(employeesData)
+      return employeesData
     } catch (error) {
       console.error("[v0] Erreur chargement employés:", error)
       return []
+    } finally {
+      setLoadingEmployees(false)
     }
   }
 
@@ -1183,11 +1222,13 @@ La page va se recharger automatiquement...`)
 
   const loadMaterialsFromDatabase = async () => {
     try {
-      const response = await fetch("/api/materiel")
+      // Support optional depot filtering: if depotFilter is 'ALL' we don't add the query param
+      const params = depotFilter && depotFilter !== 'ALL' ? `?depot=${encodeURIComponent(depotFilter)}` : ''
+      const response = await fetch(`/api/materiel${params}`)
       if (!response.ok) throw new Error("Erreur lors du chargement du matériel")
-    const data = await response.json()
+      const data = await response.json()
       return data.materiel || []
-  } catch (error) {
+    } catch (error) {
       console.error("[v0] Erreur chargement matériel:", error)
       return []
     }
@@ -1826,6 +1867,74 @@ La page va se recharger automatiquement...`)
     } catch (error) {
       console.error("Erreur suppression affectation:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
+    }
+  }
+
+  // Transfer material between depots
+  const handleTransferMaterial = async () => {
+    if (!selectedMaterialForTransfer) return
+    
+    if (transferQuantity <= 0 || transferQuantity > selectedMaterialForTransfer.quantite) {
+      alert(`Quantité invalide. Disponible: ${selectedMaterialForTransfer.quantite}`)
+      return
+    }
+
+    if (!transferDepotDestination) {
+      alert('Veuillez sélectionner un dépôt de destination')
+      return
+    }
+
+    if (selectedMaterialForTransfer.depot === transferDepotDestination) {
+      alert('Le dépôt de destination doit être différent du dépôt actuel')
+      return
+    }
+
+    if (!transferMotif || transferMotif.trim() === '') {
+      alert('Veuillez indiquer le motif du transfert')
+      return
+    }
+
+    setTransferring(true)
+    try {
+      const response = await fetch('/api/materiel/transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          materiel_id: selectedMaterialForTransfer.id,
+          quantite_transferee: transferQuantity,
+          depot_destination: transferDepotDestination,
+          motif: transferMotif,
+          commentaires: transferComments
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors du transfert')
+      }
+
+      const result = await response.json()
+      
+      // Reload materials
+      const params = depotFilter && depotFilter !== 'ALL' ? `?depot=${encodeURIComponent(depotFilter)}` : ''
+      const materialsResponse = await fetch(`/api/materiel${params}`)
+      if (materialsResponse.ok) {
+        const data = await materialsResponse.json()
+        setMaterials(data.materiel || [])
+      }
+
+      setShowTransferModal(false)
+      setSelectedMaterialForTransfer(null)
+      setTransferQuantity(0)
+      setTransferMotif('')
+      setTransferComments('')
+      
+      alert(`✅ Transfert réussi !\n\n${transferQuantity} ${selectedMaterialForTransfer.nom_equipement} transféré(s) vers ${transferDepotDestination}`)
+    } catch (error) {
+      console.error('Erreur transfert:', error)
+      alert(error instanceof Error ? error.message : 'Erreur lors du transfert')
+    } finally {
+      setTransferring(false)
     }
   }
 
@@ -2962,10 +3071,11 @@ La page va se recharger automatiquement...`)
                   <Button 
                     variant="outline" 
                     onClick={() => loadEmployeesFromDatabase()}
+                    disabled={loadingEmployees}
                     className="glass-card border border-white/20 hover:bg-white/10"
                   >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Actualiser
+                    <RefreshCw className={`w-4 h-4 mr-2 ${loadingEmployees ? 'animate-spin' : ''}`} />
+                    {loadingEmployees ? 'Chargement...' : 'Actualiser'}
                   </Button>
                   
                   {/* Indicateur de connexion SSE */}
@@ -4896,10 +5006,35 @@ La page va se recharger automatiquement...`)
                    <h2 className="text-3xl font-bold">Matériel</h2>
                    <p className="text-muted-foreground">Gestion du matériel</p>
                  </div>
-                 <Button variant="outline">
-                   <Plus className="w-4 h-4 mr-2" />
-                   Nouveau
-                 </Button>
+                 <div className="flex items-center gap-3">
+                   <select
+                     value={depotFilter}
+                     onChange={async (e) => {
+                       const val = e.target.value as 'ALL' | 'AXECOM' | 'ERT'
+                       setDepotFilter(val)
+                       try {
+                         const params = val && val !== 'ALL' ? `?depot=${encodeURIComponent(val)}` : ''
+                         const response = await fetch(`/api/materiel${params}`)
+                         if (!response.ok) throw new Error('Erreur lors du chargement du matériel')
+                         const data = await response.json()
+                         setMaterials(data.materiel || [])
+                       } catch (err) {
+                         console.error('Erreur chargement materiel par dépôt:', err)
+                         setMaterials([])
+                       }
+                     }}
+                     className="border rounded-md px-2 py-1 bg-white/5 text-sm"
+                     aria-label="Filtrer par dépôt"
+                   >
+                     <option value="ALL">Tous les dépôts</option>
+                     <option value="AXECOM">AXECOM</option>
+                     <option value="ERT">ERT</option>
+                   </select>
+                   <Button variant="outline">
+                     <Plus className="w-4 h-4 mr-2" />
+                     Nouveau
+                   </Button>
+                 </div>
                </div>
 
                {/* Material Management Section */}
@@ -4954,6 +5089,7 @@ La page va se recharger automatiquement...`)
                                <th className="text-left p-4 font-semibold">Marque</th>
                                <th className="text-left p-4 font-semibold">Modèle</th>
                                <th className="text-left p-4 font-semibold">Numéro Série</th>
+                               <th className="text-left p-4 font-semibold">Dépôt</th>
                                <th className="text-left p-4 font-semibold">Stock</th>
                             <th className="text-left p-4 font-semibold">Statut</th>
                             <th className="text-left p-4 font-semibold">Actions</th>
@@ -4967,6 +5103,7 @@ La page va se recharger automatiquement...`)
                                  <td className="p-4">{material.marque}</td>
                                  <td className="p-4">{material.modele}</td>
                                  <td className="p-4">{material.numero_serie}</td>
+                                 <td className="p-4">{material.depot || 'AXECOM'}</td>
                                  <td className="p-4">
                                    <div className="flex items-center gap-2">
                                      <Package className="w-4 h-4 text-primary" />
@@ -4976,7 +5113,7 @@ La page va se recharger automatiquement...`)
                               <td className="p-4">
                                 <Badge 
                                   variant={material.statut === 'disponible' ? 'default' : 'secondary'}
-                                     className={material.statut === 'disponible' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}
+                                  className={material.statut === 'disponible' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}
                                 >
                                   {material.statut}
                                 </Badge>
@@ -4993,6 +5130,22 @@ La page va se recharger automatiquement...`)
                                        className="glass-card border border-white/20"
                                   >
                                        <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                       variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedMaterialForTransfer(material)
+                                      setTransferQuantity(1)
+                                      setTransferDepotDestination(material.depot === 'AXECOM' ? 'ERT' : 'AXECOM')
+                                      setTransferMotif('')
+                                      setTransferComments('')
+                                      setShowTransferModal(true)
+                                    }}
+                                       className="glass-card border border-white/20 text-purple-400 hover:text-purple-300"
+                                       title="Transférer vers un autre dépôt"
+                                     >
+                                       <RefreshCw className="w-4 h-4" />
                                   </Button>
                                   <Button
                                        variant="outline"
@@ -5847,6 +6000,146 @@ La page va se recharger automatiquement...`)
                setEditingItem(null)
              }} 
            />
+         </DialogContent>
+       </Dialog>
+
+       {/* Transfer Material Modal */}
+       <Dialog open={showTransferModal} onOpenChange={setShowTransferModal}>
+         <DialogContent className="glass-card border border-white/20 max-w-lg">
+           <DialogHeader>
+             <DialogTitle className="flex items-center gap-2">
+               <RefreshCw className="w-5 h-5 text-purple-400" />
+               Transférer du Matériel
+             </DialogTitle>
+             <DialogDescription>
+               Transférez une quantité de matériel d'un dépôt à un autre
+             </DialogDescription>
+           </DialogHeader>
+           
+           {selectedMaterialForTransfer && (
+             <div className="space-y-4">
+               {/* Material Info */}
+               <div className="p-4 bg-primary/5 rounded-lg border border-white/10">
+                 <h3 className="font-semibold text-sm mb-2">Matériel à transférer</h3>
+                 <p className="text-sm"><strong>Nom:</strong> {selectedMaterialForTransfer.nom_equipement}</p>
+                 <p className="text-sm"><strong>Type:</strong> {selectedMaterialForTransfer.type_equipement}</p>
+                 <p className="text-sm"><strong>Dépôt actuel:</strong> <Badge variant="outline">{selectedMaterialForTransfer.depot || 'AXECOM'}</Badge></p>
+                 <p className="text-sm"><strong>Quantité disponible:</strong> {selectedMaterialForTransfer.quantite}</p>
+               </div>
+
+               {/* Transfer Form */}
+               <div className="space-y-3">
+                 <div>
+                   <Label htmlFor="transferQuantity">Quantité à transférer *</Label>
+                   <Input
+                     id="transferQuantity"
+                     type="number"
+                     min="1"
+                     max={selectedMaterialForTransfer.quantite}
+                     value={transferQuantity}
+                     onChange={(e) => setTransferQuantity(Number(e.target.value))}
+                     placeholder="Entrez la quantité"
+                     className="mt-1"
+                   />
+                   <p className="text-xs text-muted-foreground mt-1">
+                     Maximum: {selectedMaterialForTransfer.quantite}
+                   </p>
+                 </div>
+
+                 <div>
+                   <Label htmlFor="transferDepot">Dépôt de destination *</Label>
+                   <Select
+                     value={transferDepotDestination}
+                     onValueChange={(value) => setTransferDepotDestination(value as 'AXECOM' | 'ERT')}
+                   >
+                     <SelectTrigger className="mt-1">
+                       <SelectValue placeholder="Sélectionner le dépôt" />
+                     </SelectTrigger>
+                     <SelectContent>
+                       <SelectItem 
+                         value="AXECOM" 
+                         disabled={selectedMaterialForTransfer.depot === 'AXECOM'}
+                       >
+                         AXECOM
+                       </SelectItem>
+                       <SelectItem 
+                         value="ERT" 
+                         disabled={selectedMaterialForTransfer.depot === 'ERT'}
+                       >
+                         ERT
+                       </SelectItem>
+                     </SelectContent>
+                   </Select>
+                 </div>
+
+                 <div>
+                   <Label htmlFor="transferMotif">Motif du transfert *</Label>
+                   <Input
+                     id="transferMotif"
+                     value={transferMotif}
+                     onChange={(e) => setTransferMotif(e.target.value)}
+                     placeholder="Ex: Besoin pour un projet, réorganisation..."
+                     className="mt-1"
+                   />
+                 </div>
+
+                 <div>
+                   <Label htmlFor="transferComments">Commentaires (optionnel)</Label>
+                   <Textarea
+                     id="transferComments"
+                     value={transferComments}
+                     onChange={(e) => setTransferComments(e.target.value)}
+                     placeholder="Informations complémentaires..."
+                     className="mt-1"
+                     rows={3}
+                   />
+                 </div>
+               </div>
+
+               {/* Summary */}
+               <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                 <p className="text-sm font-medium">
+                   <RefreshCw className="w-4 h-4 inline mr-1" />
+                   Résumé du transfert
+                 </p>
+                 <p className="text-xs text-muted-foreground mt-1">
+                   {transferQuantity} × {selectedMaterialForTransfer.nom_equipement}
+                   <br />
+                   De <strong>{selectedMaterialForTransfer.depot || 'AXECOM'}</strong> vers <strong>{transferDepotDestination}</strong>
+                 </p>
+               </div>
+
+               <DialogFooter>
+                 <Button
+                   variant="outline"
+                   onClick={() => {
+                     setShowTransferModal(false)
+                     setSelectedMaterialForTransfer(null)
+                   }}
+                   disabled={transferring}
+                 >
+                   Annuler
+                 </Button>
+                 <Button
+                   onClick={handleTransferMaterial}
+                   disabled={transferring || !transferMotif || transferQuantity <= 0}
+                   className="bg-purple-600 hover:bg-purple-700"
+                 >
+                   {transferring ? (
+                     <>
+                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                       Transfert en cours...
+                     </>
+                   ) : (
+                     <>
+                       <RefreshCw className="w-4 h-4 mr-2" />
+                       Confirmer le transfert
+                     </>
+                   )}
+                 </Button>
+               </DialogFooter>
+             </div>
+           )}
          </DialogContent>
        </Dialog>
 

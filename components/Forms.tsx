@@ -19,6 +19,7 @@ export function MaterialForm({ material, onSave, onCancel }: {
   const [formData, setFormData] = useState({
     nom_equipement: material?.nom_equipement || '',
     type_materiel: material?.type_materiel || '',
+    depot: material?.depot || 'AXECOM',
     quantite: material?.quantite || '',
     prix_unitaire: material?.prix_unitaire || '',
     marque: material?.marque || '',
@@ -73,6 +74,35 @@ export function MaterialForm({ material, onSave, onCancel }: {
                 <SelectItem value="outil">Outil</SelectItem>
                 <SelectItem value="vehicule">Véhicule</SelectItem>
                 <SelectItem value="autre">Autre</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="depot">Dépôt de Stockage *</Label>
+            <Select value={formData.depot} onValueChange={(value) => handleChange('depot', value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sélectionnez un dépôt" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="AXECOM">AXECOM</SelectItem>
+                <SelectItem value="ERT">ERT</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="statut">Statut</Label>
+            <Select value={formData.statut} onValueChange={(value) => handleChange('statut', value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Statut" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="disponible">Disponible</SelectItem>
+                <SelectItem value="affecte">Affecté</SelectItem>
+                <SelectItem value="en_maintenance">En Maintenance</SelectItem>
+                <SelectItem value="hors_service">Hors Service</SelectItem>
               </SelectContent>
             </Select>
           </div>
