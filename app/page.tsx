@@ -494,6 +494,12 @@ export default function EmployeeTracker() {
           loadFuelEmployeesData()
         }
         break
+      case 'fuel-consumption':
+        // Charger les cartes disponibles pour le filtre
+        if (fuelData.length === 0) {
+          loadFuelDataFromDatabase().then(data => setFuelData(data || []))
+        }
+        break
       case 'materiel':
         if (materials.length === 0) {
           loadMaterialsFromDatabase().then(setMaterials)
@@ -1087,7 +1093,14 @@ ${data.summary && data.summary.length > 0 ? '\n🔍 Exemples de doublons trouvé
           return acc
         }, [])
         
-        console.log("Cartes uniques extraites:", uniqueCards)
+        // Trier les cartes par numéro en ordre croissant
+        uniqueCards.sort((a, b) => {
+          const numA = String(a.numero_carte || '')
+          const numB = String(b.numero_carte || '')
+          return numA.localeCompare(numB, undefined, { numeric: true })
+        })
+        
+        console.log("Cartes uniques extraites (triées):", uniqueCards)
         setAvailableCards(uniqueCards)
         
         // Si aucune carte n'est trouvée, créer des cartes de test
@@ -2205,10 +2218,11 @@ La page va se recharger automatiquement...`)
       const response = await fetch('/api/carburant')
       if (response.ok) {
         const data = await response.json()
-        // Extraire les numéros de carte uniques
+        // Extraire les numéros de carte uniques et trier en ordre croissant
         const uniqueCards = [...new Set(data.carburant.map((item: any) => item.numero_carte))]
           .filter(card => card && card !== 'nan')
           .map(card => ({ numero_carte: card, label: `Carte ${card}` }))
+          .sort((a, b) => String(a.numero_carte).localeCompare(String(b.numero_carte), undefined, { numeric: true }))
         setAvailableCards(uniqueCards)
       }
     } catch (error) {
@@ -3434,11 +3448,15 @@ La page va se recharger automatiquement...`)
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">Toutes les cartes</SelectItem>
-                          {fuelData.map((card: any) => (
-                            <SelectItem key={card.numero_carte} value={card.numero_carte}>
-                              Carte {card.numero_carte} ({card.montant}€)
-                            </SelectItem>
-                          ))}
+                          {[...new Set(fuelData.map((item: any) => item.numero_carte))]
+                            .filter(carte => carte && carte !== 'nan')
+                            .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))
+                            .map((numero_carte: any) => (
+                              <SelectItem key={numero_carte} value={numero_carte}>
+                                Carte {numero_carte}
+                              </SelectItem>
+                            ))
+                          }
                         </SelectContent>
                       </Select>
                     </div>
