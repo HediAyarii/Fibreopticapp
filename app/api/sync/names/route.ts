@@ -105,18 +105,129 @@ export async function POST(request: NextRequest) {
       `)
     }
     
+    // Étape 4: Ajouter automatiquement les employés avec recettes mais absents de cout_par_salarie
+    console.log('🔍 Recherche des employés avec recettes non présents dans cout_par_salarie...')
+    
+    let autoAdded = 0
+    const body = await request.json().catch(() => ({}))
+    const targetMonth = body.mois
+    const targetYear = body.annee
+    
+    if (targetMonth && targetYear) {
+      // Calculer les recettes depuis les interventions
+      const employeesWithRevenue = await query(`
+        SELECT 
+          e.nom,
+          e.prenom,
+          e.matricule,
+          COALESCE(e.pourcentage_taxe, 50) as taxe,
+          SUM(
+            CASE 
+              WHEN i.statut = 'CLOTURE TERMINEE' THEN
+                COALESCE((
+                  SELECT SUM(
+                    CASE 
+                      WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
+                           AND i.articles LIKE '%SAV%' THEN 0
+                      WHEN cp.prix_tech IS NOT NULL THEN cp.prix_tech
+                      ELSE 0
+                    END
+                  )
+                  FROM unnest(string_to_array(i.articles, ',')) as article_item
+                  LEFT JOIN company_pricing cp ON 
+                    TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
+                    AND cp.company_name = CASE 
+                      WHEN i.grille LIKE '%AXECOM MANCHE%' THEN 'AXECOM'
+                      ELSE 'ERT OUEST'
+                    END
+                    AND cp.category = i.type_intervention
+                ), 0)
+              ELSE 0
+            END
+          ) as total_genere
+        FROM employes e
+        LEFT JOIN interventions i ON LOWER(i.nom_technicien) = LOWER(e.nom) 
+          AND LOWER(i.prenom_technicien) = LOWER(e.prenom)
+          AND i.date_rdv IS NOT NULL
+          AND (
+            (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' 
+             AND EXTRACT(MONTH FROM TO_DATE(i.date_rdv, 'DD/MM/YYYY')) = $1
+             AND EXTRACT(YEAR FROM TO_DATE(i.date_rdv, 'DD/MM/YYYY')) = $2)
+            OR
+            (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+             AND EXTRACT(MONTH FROM TO_DATE(SUBSTRING(i.date_rdv, 1, 10), 'YYYY-MM-DD')) = $1
+             AND EXTRACT(YEAR FROM TO_DATE(SUBSTRING(i.date_rdv, 1, 10), 'YYYY-MM-DD')) = $2)
+          )
+        WHERE e.statut = 'actif'
+        GROUP BY e.nom, e.prenom, e.matricule, e.pourcentage_taxe
+        HAVING SUM(
+          CASE 
+            WHEN i.statut = 'CLOTURE TERMINEE' THEN
+              COALESCE((
+                SELECT SUM(
+                  CASE 
+                    WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
+                         AND i.articles LIKE '%SAV%' THEN 0
+                    WHEN cp.prix_tech IS NOT NULL THEN cp.prix_tech
+                    ELSE 0
+                  END
+                )
+                FROM unnest(string_to_array(i.articles, ',')) as article_item
+                LEFT JOIN company_pricing cp ON 
+                  TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
+                  AND cp.company_name = CASE 
+                    WHEN i.grille LIKE '%AXECOM MANCHE%' THEN 'AXECOM'
+                    ELSE 'ERT OUEST'
+                  END
+                  AND cp.category = i.type_intervention
+              ), 0)
+            ELSE 0
+          END
+        ) > 0
+      `, [targetMonth, targetYear])
+      
+      console.log(`📊 Trouvé ${employeesWithRevenue.rows.length} employés avec recettes pour ${targetMonth}/${targetYear}`)
+      
+      // Vérifier lesquels ne sont pas dans cout_par_salarie
+      for (const emp of employeesWithRevenue.rows) {
+        const existing = await query(
+          'SELECT id FROM cout_par_salaire WHERE LOWER(nom) = LOWER($1) AND LOWER(prenom) = LOWER($2) AND mois = $3 AND annee = $4',
+          [emp.nom, emp.prenom, targetMonth, targetYear]
+        )
+        
+        if (existing.rows.length === 0) {
+          // Créer l'entrée avec salaire_net = total_genere et taxe = 0 (pas de charges pour les auto-ajoutés)
+          const totalGenereValue = parseFloat(emp.total_genere) || 0
+          const matriculeValue = emp.matricule
+          
+          await query(`
+            INSERT INTO cout_par_salaire 
+            (nom, prenom, salaire_net, salaire_brut, cout_total, charge, mois, annee, matricule, taxe, impot, auto_added, total_genere, employe_id)
+            VALUES ($1, $2, $3, 0, 0, 0, $4, $5, $6, 0, 0, true, $3, (SELECT id FROM employes WHERE matricule = $7))
+          `, [emp.nom, emp.prenom, totalGenereValue, targetMonth, targetYear, matriculeValue, matriculeValue])
+          
+          autoAdded++
+          console.log(`✅ Auto-ajouté: ${emp.nom} ${emp.prenom} avec recettes ${totalGenereValue.toFixed(2)}€ (taxe=0, impot=0)`)
+        }
+      }
+      
+      console.log(`✅ ${autoAdded} employés auto-ajoutés`)
+    }
+    
     return NextResponse.json({
       success: true,
       message: 'Synchronisation des noms terminée avec succès',
       corrected: correctionResult.rowCount,
       corrections: correctionResult.rows,
+      auto_added: autoAdded,
       without_matricule: noMatricule.rowCount,
       without_matricule_details: noMatricule.rows,
       sync_status: syncCheck.rows,
       summary: {
         total_before: parseInt(beforeState.rows[0].total),
         without_employe_id_before: parseInt(beforeState.rows[0].sans_employe_id),
-        corrected_now: correctionResult.rowCount
+        corrected_now: correctionResult.rowCount,
+        auto_added: autoAdded
       }
     })
     

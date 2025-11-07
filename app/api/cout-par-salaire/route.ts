@@ -25,6 +25,18 @@ export async function GET(request: NextRequest) {
       params.push(parseInt(annee))
     }
     
+    // Auto-correction: Pour les employés auto-ajoutés, s'assurer que salaire_net = total_genere
+    await query(`
+      UPDATE cout_par_salaire 
+      SET salaire_net = total_genere, 
+          taxe = 0, 
+          impot = 0,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE auto_added = true 
+        AND (salaire_net != total_genere OR taxe != 0 OR impot != 0)
+        ${whereClause ? 'AND ' + whereClause.replace('WHERE ', '') : ''}
+    `, params)
+    
     // Récupérer les données de base avec synchronisation automatique des taxes
     const result = await query(`
       SELECT 
@@ -38,10 +50,15 @@ export async function GET(request: NextRequest) {
         cps.mois,
         cps.annee,
         cps.matricule,
-        -- Synchroniser automatiquement avec la table employes
-        COALESCE(e.pourcentage_taxe, 50) as taxe,
-        -- Recalculer l'impôt basé sur la taxe synchronisée
+        cps.auto_added,
+        -- Synchroniser automatiquement avec la table employes SAUF pour les auto-ajoutés (taxe=0)
         CASE 
+          WHEN cps.auto_added = true THEN 0
+          ELSE COALESCE(e.pourcentage_taxe, 50)
+        END as taxe,
+        -- Recalculer l'impôt basé sur la taxe (0 pour auto-ajoutés)
+        CASE 
+          WHEN cps.auto_added = true THEN 0
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
@@ -50,9 +67,10 @@ export async function GET(request: NextRequest) {
         cps.penalite,
         cps.prime,
         cps.total_genere,
-        -- Calculer automatiquement le RAP avec la formule correcte (incluant la prime)
+        -- Calculer automatiquement le RAP avec la formule correcte (0 pour auto-ajoutés)
         (cps.total_genere - cps.salaire_net - 
          CASE 
+           WHEN cps.auto_added = true THEN 0
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
@@ -63,7 +81,7 @@ export async function GET(request: NextRequest) {
       FROM cout_par_salaire cps
       LEFT JOIN employes e ON LOWER(cps.nom) = LOWER(e.nom) AND LOWER(cps.prenom) = LOWER(e.prenom) AND e.statut = 'actif'
       ${whereClause}
-      ORDER BY cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
+      ORDER BY cps.auto_added ASC, cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
     `, params)
     
     // Calculer le total des paiements et le RAP final pour chaque employé
@@ -121,6 +139,13 @@ export async function POST(request: NextRequest) {
       
       console.log('Données reçues pour import:', data.importData)
       
+      // Extraire le mois et l'année du premier élément pour la requête des employés manquants
+      const firstItem = data.importData[0]
+      const targetMonth = firstItem?.mois
+      const targetYear = firstItem?.annee
+      
+      console.log(`📅 Mois/Année cible pour auto-ajout: ${targetMonth}/${targetYear}`)
+      
       for (const item of data.importData) {
         try {
           const { nom, prenom, salaire_net, salaire_brut, cout_total, charge, mois, annee, matricule, taxe } = item
@@ -174,19 +199,19 @@ export async function POST(request: NextRequest) {
           )
           
           if (existing.rows.length > 0) {
-            // Mettre à jour
+            // Mettre à jour et réinitialiser auto_added à FALSE (l'employé est maintenant dans le CSV)
             await query(`
               UPDATE cout_par_salaire 
-              SET salaire_net = $1, salaire_brut = $2, cout_total = $3, charge = $4, matricule = $5, taxe = $6, impot = $7, updated_at = CURRENT_TIMESTAMP
+              SET salaire_net = $1, salaire_brut = $2, cout_total = $3, charge = $4, matricule = $5, taxe = $6, impot = $7, auto_added = FALSE, updated_at = CURRENT_TIMESTAMP
               WHERE nom = $8 AND prenom = $9 AND mois = $10 AND annee = $11
             `, [salaireNet, salaireBrut, coutTotal, chargeValue, matricule, taxeValue, impotValue, nom, prenom, mois, annee])
             updated++
             console.log('Mis à jour:', nom, prenom, matricule ? `(matricule: ${matricule})` : '')
           } else {
-            // Insérer
+            // Insérer avec auto_added = FALSE (c'est dans le CSV)
             await query(`
-              INSERT INTO cout_par_salaire (nom, prenom, salaire_net, salaire_brut, cout_total, charge, mois, annee, matricule, taxe, impot)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+              INSERT INTO cout_par_salaire (nom, prenom, salaire_net, salaire_brut, cout_total, charge, mois, annee, matricule, taxe, impot, auto_added)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
             `, [nom, prenom, salaireNet, salaireBrut, coutTotal, chargeValue, mois, annee, matricule, taxeValue, impotValue])
             inserted++
             console.log('Inséré:', nom, prenom, matricule ? `(matricule: ${matricule})` : '')
