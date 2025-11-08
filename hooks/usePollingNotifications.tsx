@@ -277,8 +277,12 @@ export function usePollingNotifications({ employeeId, onNotification }: UsePolli
     // Vérification immédiate
     checkForNotifications()
 
-    // Polling toutes les 5 secondes
-    intervalRef.current = setInterval(checkForNotifications, 5000)
+    // Polling toutes les 30 secondes (optimisé pour performance)
+    intervalRef.current = setInterval(() => {
+      if (!document.hidden) { // Seulement si l'onglet est actif
+        checkForNotifications()
+      }
+    }, 30000)
 
     // Nettoyage
     return () => {

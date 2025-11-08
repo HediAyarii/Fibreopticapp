@@ -567,64 +567,6 @@ export async function POST(request: NextRequest) {
     ])
     results.push(fraisEntrepriseResult.rows[0])
 
-    // Si AXECOM ou LES_DEUX, créer dans frais_axecom
-    if (selectedAttribution === 'AXECOM' || selectedAttribution === 'LES_DEUX') {
-      const axecomResult = await query(`
-        INSERT INTO frais_axecom (
-          article,
-          intitule,
-          description,
-          montant_ht,
-          montant_ttc,
-          tva,
-          date_facture,
-          type_frais,
-          statut
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'actif')
-        RETURNING *
-      `, [
-        serviceCode, // article
-        name, // intitule
-        description, // description
-        dividedAmount * 0.8, // montant_ht
-        dividedAmount, // montant_ttc
-        dividedAmount * 0.2, // tva
-        dateFacturation, // date_facture
-        typeFrais // type_frais
-      ])
-      results.push(axecomResult.rows[0])
-    }
-
-    // Si ERT ou LES_DEUX, créer dans frais_ert
-    if (selectedAttribution === 'ERT' || selectedAttribution === 'LES_DEUX') {
-      const ertResult = await query(`
-        INSERT INTO frais_ert (
-          article,
-          intitule,
-          description,
-          montant_ht,
-          montant_ttc,
-          tva,
-          date_facture,
-          type_frais,
-          statut
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'actif')
-        RETURNING *
-      `, [
-        serviceCode, // article
-        name, // intitule
-        description, // description
-        dividedAmount * 0.8, // montant_ht
-        dividedAmount, // montant_ttc
-        dividedAmount * 0.2, // tva
-        dateFacturation, // date_facture
-        typeFrais // type_frais
-      ])
-      results.push(ertResult.rows[0])
-    }
-
     return NextResponse.json({
       success: true,
       costs: results,

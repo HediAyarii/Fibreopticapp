@@ -62,8 +62,12 @@ export function AdminDocumentsManager() {
   useEffect(() => {
     loadDocuments()
     
-    // Mise à jour automatique toutes les 5 secondes
-    const interval = setInterval(loadDocuments, 5000)
+    // Mise à jour automatique toutes les 60 secondes (optimisé pour performance)
+    const interval = setInterval(() => {
+      if (!document.hidden) { // Seulement si l'onglet est actif
+        loadDocuments()
+      }
+    }, 60000)
     return () => clearInterval(interval)
   }, [filter.statut])
 

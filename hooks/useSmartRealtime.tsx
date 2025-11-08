@@ -62,8 +62,12 @@ export function useSmartRealtime({
     // Mise à jour initiale
     updateData()
 
-    // Mise à jour périodique
-    intervalRef.current = setInterval(updateData, interval)
+    // Mise à jour périodique (seulement si onglet actif)
+    intervalRef.current = setInterval(() => {
+      if (!document.hidden) {
+        updateData()
+      }
+    }, interval)
 
     return () => {
       if (intervalRef.current) {

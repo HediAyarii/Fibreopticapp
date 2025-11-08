@@ -257,7 +257,7 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    queryText += ' ORDER BY created_at DESC'
+    queryText += ' ORDER BY created_at DESC LIMIT 500' // Limiter à 500 interventions récentes
     
     const result = await query(queryText, params)
     

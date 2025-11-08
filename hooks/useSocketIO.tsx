@@ -154,12 +154,12 @@ export function useSocketIO({ employeeId, onNotification }: UseSocketIOProps) {
       requestNotificationPermission()
     })
 
-    // Ping/Pong pour maintenir la connexion
+    // Ping/Pong pour maintenir la connexion (seulement si onglet actif)
     const pingInterval = setInterval(() => {
-      if (socketInstance.connected) {
+      if (socketInstance.connected && !document.hidden) {
         socketInstance.emit('ping')
       }
-    }, 30000)
+    }, 60000) // 60 secondes au lieu de 30
 
     setSocket(socketInstance)
 

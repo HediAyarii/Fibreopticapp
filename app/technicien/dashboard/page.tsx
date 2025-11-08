@@ -197,18 +197,19 @@ export default function TechnicienDashboard() {
     }
   }, [user, dateDebut, dateFin, activeTab])
 
-  // Mise à jour automatique des données toutes les 2 secondes pour la synchronisation en temps réel
+  // Mise à jour automatique des données toutes les 30 secondes (optimisé pour performance)
   // Cette mise à jour doit respecter les filtres de date actuels
   useEffect(() => {
     if (!user) return
     
     const dataInterval = setInterval(() => {
-      // Ne faire la mise à jour automatique que si on n'est pas en train de changer les dates
-      // Les dates sont déjà mises à jour par le useEffect ci-dessus
-      console.log('🔄 Mise à jour automatique des données...')
-      loadData()
-      loadDocuments()
-    }, 2000) // 2 secondes pour une synchronisation plus rapide
+      // Seulement si l'onglet est actif pour économiser les ressources
+      if (!document.hidden) {
+        console.log('🔄 Mise à jour automatique des données...')
+        loadData()
+        loadDocuments()
+      }
+    }, 30000) // 30 secondes au lieu de 2 secondes
     
     return () => clearInterval(dataInterval)
   }, [user, dateDebut, dateFin, activeTab])
