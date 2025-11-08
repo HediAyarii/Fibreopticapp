@@ -8,7 +8,14 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔄 Début de la synchronisation Bénéfice Brut → Charges par Salarié...')
     
-    // Récupérer tous les enregistrements de cout_par_salaire
+    // Récupérer les paramètres de date si fournis
+    const body = await request.json().catch(() => ({}))
+    const dateFrom = body.date_from
+    const dateTo = body.date_to
+    
+    console.log(`📅 Période de recalcul: ${dateFrom || 'tout'} → ${dateTo || 'tout'}`)
+    
+    // Récupérer tous les enregistrements de cout_par_salarie
     const coutParSalaireResult = await query(`
       SELECT id, nom, prenom, mois, annee, total_genere
       FROM cout_par_salaire
@@ -18,7 +25,7 @@ export async function POST(request: NextRequest) {
     const synchronisations = []
     
     for (const record of coutParSalaireResult.rows) {
-      // Calculer le bénéfice brut pour ce technicien et cette période
+      // Calculer le bénéfice brut pour ce technicien et cette période avec la logique corrigée
       const beneficeBrutResult = await query(`
         SELECT COALESCE(SUM(
           CASE 
@@ -26,11 +33,12 @@ export async function POST(request: NextRequest) {
               COALESCE(
                 (SELECT SUM(
                   CASE 
-                    -- Exception: Si l'intervention contient à la fois DEP_OFFE et SAV, ignorer DEP_OFFE
+                    -- Exception: DEP_OFFE + SAV = 0€
                     WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
                          AND i.articles LIKE '%SAV%' THEN 0
-                    -- Sinon, calculer normalement
-                    WHEN cp.prix_tech IS NOT NULL THEN cp.prix_tech
+                    -- Calculer avec quantité
+                    WHEN cp.prix_tech IS NOT NULL THEN 
+                      cp.prix_tech * COALESCE(NULLIF(TRIM(SPLIT_PART(article_item, 'x', 2)), '')::INTEGER, 1)
                     ELSE 0
                   END
                 )
@@ -38,10 +46,15 @@ export async function POST(request: NextRequest) {
                 LEFT JOIN company_pricing cp ON 
                   TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
                   AND cp.company_name = CASE 
-                    WHEN i.grille LIKE '%AXECOM MANCHE%' THEN 'AXECOM'
+                    WHEN i.grille LIKE '%AXECOM%' THEN 'AXECOM'
                     ELSE 'ERT OUEST'
                   END
-                  AND cp.category = i.type_intervention
+                  AND cp.category = CASE 
+                    WHEN i.type_intervention IN ('RACC', 'RECO', 'RECC') THEN 'RACC'
+                    ELSE 'SAV'
+                  END
+                WHERE article_item != 'nan' 
+                  AND TRIM(article_item) != ''
                 ), 0
               )
             ELSE 0
@@ -56,19 +69,28 @@ export async function POST(request: NextRequest) {
           AND (
             (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
              i.cloture_tech ~ '^[0-9]' AND 
-             (i.cloture_tech::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-              i.cloture_tech::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
+             ${dateFrom && dateTo ? 
+               `(i.cloture_tech::date BETWEEN '${dateFrom}'::date AND '${dateTo}'::date)` :
+               `(i.cloture_tech::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
+                i.cloture_tech::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))`
+             }) OR
             (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
              i.cloture_hotline ~ '^[0-9]' AND 
-             (i.cloture_hotline::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-              i.cloture_hotline::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
+             ${dateFrom && dateTo ?
+               `(i.cloture_hotline::date BETWEEN '${dateFrom}'::date AND '${dateTo}'::date)` :
+               `(i.cloture_hotline::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
+                i.cloture_hotline::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))`
+             }) OR
             (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
              i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
              i.date_rdv ~ '^[0-9]' AND 
-             (i.date_rdv::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-              i.date_rdv::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day')))
+             ${dateFrom && dateTo ?
+               `(i.date_rdv::date BETWEEN '${dateFrom}'::date AND '${dateTo}'::date)` :
+               `(i.date_rdv::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
+                i.date_rdv::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))`
+             })
           )
-      `, [record.nom, record.prenom, record.annee, record.mois])
+      `, dateFrom && dateTo ? [record.nom, record.prenom] : [record.nom, record.prenom, record.annee, record.mois])
       
       const beneficeTotal = parseFloat(beneficeBrutResult.rows[0]?.benefice_total || 0)
       const currentTotal = parseFloat(record.total_genere || 0)

@@ -144,7 +144,11 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          date_from: dateFrom,
+          date_to: dateTo
+        })
       })
       const data = await response.json()
       

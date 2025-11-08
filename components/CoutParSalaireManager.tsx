@@ -42,7 +42,6 @@ interface CoutParSalaire {
   total_genere?: number
   rap?: number
   total_paiements?: number
-  auto_added?: boolean
   created_at: string
   updated_at: string
 }
@@ -577,11 +576,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       
       const response = await fetch('/api/sync/names', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          mois: selectedMonth, 
-          annee: selectedYear 
-        })
+        headers: { 'Content-Type': 'application/json' }
       })
       
       if (response.ok) {
@@ -592,9 +587,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         
         let message = `✅ Synchronisation terminée !\n\n`
         message += `📊 ${result.corrected} entrées corrigées\n`
-        if (result.auto_added > 0) {
-          message += `➕ ${result.auto_added} employés auto-ajoutés (avec recettes mais absents du CSV)\n`
-        }
         
         if (result.sync_status && result.sync_status.length > 0) {
           message += `\n📈 État de synchronisation:\n`
@@ -1266,11 +1258,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                             title="Double-clic pour modifier"
                           >
                             {cout.prenom}
-                            {cout.auto_added && (
-                              <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded-full border border-orange-300">
-                                (non présent export)
-                              </span>
-                            )}
                           </span>
                         )}
                       </td>

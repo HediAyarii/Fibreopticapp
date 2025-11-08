@@ -39,8 +39,9 @@ export async function GET(request: NextRequest) {
                     -- Exception: Si l'intervention contient à la fois DEP_OFFE et SAV, ignorer DEP_OFFE
                     WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
                          AND i.articles LIKE '%SAV%' THEN 0
-                    -- Sinon, calculer normalement
-                    WHEN cp.prix_tech IS NOT NULL THEN cp.prix_tech
+                    -- Calculer avec quantité
+                    WHEN cp.prix_tech IS NOT NULL THEN 
+                      cp.prix_tech * COALESCE(NULLIF(TRIM(SPLIT_PART(article_item, 'x', 2)), '')::INTEGER, 1)
                     ELSE 0
                   END
                 )
@@ -48,10 +49,15 @@ export async function GET(request: NextRequest) {
                 LEFT JOIN company_pricing cp ON 
                   TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
                   AND cp.company_name = CASE 
-                    WHEN i.grille LIKE '%AXECOM MANCHE%' THEN 'AXECOM'
+                    WHEN i.grille LIKE '%AXECOM%' THEN 'AXECOM'
                     ELSE 'ERT OUEST'
                   END
-                  AND cp.category = i.type_intervention  -- Utiliser la catégorie de l'intervention
+                  AND cp.category = CASE 
+                    WHEN i.type_intervention IN ('RACC', 'RECO', 'RECC') THEN 'RACC'
+                    ELSE 'SAV'
+                  END
+                WHERE article_item != 'nan' 
+                  AND TRIM(article_item) != ''
                 ), 0
               )
             ELSE 0
@@ -64,8 +70,9 @@ export async function GET(request: NextRequest) {
                     -- Exception: Si l'intervention contient à la fois DEP_OFFE et SAV, ignorer DEP_OFFE
                     WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
                          AND i.articles LIKE '%SAV%' THEN 0
-                    -- Sinon, calculer normalement
-                    WHEN cp.prix_base IS NOT NULL THEN cp.prix_base
+                    -- Calculer avec quantité
+                    WHEN cp.prix_base IS NOT NULL THEN 
+                      cp.prix_base * COALESCE(NULLIF(TRIM(SPLIT_PART(article_item, 'x', 2)), '')::INTEGER, 1)
                     ELSE 0
                   END
                 )
@@ -73,10 +80,15 @@ export async function GET(request: NextRequest) {
                 LEFT JOIN company_pricing cp ON 
                   TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
                   AND cp.company_name = CASE 
-                    WHEN i.grille LIKE '%AXECOM MANCHE%' THEN 'AXECOM'
+                    WHEN i.grille LIKE '%AXECOM%' THEN 'AXECOM'
                     ELSE 'ERT OUEST'
                   END
-                  AND cp.category = i.type_intervention  -- Utiliser la catégorie de l'intervention
+                  AND cp.category = CASE 
+                    WHEN i.type_intervention IN ('RACC', 'RECO', 'RECC') THEN 'RACC'
+                    ELSE 'SAV'
+                  END
+                WHERE article_item != 'nan' 
+                  AND TRIM(article_item) != ''
                 ), 0
               )
             ELSE 0

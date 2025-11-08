@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       try {
         console.log(`👤 Traitement: ${employee.nom} ${employee.prenom} (${employee.mois}/${employee.annee})`)
         
-        // Calculer le total généré réel
+        // Calculer le total généré réel avec la logique correcte
         const realTimeCalculation = await queryWithClient(`
           SELECT 
             SUM(
@@ -36,7 +36,12 @@ export async function POST(request: NextRequest) {
                   COALESCE(
                     (SELECT SUM(
                       CASE 
-                        WHEN cp.prix_tech IS NOT NULL THEN cp.prix_tech
+                        -- Exception: DEP_OFFE + SAV = 0€
+                        WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
+                             AND i.articles LIKE '%SAV%' THEN 0
+                        -- Calculer avec quantité
+                        WHEN cp.prix_tech IS NOT NULL THEN 
+                          cp.prix_tech * COALESCE(NULLIF(TRIM(SPLIT_PART(article_item, 'x', 2)), '')::INTEGER, 1)
                         ELSE 0
                       END
                     )
@@ -44,10 +49,12 @@ export async function POST(request: NextRequest) {
                     LEFT JOIN company_pricing cp ON 
                       TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
                       AND cp.company_name = CASE 
-                        WHEN i.grille LIKE '%AXECOM MANCHE%' THEN 'AXECOM'
+                        WHEN i.grille LIKE '%AXECOM%' THEN 'AXECOM'
                         ELSE 'ERT OUEST'
                       END
                       AND cp.category = i.type_intervention
+                    WHERE article_item != 'nan' 
+                      AND TRIM(article_item) != ''
                     ), 0
                   )
                 ELSE 0
