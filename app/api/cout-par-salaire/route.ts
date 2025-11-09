@@ -25,18 +25,6 @@ export async function GET(request: NextRequest) {
       params.push(parseInt(annee))
     }
     
-    // Auto-correction: Pour les employés auto-ajoutés, s'assurer que salaire_net = total_genere
-    await query(`
-      UPDATE cout_par_salaire 
-      SET salaire_net = total_genere, 
-          taxe = 0, 
-          impot = 0,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE auto_added = true 
-        AND (salaire_net != total_genere OR taxe != 0 OR impot != 0)
-        ${whereClause ? 'AND ' + whereClause.replace('WHERE ', '') : ''}
-    `, params)
-    
     // Récupérer les données de base avec synchronisation automatique des taxes
     const result = await query(`
       SELECT 
@@ -50,15 +38,10 @@ export async function GET(request: NextRequest) {
         cps.mois,
         cps.annee,
         cps.matricule,
-        cps.auto_added,
-        -- Synchroniser automatiquement avec la table employes SAUF pour les auto-ajoutés (taxe=0)
+        -- Synchroniser automatiquement avec la table employes
+        COALESCE(e.pourcentage_taxe, 50) as taxe,
+        -- Recalculer l'impôt basé sur la taxe synchronisée
         CASE 
-          WHEN cps.auto_added = true THEN 0
-          ELSE COALESCE(e.pourcentage_taxe, 50)
-        END as taxe,
-        -- Recalculer l'impôt basé sur la taxe (0 pour auto-ajoutés)
-        CASE 
-          WHEN cps.auto_added = true THEN 0
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
@@ -67,10 +50,9 @@ export async function GET(request: NextRequest) {
         cps.penalite,
         cps.prime,
         cps.total_genere,
-        -- Calculer automatiquement le RAP avec la formule correcte (0 pour auto-ajoutés)
+        -- Calculer automatiquement le RAP avec la formule correcte (incluant la prime)
         (cps.total_genere - cps.salaire_net - 
          CASE 
-           WHEN cps.auto_added = true THEN 0
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
@@ -81,32 +63,92 @@ export async function GET(request: NextRequest) {
       FROM cout_par_salaire cps
       LEFT JOIN employes e ON LOWER(cps.nom) = LOWER(e.nom) AND LOWER(cps.prenom) = LOWER(e.prenom) AND e.statut = 'actif'
       ${whereClause}
-      ORDER BY cps.auto_added ASC, cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
+      ORDER BY cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
     `, params)
     
     // Calculer le total des paiements et le RAP final pour chaque employé
     const coutsWithRevenue = await Promise.all(
       result.rows.map(async (cout: any) => {
         try {
+          // Calculer le total_genere en temps réel avec la logique de BENEFICE BRUTE
+          const revenueResult = await query(`
+            SELECT COALESCE(SUM(
+              CASE 
+                WHEN i.statut = 'CLOTURE TERMINEE' THEN
+                  COALESCE(
+                    (SELECT SUM(
+                      CASE 
+                        WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
+                             AND i.articles LIKE '%SAV%' THEN 0
+                        WHEN cp.prix_tech IS NOT NULL THEN 
+                          cp.prix_tech * COALESCE(NULLIF(TRIM(SPLIT_PART(article_item, 'x', 2)), '')::INTEGER, 1)
+                        ELSE 0
+                      END
+                    )
+                    FROM unnest(string_to_array(i.articles, ',')) as article_item
+                    LEFT JOIN company_pricing cp ON 
+                      TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
+                      AND cp.company_name = CASE 
+                        WHEN i.grille LIKE '%AXECOM%' THEN 'AXECOM'
+                        ELSE 'ERT OUEST'
+                      END
+                      AND cp.category = CASE 
+                        WHEN i.type_intervention IN ('RACC', 'RECO', 'RECC') THEN 'RACC'
+                        ELSE 'SAV'
+                      END
+                    WHERE article_item != 'nan' 
+                      AND TRIM(article_item) != ''
+                    ), 0
+                  )
+                ELSE 0
+              END
+            ), 0) as total_genere
+            FROM interventions i
+            WHERE i.statut = 'CLOTURE TERMINEE'
+              AND i.articles IS NOT NULL 
+              AND i.articles != ''
+              AND LOWER(i.nom_technicien) = LOWER($1)
+              AND LOWER(i.prenom_technicien) = LOWER($2)
+              AND (
+                (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
+                 i.cloture_tech ~ '^[0-9]' AND 
+                 (i.cloture_tech::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
+                  i.cloture_tech::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
+                (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
+                 i.cloture_hotline ~ '^[0-9]' AND 
+                 (i.cloture_hotline::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
+                  i.cloture_hotline::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
+                (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
+                 i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
+                 i.date_rdv ~ '^[0-9]' AND 
+                 (i.date_rdv::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
+                  i.date_rdv::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day')))
+              )
+          `, [cout.nom, cout.prenom, cout.annee, cout.mois])
+          
+          const totalGenereCalcule = parseFloat(revenueResult.rows[0]?.total_genere || 0)
+          
           // Récupérer le total des paiements
-            const paiementsResult = await query(`
-              SELECT calculer_total_paiements($1) as total_paiements
-            `, [cout.id])
-            
-            const totalPaiements = parseFloat(paiementsResult.rows[0].total_paiements) || 0
-            
-            // Calculer le RAP final (RAP de base - paiements)
-            const rapFinal = parseFloat(cout.rap) - totalPaiements
-            
-            return {
-              ...cout,
-              total_paiements: totalPaiements,
-              rap: rapFinal  // RAP final avec paiements déduits
+          const paiementsResult = await query(`
+            SELECT calculer_total_paiements($1) as total_paiements
+          `, [cout.id])
+          
+          const totalPaiements = parseFloat(paiementsResult.rows[0].total_paiements) || 0
+          
+          // Recalculer le RAP avec le nouveau total_genere
+          const rapRecalcule = totalGenereCalcule - parseFloat(cout.salaire_net) - parseFloat(cout.impot) + parseFloat(cout.prime || 0)
+          const rapFinal = rapRecalcule - totalPaiements
+          
+          return {
+            ...cout,
+            total_genere: totalGenereCalcule, // Valeur recalculée en temps réel
+            rap: rapFinal, // RAP recalculé avec le nouveau total_genere
+            total_paiements: totalPaiements
           }
         } catch (error) {
           console.error(`Erreur calcul paiements pour ${cout.nom} ${cout.prenom}:`, error)
-            return {
-              ...cout,
+          return {
+            ...cout,
             total_paiements: 0,
             rap: parseFloat(cout.rap)  // RAP de base si erreur
           }
@@ -138,13 +180,6 @@ export async function POST(request: NextRequest) {
       let errors = 0
       
       console.log('Données reçues pour import:', data.importData)
-      
-      // Extraire le mois et l'année du premier élément pour la requête des employés manquants
-      const firstItem = data.importData[0]
-      const targetMonth = firstItem?.mois
-      const targetYear = firstItem?.annee
-      
-      console.log(`📅 Mois/Année cible pour auto-ajout: ${targetMonth}/${targetYear}`)
       
       for (const item of data.importData) {
         try {
@@ -199,19 +234,19 @@ export async function POST(request: NextRequest) {
           )
           
           if (existing.rows.length > 0) {
-            // Mettre à jour et réinitialiser auto_added à FALSE (l'employé est maintenant dans le CSV)
+            // Mettre à jour
             await query(`
               UPDATE cout_par_salaire 
-              SET salaire_net = $1, salaire_brut = $2, cout_total = $3, charge = $4, matricule = $5, taxe = $6, impot = $7, auto_added = FALSE, updated_at = CURRENT_TIMESTAMP
+              SET salaire_net = $1, salaire_brut = $2, cout_total = $3, charge = $4, matricule = $5, taxe = $6, impot = $7, updated_at = CURRENT_TIMESTAMP
               WHERE nom = $8 AND prenom = $9 AND mois = $10 AND annee = $11
             `, [salaireNet, salaireBrut, coutTotal, chargeValue, matricule, taxeValue, impotValue, nom, prenom, mois, annee])
             updated++
             console.log('Mis à jour:', nom, prenom, matricule ? `(matricule: ${matricule})` : '')
           } else {
-            // Insérer avec auto_added = FALSE (c'est dans le CSV)
+            // Insérer
             await query(`
-              INSERT INTO cout_par_salaire (nom, prenom, salaire_net, salaire_brut, cout_total, charge, mois, annee, matricule, taxe, impot, auto_added)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+              INSERT INTO cout_par_salaire (nom, prenom, salaire_net, salaire_brut, cout_total, charge, mois, annee, matricule, taxe, impot)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             `, [nom, prenom, salaireNet, salaireBrut, coutTotal, chargeValue, mois, annee, matricule, taxeValue, impotValue])
             inserted++
             console.log('Inséré:', nom, prenom, matricule ? `(matricule: ${matricule})` : '')

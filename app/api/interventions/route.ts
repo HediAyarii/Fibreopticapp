@@ -239,12 +239,22 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const employeId = searchParams.get('employe_id')
+    const statut = searchParams.get('statut')
+    const numInter = searchParams.get('numInter')
+    const dateRdvStart = searchParams.get('dateRdvStart')
+    const dateRdvEnd = searchParams.get('dateRdvEnd')
+    const client = searchParams.get('client')
+    const grille = searchParams.get('grille')
+    const sansArticles = searchParams.get('sansArticles')
+    const typeIntervention = searchParams.get('typeIntervention')
+    const technicien = searchParams.get('technicien')
     
-    let queryText = 'SELECT * FROM interventions'
+    let whereClauses: string[] = []
     let params: any[] = []
+    let paramIndex = 1
     
+    // Filtre par employé
     if (employeId) {
-      // Filtrer par employé en utilisant nom_technicien et prenom_technicien
       const employeResult = await query(
         'SELECT prenom, nom FROM employes WHERE id = $1',
         [employeId]
@@ -252,18 +262,94 @@ export async function GET(request: NextRequest) {
       
       if (employeResult.rows.length > 0) {
         const employe = employeResult.rows[0]
-        queryText += ' WHERE nom_technicien = $1 AND prenom_technicien = $2'
-        params = [employe.nom, employe.prenom]
+        whereClauses.push(`nom_technicien = $${paramIndex} AND prenom_technicien = $${paramIndex + 1}`)
+        params.push(employe.nom, employe.prenom)
+        paramIndex += 2
       }
     }
     
-    queryText += ' ORDER BY created_at DESC LIMIT 500' // Limiter à 500 interventions récentes
+    // Filtre par statut
+    if (statut && statut !== 'all') {
+      whereClauses.push(`UPPER(statut) = $${paramIndex}`)
+      params.push(statut.toUpperCase())
+      paramIndex++
+    }
     
-    const result = await query(queryText, params)
+    // Filtre par numéro d'intervention
+    if (numInter) {
+      whereClauses.push(`num_inter ILIKE $${paramIndex}`)
+      params.push(`%${numInter}%`)
+      paramIndex++
+    }
+    
+    // Filtre par date RDV - Début
+    if (dateRdvStart) {
+      whereClauses.push(`date_rdv >= $${paramIndex}`)
+      params.push(dateRdvStart)
+      paramIndex++
+    }
+    
+    // Filtre par date RDV - Fin
+    if (dateRdvEnd) {
+      whereClauses.push(`date_rdv <= $${paramIndex}`)
+      params.push(dateRdvEnd)
+      paramIndex++
+    }
+    
+    // Filtre par client
+    if (client && client !== 'all') {
+      whereClauses.push(`client = $${paramIndex}`)
+      params.push(client)
+      paramIndex++
+    }
+    
+    // Filtre par grille (AXECOM MANCHE vs ERT)
+    if (grille && grille !== 'all') {
+      if (grille === 'AXECOM MANCHE') {
+        whereClauses.push(`grille ILIKE '%AXECOM MANCHE%'`)
+      } else if (grille === 'ERT') {
+        whereClauses.push(`(grille NOT ILIKE '%AXECOM MANCHE%' AND grille IS NOT NULL AND grille != '')`)
+      }
+    }
+    
+    // Filtre par interventions sans articles (CLOTURE TERMINEE sans articles)
+    if (sansArticles === 'true') {
+      whereClauses.push(`UPPER(statut) = 'CLOTURE TERMINEE' AND (articles IS NULL OR articles = '' OR articles = 'nan')`)
+    }
+    
+    // Filtre par type d'intervention
+    if (typeIntervention && typeIntervention !== 'all') {
+      whereClauses.push(`type_intervention ILIKE $${paramIndex}`)
+      params.push(`%${typeIntervention}%`)
+      paramIndex++
+    }
+    
+    // Filtre par technicien (nom complet)
+    if (technicien && technicien !== 'all') {
+      whereClauses.push(`(CONCAT(prenom_technicien, ' ', nom_technicien) ILIKE $${paramIndex})`)
+      params.push(`%${technicien}%`)
+      paramIndex++
+    }
+    
+    const whereClause = whereClauses.length > 0 ? ' WHERE ' + whereClauses.join(' AND ') : ''
+    
+    // Compter le TOTAL réel d'interventions filtrées
+    const countResult = await query(
+      `SELECT COUNT(*) as total FROM interventions${whereClause}`,
+      params
+    )
+    const totalCount = parseInt(countResult.rows[0].total)
+    
+    // Récupérer les données paginées (LIMIT pour performance)
+    const dataResult = await query(
+      `SELECT * FROM interventions${whereClause} ORDER BY created_at DESC LIMIT 500`,
+      params
+    )
     
     return NextResponse.json({
-      interventions: result.rows,
-      total: result.rows.length,
+      interventions: dataResult.rows,
+      total: totalCount, // Le vrai total filtré
+      displayed: dataResult.rows.length // Nombre affiché (max 500)
     })
   } catch (error) {
     console.error("Erreur GET interventions:", error)

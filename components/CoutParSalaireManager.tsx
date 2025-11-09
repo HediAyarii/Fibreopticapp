@@ -978,6 +978,22 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     return sum + (isNaN(value) ? 0 : value)
   }, 0)
 
+  const totalGenere = couts.reduce((sum, cout) => {
+    const value = parseFloat(cout.total_genere || 0)
+    return sum + (isNaN(value) ? 0 : value)
+  }, 0)
+
+  const totalVerse = couts.reduce((sum, cout) => {
+    const value = parseFloat(cout.total_paiements || 0)
+    return sum + (isNaN(value) ? 0 : value)
+  }, 0)
+
+  const totalResteAPayer = couts.reduce((sum, cout) => {
+    const rap = parseFloat(cout.rap || 0)
+    // Seulement les RAP positifs (reste à payer)
+    return sum + (rap > 0 ? rap : 0)
+  }, 0)
+
   return (
     <div className="space-y-6">
       {/* En-tête avec filtres et actions */}
@@ -1123,7 +1139,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       )}
 
       {/* Statistiques */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -1143,6 +1159,42 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
               <div>
                 <p className="text-sm text-gray-600">Coût Total</p>
                 <p className="text-2xl font-bold">{totalCout.toFixed(2)}€</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-blue-500" />
+              <div>
+                <p className="text-sm text-gray-600">Total Généré</p>
+                <p className="text-2xl font-bold">{totalGenere.toFixed(2)}€</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-orange-500" />
+              <div>
+                <p className="text-sm text-gray-600">Total Salaire Versé</p>
+                <p className="text-2xl font-bold">{totalVerse.toFixed(2)}€</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-red-500" />
+              <div>
+                <p className="text-sm text-gray-600">Reste à Payer</p>
+                <p className="text-2xl font-bold text-red-600">{totalResteAPayer.toFixed(2)}€</p>
               </div>
             </div>
           </CardContent>

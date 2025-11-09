@@ -107,8 +107,6 @@ export async function GET(request: NextRequest) {
             COALESCE(e.matricule, CONCAT('TECH_', UPPER(SUBSTRING(i.nom_technicien, 1, 3)), UPPER(SUBSTRING(i.prenom_technicien, 1, 2)))) as matricule
         ) emp ON true
         WHERE i.statut = 'CLOTURE TERMINEE'
-          AND i.articles IS NOT NULL 
-          AND i.articles != ''
     `
 
     const params = []
@@ -120,28 +118,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (dateFrom) {
-      conditions.push(`(
-        (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
-         i.cloture_tech ~ '^[0-9]' AND i.cloture_tech::date >= $${params.length + 1}::date) OR
-        (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
-         i.cloture_hotline ~ '^[0-9]' AND i.cloture_hotline::date >= $${params.length + 1}::date) OR
-        (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
-         i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
-         i.date_rdv ~ '^[0-9]' AND i.date_rdv::date >= $${params.length + 1}::date)
-      )`)
+      conditions.push(`i.date_rdv::date >= $${params.length + 1}::date`)
       params.push(dateFrom)
     }
 
     if (dateTo) {
-      conditions.push(`(
-        (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
-         i.cloture_tech ~ '^[0-9]' AND i.cloture_tech::date <= $${params.length + 1}::date) OR
-        (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
-         i.cloture_hotline ~ '^[0-9]' AND i.cloture_hotline::date <= $${params.length + 1}::date) OR
-        (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
-         i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
-         i.date_rdv ~ '^[0-9]' AND i.date_rdv::date <= $${params.length + 1}::date)
-      )`)
+      conditions.push(`i.date_rdv::date <= $${params.length + 1}::date`)
       params.push(dateTo)
     }
 

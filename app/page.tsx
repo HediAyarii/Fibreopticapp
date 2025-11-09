@@ -136,15 +136,39 @@ const getRoleLabel = (role: string) => {
 }
 
 // Data loading functions from PostgreSQL
-const loadInterventionsFromDatabase = async () => {
+const loadInterventionsFromDatabase = async (filters?: any) => {
   try {
-    const response = await fetch("/api/interventions")
+    // Construire les paramètres de requête
+    const params = new URLSearchParams()
+    
+    if (filters) {
+      if (filters.statut && filters.statut !== 'all') params.append('statut', filters.statut)
+      if (filters.numInter) params.append('numInter', filters.numInter)
+      if (filters.dateRdvStart) params.append('dateRdvStart', filters.dateRdvStart)
+      if (filters.dateRdvEnd) params.append('dateRdvEnd', filters.dateRdvEnd)
+      if (filters.client && filters.client !== 'all') params.append('client', filters.client)
+      if (filters.grille && filters.grille !== 'all') params.append('grille', filters.grille)
+      if (filters.sansArticles) params.append('sansArticles', 'true')
+      if (filters.typeIntervention && filters.typeIntervention !== 'all') params.append('typeIntervention', filters.typeIntervention)
+      if (filters.technicien && filters.technicien !== 'all') params.append('technicien', filters.technicien)
+    }
+    
+    const queryString = params.toString()
+    const url = `/api/interventions${queryString ? `?${queryString}` : ''}`
+    
+    const response = await fetch(url)
     if (!response.ok) throw new Error("Erreur lors du chargement des interventions")
     const data = await response.json()
-    return data.interventions || []
+    return {
+      interventions: data.interventions || [],
+      total: data.total || 0
+    }
   } catch (error) {
     console.error("[v0] Erreur chargement interventions:", error)
-    return []
+    return {
+      interventions: [],
+      total: 0
+    }
   }
 }
 
@@ -207,6 +231,7 @@ export default function EmployeeTracker() {
 
   // Data states - loaded from PostgreSQL
   const [interventions, setInterventions] = useState<any[]>([])
+  const [totalInterventions, setTotalInterventions] = useState<number>(0) // Total réel d'interventions
   const [fuelData, setFuelData] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
   const [materials, setMaterials] = useState<any[]>([])
@@ -268,18 +293,47 @@ export default function EmployeeTracker() {
   const [transferComments, setTransferComments] = useState<string>('')
   const [transferring, setTransferring] = useState(false)
 
-  // Interventions filtering states
-  const [interventionFilters, setInterventionFilters] = useState({
-    statut: '',
-    dateRdvStart: '',
-    dateRdvEnd: '',
-    numInter: '',
-    client: '',
-    grille: '',
-    sansArticles: false,
-    typeIntervention: '',
-    technicien: ''
+  // Interventions filtering states - Initialisé avec le mois précédent
+  const [interventionFilters, setInterventionFilters] = useState(() => {
+    const today = new Date()
+    // Calculer le premier jour du mois précédent
+    const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    // Calculer le dernier jour du mois précédent (jour 0 du mois actuel = dernier jour du mois précédent)
+    const lastDayLastMonth = new Date(today.getFullYear(), today.getMonth(), 0)
+    
+    console.log('📅 Initialisation des filtres:')
+    console.log('  Aujourd\'hui:', today.toLocaleDateString('fr-FR'))
+    console.log('  Mois actuel:', today.getMonth() + 1) // +1 car getMonth() retourne 0-11
+    console.log('  Premier jour mois précédent:', firstDayLastMonth.toLocaleDateString('fr-FR'))
+    console.log('  Dernier jour mois précédent:', lastDayLastMonth.toLocaleDateString('fr-FR'))
+    
+    const formatDate = (date: Date) => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    
+    const startDate = formatDate(firstDayLastMonth)
+    const endDate = formatDate(lastDayLastMonth)
+    
+    console.log('  Date début (format ISO):', startDate)
+    console.log('  Date fin (format ISO):', endDate)
+    
+    return {
+      statut: '',
+      dateRdvStart: startDate,
+      dateRdvEnd: endDate,
+      numInter: '',
+      client: '',
+      grille: '',
+      sansArticles: false,
+      typeIntervention: '',
+      technicien: ''
+    }
   })
+  // Cache des derniers filtres appliqués pour éviter les requêtes inutiles
+  const [lastAppliedFilters, setLastAppliedFilters] = useState<any>(null)
   const [filteredInterventions, setFilteredInterventions] = useState<any[]>([])
   const [duplicates, setDuplicates] = useState<any[]>([])
   const [loadingDuplicates, setLoadingDuplicates] = useState(false)
@@ -483,9 +537,7 @@ export default function EmployeeTracker() {
     
     switch(activeTab) {
       case 'interventions':
-        if (interventions.length === 0) {
-          loadDataFromDatabase()
-        }
+        // Les interventions sont chargées automatiquement par le useEffect des filtres
         break
       case 'carburant':
         if (fuelData.length === 0) {
@@ -540,8 +592,8 @@ export default function EmployeeTracker() {
   const loadEssentialData = async () => {
     try {
       // Charger en parallèle uniquement les données critiques pour le dashboard
-      // Note: loadEmployeesFromDatabase gère déjà son propre loading state
       await Promise.all([
+        loadDataFromDatabase(), // Charger interventions, carburant et revenue pour le tableau de bord
         loadEmployeesFromDatabase(),
         (async () => {
           setLoadingPenalties(true)
@@ -577,14 +629,20 @@ export default function EmployeeTracker() {
     }
   }, [fuelPeriod, fuelDateRange])
 
-  // Apply filters when interventions or filters change
+  // Auto-apply filters with debounce to avoid multiple queries
   useEffect(() => {
-    if (interventions.length > 0) {
+    // Ne charger que si on est sur l'onglet interventions et connecté
+    if (!isLoggedIn || activeTab !== 'interventions') return
+    
+    // Debounce pour éviter les requêtes multiples lors de changements rapides
+    const timeoutId = setTimeout(() => {
+      console.log('⏱️ Debounce terminé, application des filtres...')
       applyInterventionFilters()
-      // Reset to first page when filters change
       setInterventionsPage(1)
-    }
-  }, [interventions, interventionFilters])
+    }, 300) // 300ms de délai
+    
+    return () => clearTimeout(timeoutId)
+  }, [interventionFilters, activeTab, isLoggedIn])
 
   // Reset consommation page when filters change
   useEffect(() => {
@@ -785,97 +843,28 @@ export default function EmployeeTracker() {
   }
 
   // Filtering functions for interventions
-  const applyInterventionFilters = () => {
-    let filtered = [...interventions]
-
-    // Filter by statut
-    if (interventionFilters.statut) {
-      filtered = filtered.filter(intervention => 
-        intervention.statut && 
-        intervention.statut.toString().toLowerCase().includes(interventionFilters.statut.toLowerCase())
-      )
+  const applyInterventionFilters = async () => {
+    // Vérifier si les filtres ont changé pour éviter les requêtes inutiles
+    if (lastAppliedFilters && JSON.stringify(lastAppliedFilters) === JSON.stringify(interventionFilters)) {
+      console.log('⚠️ Filtres identiques, requête évitée')
+      return
     }
 
-    // Filter by numéro d'intervention
-    if (interventionFilters.numInter) {
-      filtered = filtered.filter(intervention => 
-        intervention.num_inter && 
-        intervention.num_inter.toString().toLowerCase().includes(interventionFilters.numInter.toLowerCase())
-      )
+    setLoadingInterventions(true)
+    try {
+      console.log('🔍 Application des filtres:', interventionFilters)
+      const result = await loadInterventionsFromDatabase(interventionFilters)
+      setInterventions(result.interventions)
+      setTotalInterventions(result.total)
+      setFilteredInterventions([]) // Clear client-side filters since we're using server-side
+      setInterventionsPage(1) // Reset to first page
+      setLastAppliedFilters({ ...interventionFilters }) // Sauvegarder les filtres appliqués
+      console.log(`✅ ${result.total} interventions trouvées (${result.interventions.length} affichées)`)
+    } catch (error) {
+      console.error('Erreur lors de l\'application des filtres:', error)
+    } finally {
+      setLoadingInterventions(false)
     }
-
-    // Filter by date RDV range
-    if (interventionFilters.dateRdvStart) {
-      filtered = filtered.filter(intervention => {
-        if (!intervention.date_rdv) return false
-        const interventionDate = new Date(intervention.date_rdv)
-        const startDate = new Date(interventionFilters.dateRdvStart)
-        return interventionDate >= startDate
-      })
-    }
-
-    if (interventionFilters.dateRdvEnd) {
-      filtered = filtered.filter(intervention => {
-        if (!intervention.date_rdv) return false
-        const interventionDate = new Date(intervention.date_rdv)
-        const endDate = new Date(interventionFilters.dateRdvEnd)
-        return interventionDate <= endDate
-      })
-    }
-
-    // Filter by client (ERT, AXECOM)
-    if (interventionFilters.client) {
-      filtered = filtered.filter(intervention => 
-        intervention.client && 
-        intervention.client.toString().toLowerCase().includes(interventionFilters.client.toLowerCase())
-      )
-    }
-
-    // Filter by grille (AXECOM MANCHE vs ERT)
-    if (interventionFilters.grille) {
-      filtered = filtered.filter(intervention => {
-        const grille = intervention.grille ? intervention.grille.toString().toUpperCase() : ''
-        
-        if (interventionFilters.grille === 'AXECOM MANCHE') {
-          return grille.includes('AXECOM MANCHE')
-        } else if (interventionFilters.grille === 'ERT') {
-          return !grille.includes('AXECOM MANCHE') && grille.trim() !== ''
-        }
-        
-        return true
-      })
-    }
-
-    // Filter by interventions without articles (CLOTURE TERMINEE sans articles)
-    if (interventionFilters.sansArticles) {
-      filtered = filtered.filter(intervention => {
-        const statut = intervention.statut ? intervention.statut.toString().toUpperCase() : ''
-        const articles = intervention.articles ? intervention.articles.toString().trim() : ''
-        
-        // Vérifier si c'est CLOTURE TERMINEE sans articles
-        return statut === 'CLOTURE TERMINEE' && (articles === '' || articles === 'nan' || articles === null)
-      })
-    }
-
-    // Filter by intervention type
-    if (interventionFilters.typeIntervention) {
-      filtered = filtered.filter(intervention => 
-        intervention.type_intervention && 
-        intervention.type_intervention.toString().toLowerCase().includes(interventionFilters.typeIntervention.toLowerCase())
-      )
-    }
-
-    // Filter by technician
-    if (interventionFilters.technicien) {
-      filtered = filtered.filter(intervention => {
-        const nom = intervention.nom_technicien || ''
-        const prenom = intervention.prenom_technicien || ''
-        const fullName = `${prenom} ${nom}`.trim().toLowerCase()
-        return fullName.includes(interventionFilters.technicien.toLowerCase())
-      })
-    }
-
-    setFilteredInterventions(filtered)
   }
 
   const handleFilterChange = (filterType: string, value: string | boolean) => {
@@ -885,11 +874,23 @@ export default function EmployeeTracker() {
     }))
   }
 
-  const clearFilters = () => {
+  const clearFilters = async () => {
+    // Calculer les dates du mois précédent
+    const today = new Date()
+    const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    const lastDayLastMonth = new Date(today.getFullYear(), today.getMonth(), 0)
+    
+    const formatDate = (date: Date) => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    
     setInterventionFilters({
       statut: '',
-      dateRdvStart: '',
-      dateRdvEnd: '',
+      dateRdvStart: formatDate(firstDayLastMonth),
+      dateRdvEnd: formatDate(lastDayLastMonth),
       numInter: '',
       client: '',
       grille: '',
@@ -898,6 +899,10 @@ export default function EmployeeTracker() {
       technicien: ''
     })
     setFilteredInterventions([])
+    setLastAppliedFilters(null) // Réinitialiser le cache pour forcer le rechargement
+    setInterventionsPage(1)
+    
+    // Le useEffect va automatiquement appliquer les filtres du mois précédent
   }
 
   // Get unique statuts for filter dropdown
@@ -1321,20 +1326,21 @@ La page va se recharger automatiquement...`)
     setLoadingFuel(true)
     
     try {
-      const [interventionsData, fuelConsumptionData, revenueData] = await Promise.all([
+      const [interventionsResult, fuelConsumptionData, revenueData] = await Promise.all([
         loadInterventionsFromDatabase(),
         loadFuelDataFromDatabase(),
         loadRevenueFromDatabase()
       ])
       
-      setInterventions(interventionsData || [])
+      setInterventions(interventionsResult.interventions || [])
+      setTotalInterventions(interventionsResult.total || 0)
       setFuelData(fuelConsumptionData || [])
       setTotalRevenue(revenueData || 0)
       
       // Generate employee data from interventions
       const employeeMap = new Map()
-      if (interventionsData && Array.isArray(interventionsData)) {
-        interventionsData.forEach((intervention: any) => {
+      if (interventionsResult.interventions && Array.isArray(interventionsResult.interventions)) {
+        interventionsResult.interventions.forEach((intervention: any) => {
           const techName = `${intervention.prenom_technicien || ''} ${intervention.nom_technicien || ''}`.trim()
           if (techName && techName !== ' ') {
             if (!employeeMap.has(techName)) {
@@ -2949,7 +2955,7 @@ La page va se recharger automatiquement...`)
                     <Users className="h-4 w-4 text-chart-1" />
                   </CardHeader>
                   <CardContent className="relative">
-                    <div className="text-3xl font-bold">{employeesFromInterventions.length}</div>
+                    <div className="text-3xl font-bold">{employees.length}</div>
                     <p className="text-xs text-muted-foreground mt-1">
                       Techniciens en activité
                     </p>
@@ -2964,7 +2970,7 @@ La page va se recharger automatiquement...`)
                     <FileText className="h-4 w-4 text-chart-2" />
                   </CardHeader>
                   <CardContent className="relative">
-                    <div className="text-3xl font-bold">{interventions.length}</div>
+                    <div className="text-3xl font-bold">{totalInterventions}</div>
                     <p className="text-xs text-muted-foreground mt-1">
                       Total enregistrées
                     </p>
@@ -4053,6 +4059,14 @@ La page va se recharger automatiquement...`)
                       </div>
                     </div>
 
+                    {/* Indicateur de chargement */}
+                    {loadingInterventions && (
+                      <div className="mt-4 flex items-center text-sm text-blue-600">
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Chargement des interventions...
+                      </div>
+                    )}
+
                     {/* Résumé des filtres actifs */}
                     {(interventionFilters.statut || interventionFilters.numInter || 
                       interventionFilters.dateRdvStart || interventionFilters.dateRdvEnd || 
@@ -4108,7 +4122,7 @@ La page va se recharger automatiquement...`)
                           )}
                         </div>
                         <div className="text-sm text-blue-600 mt-1">
-                          {filteredInterventions.length} intervention(s) trouvée(s) sur {interventions.length} total
+                          {totalInterventions} intervention(s) trouvée(s) - Affichage de {interventions.length}
                         </div>
                       </div>
                     )}
@@ -4138,11 +4152,12 @@ La page va se recharger automatiquement...`)
                             <th className="text-left p-4 font-semibold">Articles</th>
                             <th className="text-left p-4 font-semibold">Statut</th>
                             <th className="text-left p-4 font-semibold">Ville</th>
+                            <th className="text-left p-4 font-semibold">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                           {(() => {
-                            const dataToDisplay = filteredInterventions.length > 0 ? filteredInterventions : interventions
+                            const dataToDisplay = interventions
                             const startIndex = (interventionsPage - 1) * interventionsPerPage
                             const endIndex = startIndex + interventionsPerPage
                             const paginatedData = dataToDisplay.slice(startIndex, endIndex)
@@ -4175,21 +4190,10 @@ La page va se recharger automatiquement...`)
                               <td className="p-4">{intervention.date_rdv}</td>
                               <td className="p-4">{intervention.type_intervention}</td>
                             <td className="p-4">
-                                <div className="max-w-xs flex items-center gap-2">
-                                  <span className={`text-sm ${needsArticlesFlag ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
+                                <div className="max-w-xs">
+                                  <span className={`text-sm ${needsArticlesFlag ? 'text-red-600 font-semibold' : 'text-gray-600'} block truncate`} title={intervention.articles}>
                                     {intervention.articles && intervention.articles.toString().toLowerCase() !== 'nan' ? intervention.articles : 'N/A'}
                                   </span>
-                                  {needsArticlesFlag && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleEditArticles(intervention)}
-                                      className="h-6 px-2 text-xs bg-yellow-100 hover:bg-yellow-200 border-yellow-300 text-yellow-800"
-                                    >
-                                      <Plus className="h-3 w-3 mr-1" />
-                                      Articles
-                                    </Button>
-                                  )}
                               </div>
                             </td>
                             <td className="p-4">
@@ -4201,6 +4205,17 @@ La page va se recharger automatiquement...`)
                               </Badge>
                             </td>
                               <td className="p-4">{intervention.ville}</td>
+                              <td className="p-4">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleEditArticles(intervention)}
+                                  className={`h-7 px-3 text-xs ${needsArticlesFlag ? 'bg-yellow-100 hover:bg-yellow-200 border-yellow-300 text-yellow-800' : 'bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700'}`}
+                                >
+                                  <Edit className="h-3 w-3 mr-1" />
+                                  {needsArticlesFlag ? 'Ajouter' : 'Modifier'}
+                                </Button>
+                              </td>
                           </tr>
                         )
                       })
@@ -4211,7 +4226,7 @@ La page va se recharger automatiquement...`)
                     {/* Pagination Controls */}
                     <div className="flex items-center justify-between mt-6 px-4">
                       <div className="text-sm text-gray-600">
-                        Affichage de {((interventionsPage - 1) * interventionsPerPage) + 1} à {Math.min(interventionsPage * interventionsPerPage, (filteredInterventions.length > 0 ? filteredInterventions : interventions).length)} sur {(filteredInterventions.length > 0 ? filteredInterventions : interventions).length} interventions
+                        Affichage de {((interventionsPage - 1) * interventionsPerPage) + 1} à {Math.min(interventionsPage * interventionsPerPage, interventions.length)} sur {totalInterventions} intervention(s) {(interventionFilters.statut || interventionFilters.numInter || interventionFilters.dateRdvStart || interventionFilters.dateRdvEnd || interventionFilters.client || interventionFilters.grille || interventionFilters.sansArticles || interventionFilters.typeIntervention || interventionFilters.technicien) ? 'filtrée(s)' : ''}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -4224,9 +4239,9 @@ La page va se recharger automatiquement...`)
                           ← Précédent
                         </Button>
                         <div className="flex items-center gap-1">
-                          {Array.from({ length: Math.ceil((filteredInterventions.length > 0 ? filteredInterventions : interventions).length / interventionsPerPage) }, (_, i) => i + 1)
+                          {Array.from({ length: Math.ceil(interventions.length / interventionsPerPage) }, (_, i) => i + 1)
                             .filter(page => {
-                              const totalPages = Math.ceil((filteredInterventions.length > 0 ? filteredInterventions : interventions).length / interventionsPerPage)
+                              const totalPages = Math.ceil(interventions.length / interventionsPerPage)
                               return page === 1 || page === totalPages || Math.abs(page - interventionsPage) <= 1
                             })
                             .map((page, idx, arr) => (
@@ -4248,8 +4263,8 @@ La page va se recharger automatiquement...`)
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setInterventionsPage(prev => Math.min(Math.ceil((filteredInterventions.length > 0 ? filteredInterventions : interventions).length / interventionsPerPage), prev + 1))}
-                          disabled={interventionsPage >= Math.ceil((filteredInterventions.length > 0 ? filteredInterventions : interventions).length / interventionsPerPage)}
+                          onClick={() => setInterventionsPage(prev => Math.min(Math.ceil(interventions.length / interventionsPerPage), prev + 1))}
+                          disabled={interventionsPage >= Math.ceil(interventions.length / interventionsPerPage)}
                           className="h-8"
                         >
                           Suivant →

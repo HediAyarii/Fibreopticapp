@@ -355,6 +355,11 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
 }
 
 // ArticlesEditModal component
+interface ArticleItem {
+  code: string
+  quantity: number
+}
+
 export function ArticlesEditModal({
   isOpen,
   onClose,
@@ -366,22 +371,91 @@ export function ArticlesEditModal({
   intervention: any
   onSave: (id: number, articles: string) => Promise<void>
 }) {
-  const [articlesText, setArticlesText] = useState(intervention?.articles || '')
+  const [articles, setArticles] = useState<ArticleItem[]>([])
+  const [newArticleCode, setNewArticleCode] = useState('')
+  const [newArticleQuantity, setNewArticleQuantity] = useState(1)
   const [saving, setSaving] = useState(false)
 
+  // Liste des codes d'articles courants (basée sur votre base de données)
+  const commonArticleCodes = [
+    'CLEM',
+    'RACPAV',
+    'RECOIP',
+    'RACIH',
+    'SAV',
+    'DEP_OFFE',
+    'CABLE_PAV_1',
+    'CABLE_PAV_2',
+    'CABLE_PAV_3',
+    'CABLE_PAV_4',
+    'CABLE_PAV_SL',
+    'DE_JAR1',
+    'RACPRO_S',
+    'RACPRO_C',
+    'REPFOU_PRI',
+    'REFRAC',
+    'REF_DGR'
+  ]
+
   useEffect(() => {
-    if (intervention) {
-      setArticlesText(intervention.articles || '')
+    if (intervention?.articles && intervention.articles.toLowerCase() !== 'nan') {
+      // Parser les articles existants (format: "CODE x QUANTITÉ,CODE x QUANTITÉ")
+      const parsed = intervention.articles.split(',').map((item: string) => {
+        const parts = item.trim().split(' x ')
+        return {
+          code: parts[0]?.trim() || '',
+          quantity: parseInt(parts[1]) || 1
+        }
+      }).filter((item: ArticleItem) => item.code && item.code !== '')
+      setArticles(parsed)
+    } else {
+      setArticles([])
     }
   }, [intervention])
+
+  const addArticle = () => {
+    if (!newArticleCode.trim()) return
+    
+    // Vérifier si l'article existe déjà
+    const existingIndex = articles.findIndex(a => a.code.toUpperCase() === newArticleCode.toUpperCase())
+    
+    if (existingIndex >= 0) {
+      // Si existe, augmenter la quantité
+      const updated = [...articles]
+      updated[existingIndex].quantity += newArticleQuantity
+      setArticles(updated)
+    } else {
+      // Sinon, ajouter un nouvel article
+      setArticles([...articles, {
+        code: newArticleCode.toUpperCase(),
+        quantity: newArticleQuantity
+      }])
+    }
+    
+    // Réinitialiser le formulaire
+    setNewArticleCode('')
+    setNewArticleQuantity(1)
+  }
+
+  const removeArticle = (index: number) => {
+    setArticles(articles.filter((_, i) => i !== index))
+  }
+
+  const updateQuantity = (index: number, quantity: number) => {
+    if (quantity < 1) return
+    const updated = [...articles]
+    updated[index].quantity = quantity
+    setArticles(updated)
+  }
 
   const handleSave = async () => {
     if (!intervention?.id) return
     
     setSaving(true)
     try {
-      // Permettre la sauvegarde même si articlesText est vide (pour effacer les articles)
-      await onSave(intervention.id, articlesText.trim())
+      // Convertir les articles au format "CODE x QUANTITÉ,CODE x QUANTITÉ"
+      const articlesString = articles.map(a => `${a.code} x${a.quantity}`).join(',')
+      await onSave(intervention.id, articlesString)
       onClose()
     } catch (error) {
       console.error('Erreur lors de la sauvegarde:', error)
@@ -391,13 +465,12 @@ export function ArticlesEditModal({
   }
 
   const handleCancel = () => {
-    setArticlesText(intervention?.articles || '')
     onClose()
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Modifier les Articles - {intervention?.num_inter}</DialogTitle>
           <DialogDescription>
@@ -406,45 +479,142 @@ export function ArticlesEditModal({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium text-sm text-gray-700 mb-2">Informations de l'intervention</h4>
+          {/* Informations intervention */}
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h4 className="font-medium text-sm text-blue-900 mb-2">📋 Informations de l'intervention</h4>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="font-medium">Client:</span> {intervention?.client}
+                <span className="font-medium text-gray-700">Client:</span> <span className="text-gray-900">{intervention?.client}</span>
               </div>
               <div>
-                <span className="font-medium">Technicien:</span> {intervention?.prenom_technicien} {intervention?.nom_technicien}
+                <span className="font-medium text-gray-700">Technicien:</span> <span className="text-gray-900">{intervention?.prenom_technicien} {intervention?.nom_technicien}</span>
               </div>
               <div>
-                <span className="font-medium">Date RDV:</span> {intervention?.date_rdv}
+                <span className="font-medium text-gray-700">Date RDV:</span> <span className="text-gray-900">{intervention?.date_rdv}</span>
               </div>
               <div>
-                <span className="font-medium">Statut:</span> {intervention?.statut}
+                <span className="font-medium text-gray-700">Statut:</span> <span className="text-gray-900">{intervention?.statut}</span>
               </div>
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="articles">Articles Utilisés *</Label>
-            <Textarea
-              id="articles"
-              value={articlesText}
-              onChange={(e) => setArticlesText(e.target.value)}
-              placeholder="Entrez les articles utilisés lors de cette intervention..."
-              className="mt-2 min-h-[120px]"
-              required
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              Décrivez tous les articles, matériels ou pièces utilisés
+          {/* Formulaire d'ajout d'article */}
+          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <h4 className="font-medium text-sm text-gray-700 mb-3">➕ Ajouter un article</h4>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Label htmlFor="article-code" className="text-xs">Code Article</Label>
+                <div className="relative">
+                  <Input
+                    id="article-code"
+                    list="article-codes"
+                    value={newArticleCode}
+                    onChange={(e) => setNewArticleCode(e.target.value.toUpperCase())}
+                    placeholder="Ex: CLEM, RACPAV, SAV..."
+                    className="mt-1 uppercase"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addArticle()
+                      }
+                    }}
+                  />
+                  <datalist id="article-codes">
+                    {commonArticleCodes.map(code => (
+                      <option key={code} value={code} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+              <div className="w-32">
+                <Label htmlFor="article-quantity" className="text-xs">Quantité</Label>
+                <Input
+                  id="article-quantity"
+                  type="number"
+                  min="1"
+                  value={newArticleQuantity}
+                  onChange={(e) => setNewArticleQuantity(parseInt(e.target.value) || 1)}
+                  className="mt-1"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addArticle()
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button 
+                  type="button" 
+                  onClick={addArticle}
+                  disabled={!newArticleCode.trim()}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              💡 Tapez le code de l'article ou sélectionnez-le dans la liste déroulante
             </p>
           </div>
+
+          {/* Liste des articles ajoutés */}
+          <div className="space-y-2">
+            <h4 className="font-medium text-sm text-gray-700">📦 Articles ajoutés ({articles.length})</h4>
+            {articles.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                <p className="text-sm">Aucun article ajouté</p>
+                <p className="text-xs mt-1">Utilisez le formulaire ci-dessus pour ajouter des articles</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {articles.map((article, index) => (
+                  <div key={index} className="flex items-center gap-2 p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 transition-colors">
+                    <div className="flex-1 font-mono font-medium text-gray-900">
+                      {article.code}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-gray-600">x</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={article.quantity}
+                        onChange={(e) => updateQuantity(index, parseInt(e.target.value) || 1)}
+                        className="w-20 text-center"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => removeArticle(index)}
+                      className="h-8 w-8 p-0"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Aperçu du format final */}
+          {articles.length > 0 && (
+            <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+              <h4 className="font-medium text-xs text-green-800 mb-1">✅ Aperçu final (format base de données)</h4>
+              <code className="text-xs text-green-900 break-all">
+                {articles.map(a => `${a.code} x${a.quantity}`).join(',')}
+              </code>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel} disabled={saving}>
             Annuler
           </Button>
-          <Button onClick={handleSave} disabled={saving || !articlesText.trim()}>
+          <Button onClick={handleSave} disabled={saving || articles.length === 0}>
             {saving ? (
               <>
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -453,7 +623,7 @@ export function ArticlesEditModal({
             ) : (
               <>
                 <CheckCircle className="h-4 w-4 mr-2" />
-                Sauvegarder
+                Sauvegarder ({articles.length} article{articles.length > 1 ? 's' : ''})
               </>
             )}
           </Button>
