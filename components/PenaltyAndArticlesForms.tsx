@@ -393,8 +393,13 @@ export function ArticlesEditModal({
     'RACPRO_S',
     'RACPRO_C',
     'REPFOU_PRI',
+    'REPFOU_ASPHA',
+    'REPFOU_PUB',
     'REFRAC',
-    'REF_DGR'
+    'REF_DGR',
+    'DEMO',
+    'DEP_TORT',
+    'SWAP_EQT'
   ]
 
   useEffect(() => {

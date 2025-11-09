@@ -260,7 +260,7 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const paiementId = searchParams.get('paiement_id')
+    const paiementId = searchParams.get('id') || searchParams.get('paiement_id')
     
     if (!paiementId) {
       return NextResponse.json({ 
