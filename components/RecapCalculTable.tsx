@@ -89,6 +89,7 @@ export function RecapCalculTable() {
   const [employees, setEmployees] = useState<any[]>([])
   const [chargesData, setChargesData] = useState<ChargesData[]>([])
   const [chargesSummary, setChargesSummary] = useState<ChargesSummary | null>(null)
+  const [totalImpot, setTotalImpot] = useState(0)
 
   // Hook personnalisé pour la synchronisation automatique avec filtres
   const fetchRecapData = useCallback(async () => {
@@ -148,8 +149,9 @@ export function RecapCalculTable() {
   useEffect(() => {
     if (startDate && endDate) {
       fetchChargesData()
+      fetchTotalImpot()
     }
-  }, [fetchChargesData])
+  }, [fetchChargesData, startDate, endDate])
 
   useEffect(() => {
     loadEmployees()
@@ -164,6 +166,26 @@ export function RecapCalculTable() {
       }
     } catch (error) {
       console.error('Erreur chargement employés:', error)
+    }
+  }
+
+  const fetchTotalImpot = async () => {
+    try {
+      if (!startDate || !endDate) return
+      
+      const [year, month] = startDate.split('-')
+      const response = await fetch(`/api/cout-par-salaire?mois=${month}&annee=${year}`)
+      if (response.ok) {
+        const data = await response.json()
+        const total = (data.couts || []).reduce((sum: number, cout: any) => {
+          const impot = parseFloat(cout.impot || 0)
+          return sum + (isNaN(impot) ? 0 : impot)
+        }, 0)
+        setTotalImpot(total)
+      }
+    } catch (error) {
+      console.error('Erreur chargement total impôt:', error)
+      setTotalImpot(0)
     }
   }
 
@@ -187,14 +209,14 @@ export function RecapCalculTable() {
   }
 
   const getBeneficeBrut = () => {
-    // BÉNÉFICE NET = Recettes Entreprise - Recettes Technicien - Consommation Carburant - Valeur Matériel - Charges Totales
+    // BÉNÉFICE NET = Recettes Entreprise - Recettes Technicien - Consommation Carburant - Valeur Matériel - Charges Totales - Total Impôt
     const recetteEntreprise = recapData.reduce((sum, item: any) => sum + (item.total_recette_entreprise || 0), 0)
     const recetteTechnicien = recapData.reduce((sum, item: any) => sum + (item.total_recette_technicien || 0), 0)
     const consommationCarburant = recapData.reduce((sum, item: any) => sum + (item.consommation_totale_carburant || 0), 0)
     const valeurMateriel = recapData.reduce((sum, item: any) => sum + (item.valeur_totale_materiel || 0), 0)
     const chargesTotales = chargesSummary?.totalChargesGlobal || 0
     
-    return recetteEntreprise - recetteTechnicien - consommationCarburant - valeurMateriel - chargesTotales
+    return recetteEntreprise - recetteTechnicien - consommationCarburant - valeurMateriel - chargesTotales - totalImpot
   }
 
   const getTotalInterventions = () => {
@@ -414,7 +436,7 @@ export function RecapCalculTable() {
         </div>
 
         {/* Statistiques globales */}
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-8 gap-4 mb-6">
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -515,6 +537,21 @@ export function RecapCalculTable() {
                   <p className="text-sm text-muted-foreground">Charges Totales</p>
                   <p className="text-2xl font-bold text-gray-500">
                     {formatCurrency(Number(chargesSummary?.totalChargesGlobal || 0))}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card border border-white/20">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-600/10 rounded-lg">
+                  <Zap className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Impôt</p>
+                  <p className="text-2xl font-bold text-purple-600">
+                    {formatCurrency(Number(totalImpot))}
                   </p>
                 </div>
               </div>

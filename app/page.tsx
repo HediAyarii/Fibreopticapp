@@ -48,6 +48,7 @@ import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
 import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
+import ReclamationsTechniques from "@/components/ReclamationsTechniques"
 import AutoSyncTotalGenere from "@/components/AutoSyncTotalGenere"
 import SyncButton from "@/components/SyncButton"
 import AutoDetectButton from "@/components/AutoDetectButton"
@@ -98,6 +99,7 @@ import {
   AlertCircle,
   History,
   Filter,
+  MessageSquare,
   RotateCcw,
 } from "lucide-react"
 
@@ -2808,6 +2810,21 @@ La page va se recharger automatiquement...`)
                     >
                   <FileText className="w-5 h-5" />
                   Réclamations
+                    </Button>
+                )}
+
+                {hasPermission('claims') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "reclamations-techniques"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("reclamations-techniques")}
+                    >
+                  <MessageSquare className="w-5 h-5" />
+                  Réclamations Techniques
                     </Button>
                 )}
 
@@ -5901,6 +5918,13 @@ La page va se recharger automatiquement...`)
               </div>
                         </div>
                       )}
+
+          {/* Réclamations Techniques Section */}
+          {activeTab === "reclamations-techniques" && (
+            <div className="space-y-6">
+              <ReclamationsTechniques />
+            </div>
+          )}
 
           {/* Technicien Accounts Section */}
           {activeTab === "technicien-accounts" && (

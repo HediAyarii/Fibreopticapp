@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { SocketProvider } from "@/contexts/SocketContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -46,13 +47,15 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-192.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/icon-192.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icon-192.png" />
-        <link rel="shortcut icon" href="/icon-192.png" />
+                <link rel="shortcut icon" href="/icon-192.png" />
         
         {/* Service Worker Registration */}
         <script src="/register-sw.js" defer></script>
       </head>
       <body className={inter.className}>
-        {children}
+        <SocketProvider>
+          {children}
+        </SocketProvider>
       </body>
     </html>
   );

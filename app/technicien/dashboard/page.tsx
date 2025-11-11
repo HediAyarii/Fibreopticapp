@@ -43,6 +43,8 @@ import { MobileNotificationButton } from '@/components/MobileNotificationButton'
 import { MobilePushNotificationManager } from '@/components/MobilePushNotificationManager'
 import { DocumentsAdministratifs } from '@/components/DocumentsAdministratifs'
 import { NewDocumentModal } from '@/components/NewDocumentModal'
+import { InterventionCategorieTable } from '@/components/InterventionCategorieTable'
+import TechnicienReclamations from '@/components/TechnicienReclamations'
 // import { useEmployeeUpdates } from '@/hooks/useEmployeeUpdates' // Désactivé pour éviter les erreurs de build
 
 interface User {
@@ -298,11 +300,16 @@ export default function TechnicienDashboard() {
         
         // Les statistiques utilisent directement les données de l'API (déjà filtrées)
         const totalInterventions = interventionsData.interventions.length
+        
+        // Compter uniquement les interventions "CLOTURE TERMINEE" pour la carte spécifique
+        const interventionsCloturees = interventionsData.interventions.filter(
+          (inter: Intervention) => inter.statut?.toUpperCase() === 'CLOTURE TERMINEE'
+        ).length
 
         setStats(prev => ({
           ...prev,
           totalInterventions,
-          interventionsMois: totalInterventions // Dans la vue d'ensemble, c'est la période filtrée
+          interventionsMois: interventionsCloturees // Nombre d'interventions clôturées terminées
         }))
       }
 
@@ -690,8 +697,8 @@ export default function TechnicienDashboard() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="flex justify-between items-center gap-4">
             {/* Logo et titre - Mobile */}
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
@@ -707,7 +714,7 @@ export default function TechnicienDashboard() {
             </div>
             
             {/* Actions - Desktop */}
-            <div className="hidden lg:flex items-center space-x-4">
+            <div className="hidden lg:flex items-center gap-6">
               <div className="text-right">
                 <p className="text-sm font-medium text-gray-900">
                   {user.prenom} {user.nom}
@@ -726,7 +733,7 @@ export default function TechnicienDashboard() {
                   </span>
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-3">
                 {isUpdating && (
                   <div className="flex items-center space-x-1 text-xs text-blue-600">
                     <RefreshCw className="w-3 h-3 animate-spin" />
@@ -798,7 +805,7 @@ export default function TechnicienDashboard() {
       </header>
 
       {/* Navigation Tabs */}
-      <div className="bg-white border-b">
+      <div className="bg-white border-b mt-2">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center justify-between">
@@ -1044,7 +1051,7 @@ export default function TechnicienDashboard() {
                       <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
                     </div>
                     <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Total Interventions</p>
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Total Interventions du Mois</p>
                       <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.totalInterventions}</p>
                     </div>
                   </div>
@@ -1058,9 +1065,7 @@ export default function TechnicienDashboard() {
                       <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
                     </div>
                     <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">
-                        {dateDebut && dateFin ? 'Période sélectionnée' : 'Ce Mois'}
-                      </p>
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Total Intervention Clôturé Terminé</p>
                       <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.interventionsMois}</p>
                     </div>
                   </div>
@@ -1074,7 +1079,7 @@ export default function TechnicienDashboard() {
                       <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600" />
                     </div>
                     <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Recette Générée</p>
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Recette Générée du Mois Sélectionné</p>
                       <p className="text-lg sm:text-2xl font-bold text-gray-900">
                         {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€
                       </p>
@@ -1093,13 +1098,31 @@ export default function TechnicienDashboard() {
                       <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-red-600" />
                     </div>
                     <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Pénalités</p>
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">Pénalités du Mois Sélectionné</p>
                       <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.penalites}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
+
+            {/* Tableau résumé des interventions par catégorie */}
+            <InterventionCategorieTable 
+              nomTechnicien={user?.nom || ''}
+              prenomTechnicien={user?.prenom || ''}
+              employeId={user?.id}
+              dateDebut={dateDebut}
+              dateFin={dateFin}
+            />
+
+            {/* Mes Réclamations */}
+            <TechnicienReclamations
+              nomTechnicien={user?.nom || ''}
+              prenomTechnicien={user?.prenom || ''}
+              technicienId={user?.id}
+              dateDebut={dateDebut}
+              dateFin={dateFin}
+            />
 
             {/* Interventions récentes */}
             <Card>

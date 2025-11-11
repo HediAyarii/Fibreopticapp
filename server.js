@@ -25,7 +25,16 @@ app.prepare().then(() => {
   })
 
   // Initialiser Socket.IO avec le serveur HTTP
-  initializeSocketIO(server)
+  const io = initializeSocketIO(server)
+  
+  // Vérifier et définir la variable globale
+  if (global.socketIOInstance) {
+    console.log('✅ Variable globale socketIOInstance définie')
+  } else {
+    console.warn('⚠️ Variable globale socketIOInstance NON définie - définition manuelle')
+    global.socketIOInstance = io
+    console.log('✅ Variable globale socketIOInstance définie manuellement')
+  }
 
   // Démarrer le serveur
   server.listen(port, (err) => {

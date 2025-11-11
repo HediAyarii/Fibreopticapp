@@ -1,0 +1,392 @@
+'use client';
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { MessageSquare, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { useSocket } from '@/contexts/SocketContext';
+
+interface Reclamation {
+  id: number;
+  intervention_id: number | null;
+  num_inter: string;
+  type_reclamation: string;
+  description: string;
+  reponse_admin: string | null;
+  statut: string;
+  date_creation: string;
+  date_resolution: string | null;
+  date_intervention: string | null;
+}
+
+interface TechnicienReclamationsProps {
+  nomTechnicien: string;
+  prenomTechnicien: string;
+  technicienId?: number;
+  dateDebut?: string;
+  dateFin?: string;
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  article_manquant: 'Article Manquant',
+  probleme_technique: 'Problème Technique',
+  erreur_grille: 'Erreur Grille',
+  autre: 'Autre',
+};
+
+const STATUT_COLORS: Record<string, string> = {
+  en_attente: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  en_cours: 'bg-blue-100 text-blue-800 border-blue-300',
+  resolu: 'bg-green-100 text-green-800 border-green-300',
+  rejete: 'bg-red-100 text-red-800 border-red-300',
+};
+
+const STATUT_ICONS: Record<string, React.ReactNode> = {
+  en_attente: <Clock className="w-4 h-4" />,
+  en_cours: <MessageSquare className="w-4 h-4" />,
+  resolu: <CheckCircle className="w-4 h-4" />,
+  rejete: <XCircle className="w-4 h-4" />,
+};
+
+const STATUT_LABELS: Record<string, string> = {
+  en_attente: 'En Attente',
+  en_cours: 'En Cours',
+  resolu: 'Résolu',
+  rejete: 'Rejeté',
+};
+
+export default function TechnicienReclamations({
+  nomTechnicien,
+  prenomTechnicien,
+  technicienId,
+  dateDebut,
+  dateFin,
+}: TechnicienReclamationsProps) {
+  const { socket, isConnected } = useSocket();
+  const [reclamations, setReclamations] = useState<Reclamation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedReclamation, setSelectedReclamation] = useState<Reclamation | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const fetchReclamations = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({
+        nom_technicien: nomTechnicien,
+        prenom_technicien: prenomTechnicien,
+      });
+
+      if (technicienId) {
+        params.append('technicien_id', technicienId.toString());
+      }
+
+      if (dateDebut) params.append('date_debut', dateDebut);
+      if (dateFin) params.append('date_fin', dateFin);
+
+      const response = await fetch(`/api/reclamations-techniques?${params}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setReclamations(data.reclamations || []);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement des réclamations:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [nomTechnicien, prenomTechnicien, technicienId, dateDebut, dateFin]);
+
+  // Chargement initial
+  useEffect(() => {
+    fetchReclamations();
+  }, [fetchReclamations]);
+
+  // Écouter les événements Socket.IO pour les mises à jour
+  useEffect(() => {
+    if (!socket) return;
+
+    // Écouter les mises à jour de réclamations
+    const handleUpdatedReclamation = (updatedReclamation: Reclamation) => {
+      // Vérifier si cette réclamation concerne ce technicien
+      setReclamations((prev) => {
+        const concernsThisTech = prev.some(r => r.id === updatedReclamation.id);
+        if (!concernsThisTech) return prev;
+        
+        console.log('🔄 Mise à jour réclamation technicien:', updatedReclamation);
+        return prev.map((r) => (r.id === updatedReclamation.id ? updatedReclamation : r));
+      });
+      
+      // Mettre à jour la réclamation sélectionnée si c'est celle-ci
+      setSelectedReclamation((current) => 
+        current?.id === updatedReclamation.id ? updatedReclamation : current
+      );
+    };
+
+    // Écouter les notifications personnelles
+    const handleNotification = (notification: any) => {
+      if (notification.type === 'reclamation_technique') {
+        console.log('📬 Notification reçue:', notification);
+        fetchReclamations();
+      }
+    };
+
+    socket.on('reclamation_technique_updated', handleUpdatedReclamation);
+    socket.on('notification', handleNotification);
+
+    // Cleanup
+    return () => {
+      socket.off('reclamation_technique_updated', handleUpdatedReclamation);
+      socket.off('notification', handleNotification);
+    };
+  }, [socket, fetchReclamations]);
+
+  const handleOpenDialog = (reclamation: Reclamation) => {
+    setSelectedReclamation(reclamation);
+    setDialogOpen(true);
+  };
+
+  const stats = {
+    total: reclamations.length,
+    en_attente: reclamations.filter((r) => r.statut === 'en_attente').length,
+    en_cours: reclamations.filter((r) => r.statut === 'en_cours').length,
+    resolu: reclamations.filter((r) => r.statut === 'resolu').length,
+    rejete: reclamations.filter((r) => r.statut === 'rejete').length,
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Mes Réclamations</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center p-8">
+            <p className="text-gray-500">Chargement...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Statistiques */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-2xl font-bold">{stats.total}</p>
+              <p className="text-xs text-gray-600">Total</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-yellow-600">{stats.en_attente}</p>
+              <p className="text-xs text-gray-600">En Attente</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-blue-600">{stats.en_cours}</p>
+              <p className="text-xs text-gray-600">En Cours</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-green-600">{stats.resolu}</p>
+              <p className="text-xs text-gray-600">Résolus</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-red-600">{stats.rejete}</p>
+              <p className="text-xs text-gray-600">Rejetés</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Liste des réclamations */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" />
+            Mes Réclamations ({reclamations.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {reclamations.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Aucune réclamation pour le moment</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {reclamations.map((reclamation) => (
+                <div
+                  key={reclamation.id}
+                  className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => handleOpenDialog(reclamation)}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-semibold">#{reclamation.num_inter}</span>
+                        <Badge className={STATUT_COLORS[reclamation.statut]}>
+                          <span className="flex items-center gap-1">
+                            {STATUT_ICONS[reclamation.statut]}
+                            {STATUT_LABELS[reclamation.statut]}
+                          </span>
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {TYPE_LABELS[reclamation.type_reclamation]}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-gray-700 line-clamp-2 mb-2">
+                        {reclamation.description}
+                      </p>
+                      {reclamation.reponse_admin && (
+                        <div className="mt-2 p-2 bg-blue-50 rounded-lg border-l-4 border-blue-400">
+                          <p className="text-xs font-medium text-blue-800 mb-1">
+                            💬 Réponse de l'Admin:
+                          </p>
+                          <p className="text-sm text-blue-700">
+                            {reclamation.reponse_admin}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right text-xs text-gray-500">
+                      <p>{new Date(reclamation.date_creation).toLocaleDateString('fr-FR')}</p>
+                      <p>{new Date(reclamation.date_creation).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Dialog de détails */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="!max-w-[90vw] !w-[90vw] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Détails de la Réclamation</DialogTitle>
+          </DialogHeader>
+          {selectedReclamation && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-600">N° Intervention</label>
+                  <p className="text-lg font-semibold">{selectedReclamation.num_inter}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Statut</label>
+                  <div className="mt-1">
+                    <Badge className={STATUT_COLORS[selectedReclamation.statut]}>
+                      <span className="flex items-center gap-1">
+                        {STATUT_ICONS[selectedReclamation.statut]}
+                        {STATUT_LABELS[selectedReclamation.statut]}
+                      </span>
+                    </Badge>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Type</label>
+                  <p>{TYPE_LABELS[selectedReclamation.type_reclamation]}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Date Intervention</label>
+                  <p>
+                    {selectedReclamation.date_intervention 
+                      ? new Date(selectedReclamation.date_intervention).toLocaleDateString('fr-FR')
+                      : 'Non spécifiée'}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Date Réclamation</label>
+                  <p>{new Date(selectedReclamation.date_creation).toLocaleString('fr-FR')}</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-600">Ma Description</label>
+                <div className="mt-1 p-3 bg-gray-50 rounded-lg">
+                  <p className="whitespace-pre-wrap">{selectedReclamation.description}</p>
+                </div>
+              </div>
+
+              {selectedReclamation.reponse_admin && (
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Réponse de l'Administrateur</label>
+                  <div className="mt-1 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-400">
+                    <p className="whitespace-pre-wrap text-blue-900">
+                      {selectedReclamation.reponse_admin}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {selectedReclamation.statut === 'en_attente' && !selectedReclamation.reponse_admin && (
+                <div className="p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
+                  <p className="text-sm text-yellow-800">
+                    ⏳ Votre réclamation est en attente de traitement par l'administrateur.
+                  </p>
+                </div>
+              )}
+
+              {selectedReclamation.statut === 'en_cours' && (
+                <div className="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
+                  <p className="text-sm text-blue-800">
+                    🔄 Votre réclamation est en cours de traitement.
+                  </p>
+                </div>
+              )}
+
+              {selectedReclamation.statut === 'resolu' && (
+                <div className="p-3 bg-green-50 rounded-lg border-l-4 border-green-400">
+                  <p className="text-sm text-green-800">
+                    ✅ Cette réclamation a été résolue
+                    {selectedReclamation.date_resolution && 
+                      ` le ${new Date(selectedReclamation.date_resolution).toLocaleDateString('fr-FR')}`
+                    }.
+                  </p>
+                </div>
+              )}
+
+              {selectedReclamation.statut === 'rejete' && (
+                <div className="p-3 bg-red-50 rounded-lg border-l-4 border-red-400">
+                  <p className="text-sm text-red-800">
+                    ❌ Cette réclamation a été rejetée
+                    {selectedReclamation.date_resolution && 
+                      ` le ${new Date(selectedReclamation.date_resolution).toLocaleDateString('fr-FR')}`
+                    }.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button onClick={() => setDialogOpen(false)}>Fermer</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -241,13 +241,15 @@ export async function GET(request: NextRequest) {
     const employeId = searchParams.get('employe_id')
     const statut = searchParams.get('statut')
     const numInter = searchParams.get('numInter')
-    const dateRdvStart = searchParams.get('dateRdvStart')
-    const dateRdvEnd = searchParams.get('dateRdvEnd')
+    const dateRdvStart = searchParams.get('dateRdvStart') || searchParams.get('date_debut')
+    const dateRdvEnd = searchParams.get('dateRdvEnd') || searchParams.get('date_fin')
     const client = searchParams.get('client')
     const grille = searchParams.get('grille')
     const sansArticles = searchParams.get('sansArticles')
     const typeIntervention = searchParams.get('typeIntervention')
     const technicien = searchParams.get('technicien')
+    const nomTechnicien = searchParams.get('nom_technicien')
+    const prenomTechnicien = searchParams.get('prenom_technicien')
     
     let whereClauses: string[] = []
     let params: any[] = []
@@ -268,6 +270,13 @@ export async function GET(request: NextRequest) {
       }
     }
     
+    // Filtre direct par nom et prénom du technicien
+    if (nomTechnicien && prenomTechnicien) {
+      whereClauses.push(`nom_technicien = $${paramIndex} AND prenom_technicien = $${paramIndex + 1}`)
+      params.push(nomTechnicien, prenomTechnicien)
+      paramIndex += 2
+    }
+    
     // Filtre par statut
     if (statut && statut !== 'all') {
       whereClauses.push(`UPPER(statut) = $${paramIndex}`)
@@ -284,14 +293,14 @@ export async function GET(request: NextRequest) {
     
     // Filtre par date RDV - Début
     if (dateRdvStart) {
-      whereClauses.push(`date_rdv >= $${paramIndex}`)
+      whereClauses.push(`date_rdv IS NOT NULL AND date_rdv != '' AND date_rdv != 'nan' AND date_rdv ~ '^[0-9]' AND date_rdv::date >= $${paramIndex}::date`)
       params.push(dateRdvStart)
       paramIndex++
     }
     
     // Filtre par date RDV - Fin
     if (dateRdvEnd) {
-      whereClauses.push(`date_rdv <= $${paramIndex}`)
+      whereClauses.push(`date_rdv IS NOT NULL AND date_rdv != '' AND date_rdv != 'nan' AND date_rdv ~ '^[0-9]' AND date_rdv::date <= $${paramIndex}::date`)
       params.push(dateRdvEnd)
       paramIndex++
     }

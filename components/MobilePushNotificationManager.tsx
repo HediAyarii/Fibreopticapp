@@ -251,12 +251,6 @@ export function MobilePushNotificationManager({ employeeId = 0 }: MobilePushNoti
           </Button>
         </div>
       )}
-
-      <div className="text-xs text-muted-foreground space-y-1">
-        <p>• Notifications sur l'écran de verrouillage</p>
-        <p>• Fonctionne même quand l'app est fermée</p>
-        <p>• Compatible avec tous les navigateurs mobiles</p>
-      </div>
     </div>
   )
 }

@@ -86,18 +86,12 @@ export async function GET(request: NextRequest) {
               WHERE i2.nom_technicien = i.nom_technicien 
               AND i2.prenom_technicien = i.prenom_technicien
               AND i2.grille IN ('AXECOM MANCHE', 'B2B : AXECOM MANCHE')
-              AND (
-                (i2.cloture_tech IS NOT NULL AND i2.cloture_tech != '' AND i2.cloture_tech != 'nan' AND 
-                 i2.cloture_tech ~ '^[0-9]' AND 
-                 (i2.cloture_tech::date >= $1::date AND i2.cloture_tech::date <= $2::date)) OR
-                (i2.cloture_hotline IS NOT NULL AND i2.cloture_hotline != '' AND i2.cloture_hotline != 'nan' AND 
-                 i2.cloture_hotline ~ '^[0-9]' AND 
-                 (i2.cloture_hotline::date >= $1::date AND i2.cloture_hotline::date <= $2::date)) OR
-                (i2.cloture_tech IS NULL AND i2.cloture_hotline IS NULL AND 
-                 i2.date_rdv IS NOT NULL AND i2.date_rdv != '' AND i2.date_rdv != 'nan' AND 
-                 i2.date_rdv ~ '^[0-9]' AND 
-                 (i2.date_rdv::date >= $1::date AND i2.date_rdv::date <= $2::date))
-              )
+              AND i2.date_rdv IS NOT NULL 
+              AND i2.date_rdv != '' 
+              AND i2.date_rdv != 'nan'
+              AND i2.date_rdv ~ '^[0-9]'
+              AND i2.date_rdv::date >= $1::date 
+              AND i2.date_rdv::date <= $2::date
             ) THEN 'AXECOM'
             ELSE NULL
           END as axecom_label,
@@ -109,18 +103,12 @@ export async function GET(request: NextRequest) {
               AND i3.grille NOT IN ('AXECOM MANCHE', 'B2B : AXECOM MANCHE')
               AND i3.grille IS NOT NULL
               AND i3.grille != ''
-              AND (
-                (i3.cloture_tech IS NOT NULL AND i3.cloture_tech != '' AND i3.cloture_tech != 'nan' AND 
-                 i3.cloture_tech ~ '^[0-9]' AND 
-                 (i3.cloture_tech::date >= $1::date AND i3.cloture_tech::date <= $2::date)) OR
-                (i3.cloture_hotline IS NOT NULL AND i3.cloture_hotline != '' AND i3.cloture_hotline != 'nan' AND 
-                 i3.cloture_hotline ~ '^[0-9]' AND 
-                 (i3.cloture_hotline::date >= $1::date AND i3.cloture_hotline::date <= $2::date)) OR
-                (i3.cloture_tech IS NULL AND i3.cloture_hotline IS NULL AND 
-                 i3.date_rdv IS NOT NULL AND i3.date_rdv != '' AND i3.date_rdv != 'nan' AND 
-                 i3.date_rdv ~ '^[0-9]' AND 
-                 (i3.date_rdv::date >= $1::date AND i3.date_rdv::date <= $2::date))
-              )
+              AND i3.date_rdv IS NOT NULL 
+              AND i3.date_rdv != '' 
+              AND i3.date_rdv != 'nan'
+              AND i3.date_rdv ~ '^[0-9]'
+              AND i3.date_rdv::date >= $1::date 
+              AND i3.date_rdv::date <= $2::date
             ) THEN 'ERT'
             ELSE NULL
           END as ert_label
@@ -130,18 +118,12 @@ export async function GET(request: NextRequest) {
           AND i.articles != ''
           ${employeFilter}
           ${grilleInterventionFilter}
-          AND (
-            (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
-             i.cloture_tech ~ '^[0-9]' AND 
-             (i.cloture_tech::date >= $1::date AND i.cloture_tech::date <= $2::date)) OR
-            (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
-             i.cloture_hotline ~ '^[0-9]' AND 
-             (i.cloture_hotline::date >= $1::date AND i.cloture_hotline::date <= $2::date)) OR
-            (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
-             i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
-             i.date_rdv ~ '^[0-9]' AND 
-             (i.date_rdv::date >= $1::date AND i.date_rdv::date <= $2::date))
-          )
+          AND i.date_rdv IS NOT NULL 
+          AND i.date_rdv != '' 
+          AND i.date_rdv != 'nan'
+          AND i.date_rdv ~ '^[0-9]'
+          AND i.date_rdv::date >= $1::date 
+          AND i.date_rdv::date <= $2::date
         GROUP BY i.nom_technicien, i.prenom_technicien
       ),
       interventions_data AS (
@@ -222,21 +204,12 @@ export async function GET(request: NextRequest) {
           AND i.articles != ''
           ${employeFilter}
           ${grilleInterventionFilter}
-          AND (
-            -- Filtrage par cloture_tech (avec vérification des valeurs valides)
-            (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
-             i.cloture_tech ~ '^[0-9]' AND 
-             (i.cloture_tech::date >= $1::date AND i.cloture_tech::date <= $2::date)) OR
-            -- Filtrage par cloture_hotline (avec vérification des valeurs valides)
-            (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
-             i.cloture_hotline ~ '^[0-9]' AND 
-             (i.cloture_hotline::date >= $1::date AND i.cloture_hotline::date <= $2::date)) OR
-            -- Filtrage par date_rdv si les autres sont NULL (avec vérification des valeurs valides)
-            (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
-             i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
-             i.date_rdv ~ '^[0-9]' AND 
-             (i.date_rdv::date >= $1::date AND i.date_rdv::date <= $2::date))
-          )
+          AND i.date_rdv IS NOT NULL 
+          AND i.date_rdv != '' 
+          AND i.date_rdv != 'nan'
+          AND i.date_rdv ~ '^[0-9]'
+          AND i.date_rdv::date >= $1::date 
+          AND i.date_rdv::date <= $2::date
         GROUP BY i.nom_technicien, i.prenom_technicien
       ),
       carburant_data AS (

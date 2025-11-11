@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "node server.js",
+    "dev:next": "next dev",
     "dev:mobile": "next dev -H 0.0.0.0",
     "dev:socket": "node server.js",
     "lint": "next lint",
-    "start": "next start"
+    "start": "node server.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
