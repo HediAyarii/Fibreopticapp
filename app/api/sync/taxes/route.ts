@@ -5,9 +5,6 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔄 Synchronisation automatique des taxes...')
     
-    // Désactiver temporairement les triggers
-    await query('ALTER TABLE cout_par_salaire DISABLE TRIGGER ALL')
-    
     // Récupérer tous les employés avec des charges
     const employees = await query(`
       SELECT DISTINCT nom, prenom, mois, annee, id, taxe, impot, charge
@@ -97,9 +94,6 @@ export async function POST(request: NextRequest) {
         console.error(`❌ Erreur pour ${employee.nom} ${employee.prenom}:`, error)
       }
     }
-    
-    // Réactiver les triggers
-    await query('ALTER TABLE cout_par_salaire ENABLE TRIGGER ALL')
     
     console.log(`🎯 Synchronisation des taxes terminée !`)
     console.log(`📊 Résultats: ${totalUpdated} mis à jour, ${totalSkipped} déjà à jour`)
