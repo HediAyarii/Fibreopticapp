@@ -2813,7 +2813,7 @@ La page va se recharger automatiquement...`)
                     </Button>
                 )}
 
-                {hasPermission('claims') && (
+                {hasPermission('reclamations-techniques') && (
                   <Button
                   variant="ghost"
                   className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
