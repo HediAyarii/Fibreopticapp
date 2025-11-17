@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       niveauAcces: account.niveau_acces
     })
       .setProtectedHeader({ alg: 'HS256' })
-      .setExpirationTime('24h')
+      .setExpirationTime('10y') // Session valide 10 ans (ne expire jamais sauf déconnexion)
       .sign(secret)
 
     // Créer la réponse avec le cookie HTTPOnly
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 24 * 60 * 60 // 24 heures
+      maxAge: 10 * 365 * 24 * 60 * 60 // 10 ans (ne expire jamais sauf déconnexion manuelle)
     })
 
     return response
