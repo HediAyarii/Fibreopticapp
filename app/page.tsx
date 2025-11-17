@@ -38,6 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdminDocumentsManager } from "@/components/AdminDocumentsManager"
+import { HistoriqueManager } from "@/components/HistoriqueManager"
 import { MaterialForm, EmployeeForm } from "@/components/Forms"
 import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
 import { AffectationTest } from "@/components/AffectationTest"
@@ -1498,39 +1499,133 @@ La page va se recharger automatiquement...`)
     try {
       let apiEndpoint = ''
       let successMessage = ''
+      let tableName = ''
+      let section = ''
 
       switch (entityType) {
         case 'material':
           apiEndpoint = `/api/materiel?id=${id}`
           successMessage = 'Matériel supprimé avec succès'
+          tableName = 'materiel'
+          section = 'Matériel'
           break
         case 'affectation':
           apiEndpoint = `/api/affectations-materiel?id=${id}`
           successMessage = 'Affectation supprimée avec succès'
+          tableName = 'affectations_materiel'
+          section = 'Matériel'
           break
         case 'penalty':
           apiEndpoint = `/api/penalites?id=${id}`
           successMessage = 'Pénalité supprimée avec succès'
+          tableName = 'penalites'
+          section = 'Pénalités'
           break
         case 'claim':
           apiEndpoint = `/api/reclamations?id=${id}`
           successMessage = 'Réclamation supprimée avec succès'
+          tableName = 'reclamations'
+          section = 'Réclamations'
           break
         case 'employee':
           apiEndpoint = `/api/employes?id=${id}`
           successMessage = 'Employé supprimé avec succès'
+          tableName = 'employes'
+          section = 'Employés'
           break
         default:
           throw new Error('Type d\'entité non supporté')
       }
 
+      // Récupérer les données de l'élément avant suppression pour l'historique
+      let oldValues: any = null
+      try {
+        if (entityType === 'material') {
+          const item = materials.find(m => m.id === id)
+          oldValues = item ? {
+            designation: item.designation,
+            reference: item.reference,
+            stock_initial: item.stock_initial,
+            stock_actuel: item.stock_actuel,
+            prix_unitaire: item.prix_unitaire,
+            depot: item.depot
+          } : null
+        } else if (entityType === 'affectation') {
+          const item = affectations.find(a => a.id === id)
+          oldValues = item ? {
+            employe_nom: item.employe_nom,
+            materiel_designation: item.materiel_designation,
+            quantite: item.quantite,
+            date_affectation: item.date_affectation
+          } : null
+        } else if (entityType === 'penalty') {
+          const item = penalties.find(p => p.id === id)
+          oldValues = item ? {
+            numero_penalite: item.numero_penalite,
+            employe_nom: item.employe_nom,
+            montant: item.montant,
+            motif: item.motif
+          } : null
+        } else if (entityType === 'claim') {
+          const item = claims.find(c => c.id === id)
+          oldValues = item ? {
+            numero_reclamation: item.numero_reclamation,
+            nom_client: item.nom_client,
+            type_reclamation: item.type_reclamation,
+            statut: item.statut
+          } : null
+        } else if (entityType === 'employee') {
+          const item = employees.find(e => e.id === id)
+          oldValues = item ? {
+            nom: item.nom,
+            prenom: item.prenom,
+            matricule: item.matricule,
+            role: item.role
+          } : null
+        }
+      } catch (err) {
+        console.error('Erreur récupération données pour historique:', err)
+      }
+
       const response = await fetch(apiEndpoint, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          _user: {
+            email: user?.email || 'Inconnu',
+            name: user?.name || 'Utilisateur',
+          }
+        })
       })
 
       if (!response.ok) {
         const error = await response.json()
         throw new Error(error.error || 'Erreur lors de la suppression')
+      }
+
+      // Enregistrer dans l'historique
+      try {
+        await fetch('/api/historiques', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_name: user?.email || 'admin@fibertech.com',
+            action: 'DELETE',
+            table_name: tableName,
+            record_id: id,
+            section: section,
+            description: `Suppression de ${entityName} ${oldValues ? `- ${JSON.stringify(oldValues).substring(0, 100)}` : ''}`,
+            old_values: oldValues,
+            user_agent: typeof window !== 'undefined' ? window.navigator.userAgent : 'unknown'
+          })
+        })
+      } catch (histErr) {
+        console.error('Erreur enregistrement historique:', histErr)
+        // Ne pas bloquer la suppression si l'historique échoue
       }
 
       await loadAllCRUDData()
@@ -1798,7 +1893,9 @@ La page va se recharger automatiquement...`)
     try {
       const url = editingItem ? "/api/materiel" : "/api/materiel"
       const method = editingItem ? "PUT" : "POST"
-      const body = editingItem ? { id: editingItem.id, ...materialData } : materialData
+      const body = editingItem 
+        ? { id: editingItem.id, ...materialData, _user: { email: user?.email, name: user?.name } } 
+        : { ...materialData, _user: { email: user?.email, name: user?.name } }
 
       const response = await fetch(url, {
         method,
@@ -2954,6 +3051,21 @@ La page va se recharger automatiquement...`)
                     >
                   <UserPlus className="w-5 h-5" />
                   Compte Admin
+                    </Button>
+                )}
+
+                {isAdmin() && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "historique"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("historique")}
+                    >
+                  <History className="w-5 h-5" />
+                  Historique
                     </Button>
                 )}
               </div>
@@ -5842,6 +5954,19 @@ La page va se recharger automatiquement...`)
         {activeTab === "compte-admin" && (
           <div className="space-y-6">
             <UserManagement />
+          </div>
+        )}
+
+        {/* Section Historique */}
+        {activeTab === "historique" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-3xl font-bold">Historique des Actions</h2>
+                <p className="text-muted-foreground">Traçabilité de toutes les opérations effectuées</p>
+              </div>
+            </div>
+            <HistoriqueManager />
           </div>
         )}
 

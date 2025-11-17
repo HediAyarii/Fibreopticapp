@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json()
     const {
       numero_serie,
       nom_equipement,
@@ -71,8 +72,9 @@ export async function POST(request: NextRequest) {
       notes_maintenance,
       accessoires_inclus,
       certificats_conformite,
-      photos
-    } = await request.json()
+      photos,
+      _user
+    } = body
 
     // Validation des champs obligatoires
     if (!nom_equipement || nom_equipement.trim() === '') {
@@ -148,8 +150,9 @@ export async function POST(request: NextRequest) {
 
     const result = await query(insertQuery, values)
     
-    // Enregistrer dans l'historique
+    // Enregistrer dans l'historique avec l'email de l'utilisateur
     await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
       action: 'CREATE',
       tableName: 'materiel',
       recordId: result.rows[0].id,
@@ -172,7 +175,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, ...updateData } = await request.json()
+    const body = await request.json()
+    const { id, _user, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID matériel requis" }, { status: 400 })
@@ -237,13 +241,51 @@ export async function PUT(request: NextRequest) {
 
     const result = await query(updateQuery, values)
     
-    // Enregistrer dans l'historique
+    // Générer une description détaillée des modifications
+    const changes: string[] = []
+    const newData = result.rows[0]
+    
+    // Comparer les champs importants
+    if (oldData.nom_equipement !== newData.nom_equipement) {
+      changes.push(`Nom: "${oldData.nom_equipement}" → "${newData.nom_equipement}"`)
+    }
+    if (oldData.type_materiel !== newData.type_materiel) {
+      changes.push(`Type: "${oldData.type_materiel}" → "${newData.type_materiel}"`)
+    }
+    if (oldData.quantite !== newData.quantite) {
+      changes.push(`Quantité: ${oldData.quantite} → ${newData.quantite}`)
+    }
+    if (oldData.prix_unitaire !== newData.prix_unitaire) {
+      changes.push(`Prix unitaire: ${oldData.prix_unitaire}€ → ${newData.prix_unitaire}€`)
+    }
+    if (oldData.depot !== newData.depot) {
+      changes.push(`Dépôt: ${oldData.depot} → ${newData.depot}`)
+    }
+    if (oldData.statut !== newData.statut) {
+      changes.push(`Statut: ${oldData.statut} → ${newData.statut}`)
+    }
+    if (oldData.marque !== newData.marque) {
+      changes.push(`Marque: "${oldData.marque}" → "${newData.marque}"`)
+    }
+    if (oldData.modele !== newData.modele) {
+      changes.push(`Modèle: "${oldData.modele}" → "${newData.modele}"`)
+    }
+    if (oldData.notes_maintenance !== newData.notes_maintenance) {
+      changes.push(`Notes maintenance modifiées`)
+    }
+    
+    const detailedDescription = changes.length > 0 
+      ? `${newData.nom_equipement} - ${changes.join(', ')}`
+      : `${newData.nom_equipement} - ${newData.type_materiel} (aucune modification détectable)`
+    
+    // Enregistrer dans l'historique avec l'email de l'utilisateur
     await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
       action: 'UPDATE',
       tableName: 'materiel',
       recordId: id,
       section: 'Matériel',
-      description: generateDescription('UPDATE', 'Matériel', `${result.rows[0].nom_equipement} - ${result.rows[0].type_materiel}`),
+      description: `Modification Matériel - ${detailedDescription}`,
       oldValues: oldData,
       newValues: result.rows[0],
       ipAddress: getClientIP(request),
@@ -267,6 +309,15 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: "ID matériel requis" }, { status: 400 })
+    }
+
+    // Récupérer les informations utilisateur du body
+    let userData: any = null
+    try {
+      const body = await request.json()
+      userData = body._user
+    } catch (e) {
+      // Body vide ou invalide, continuer sans userData
     }
 
     // Commencer une transaction pour gérer les contraintes de clé étrangère
@@ -298,8 +349,9 @@ export async function DELETE(request: NextRequest) {
       // 4. Supprimer le matériel
       const result = await query('DELETE FROM materiel WHERE id = $1 RETURNING *', [id])
 
-      // 5. Enregistrer dans l'historique
+      // 5. Enregistrer dans l'historique avec l'email de l'utilisateur
       await logHistorique({
+        userName: userData?.email || userData?.name || 'Utilisateur inconnu',
         action: 'DELETE',
         tableName: 'materiel',
         recordId: parseInt(id),
