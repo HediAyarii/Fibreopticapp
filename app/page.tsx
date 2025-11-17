@@ -2696,23 +2696,6 @@ La page va se recharger automatiquement...`)
                 Se connecter
               </Button>
             </form>
-            <div className="mt-8 p-4 glass-card border border-white/20 rounded-xl">
-              <p className="font-semibold text-sm mb-3 text-center">Comptes de test :</p>
-              <div className="space-y-2 text-xs text-muted-foreground">
-                <div className="flex justify-between">
-                  <span>Super Admin:</span>
-                  <span>admin@fibertech.com / admin123</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Chef Équipe:</span>
-                  <span>chef@fibertech.com / chef123</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Conduite Activité:</span>
-                  <span>activite@fibertech.com / activite123</span>
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -5716,7 +5699,7 @@ La page va se recharger automatiquement...`)
                       </div>
                    </CardHeader>
                    <CardContent>
-                  <AffectationTest />
+                    {/* AffectationTest component removed */}
                     </CardContent>
                   </Card>
 
