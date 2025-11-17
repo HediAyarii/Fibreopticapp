@@ -188,11 +188,11 @@ export function NotificationCenter({ employeeId }: NotificationCenterProps) {
                           )}
                           
                           {notification.type === 'penalite' && (
-                            <div className="text-xs space-y-1">
-                              <p><strong>Montant:</strong> {notification.data.montant}€</p>
-                              <p><strong>Type:</strong> {notification.data.type_penalite}</p>
-                              {notification.data.intervention_num && (
-                                <p><strong>Intervention:</strong> {notification.data.intervention_num}</p>
+                            <div className="text-xs space-y-1 bg-red-50/50 p-2 rounded">
+                              <p><strong>Montant:</strong> <span className="text-red-600 font-bold">{notification.data.montant}€</span></p>
+                              <p><strong>Motif:</strong> {notification.data.motif || 'Non spécifié'}</p>
+                              {notification.data.numero_penalite && (
+                                <p><strong>N° Pénalité:</strong> {notification.data.numero_penalite}</p>
                               )}
                             </div>
                           )}
