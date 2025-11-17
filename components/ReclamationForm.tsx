@@ -18,21 +18,35 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
   onSave: (data: any) => void, 
   onCancel: () => void 
 }) {
+  const formatDateForInput = (date: any) => {
+    if (!date) return ''
+    try {
+      const d = new Date(date)
+      if (isNaN(d.getTime())) return ''
+      return d.toISOString().split('T')[0]
+    } catch {
+      return ''
+    }
+  }
+
   const [formData, setFormData] = useState({
     numero_reclamation: reclamation?.numero_reclamation || '',
-    client: reclamation?.client || '',
+    nom_client: reclamation?.nom_client || reclamation?.client || '',
     type_reclamation: reclamation?.type_reclamation || '',
-    description: reclamation?.description || '',
-    employe_responsable: reclamation?.employe_responsable || '',
-    intervention_concernee: reclamation?.intervention_concernee || '',
-    priorite: reclamation?.priorite || 'moyenne',
+    description_probleme: reclamation?.description_probleme || reclamation?.description || '',
+    employe_id: reclamation?.employe_id || reclamation?.employe_responsable || '',
+    intervention_id: reclamation?.intervention_id || reclamation?.intervention_concernee || '',
+    priorite: reclamation?.priorite || 'normale',
     statut: reclamation?.statut || 'ouverte',
-    date_creation: reclamation?.date_creation || new Date().toISOString().split('T')[0],
+    date_reclamation: formatDateForInput(reclamation?.date_reclamation || reclamation?.date_creation) || new Date().toISOString().split('T')[0],
+    telephone_client: reclamation?.telephone_client || '',
+    email_client: reclamation?.email_client || '',
+    adresse_client: reclamation?.adresse_client || '',
+    description_solution: reclamation?.description_solution || reclamation?.resolution || '',
+    date_resolution: formatDateForInput(reclamation?.date_resolution) || '',
+    commentaires_internes: reclamation?.commentaires_internes || reclamation?.commentaires || '',
     deadline_calculated: reclamation?.deadline_calculated || '',
-    deadline: reclamation?.deadline || '',
-    resolution: reclamation?.resolution || '',
-    date_resolution: reclamation?.date_resolution || '',
-    commentaires: reclamation?.commentaires || ''
+    deadline: reclamation?.deadline || ''
   })
 
   const [selectedIntervention, setSelectedIntervention] = useState<any>(null)
@@ -55,9 +69,9 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
       let deadlineDate = new Date(today)
       
       if (value === 'client') {
-        deadlineDate.setDate(today.getDate() + 7) // 7 days for client
+        deadlineDate.setDate(today.getDate() + 5) // 5 days for client
       } else if (value === 'controleur') {
-        deadlineDate.setDate(today.getDate() + 14) // 14 days for controleur
+        deadlineDate.setDate(today.getDate() + 7) // 7 days for controleur
       }
       
       newFormData.deadline_calculated = deadlineDate.toISOString().split('T')[0]
@@ -71,8 +85,8 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
     setSelectedIntervention(intervention)
     setFormData(prev => ({
       ...prev,
-      intervention_concernee: intervention.id.toString(),
-      client: intervention.client // Auto-fill client name
+      intervention_id: intervention.id.toString(),
+      nom_client: intervention.client // Auto-fill client name
     }))
     setShowDropdown(false)
   }
@@ -106,7 +120,7 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
   }
 
   const handleInterventionInputChange = (value: string) => {
-    setFormData(prev => ({ ...prev, intervention_concernee: value }))
+    setFormData(prev => ({ ...prev, intervention_id: value }))
     
     // Si on efface le champ, réinitialiser la sélection
     if (!value) {
@@ -170,8 +184,8 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
                 <SelectValue placeholder="Sélectionnez un type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="client">Client (7 jours)</SelectItem>
-                <SelectItem value="controleur">Contrôleur (14 jours)</SelectItem>
+                <SelectItem value="client">Client (5 jours)</SelectItem>
+                <SelectItem value="controleur">Contrôleur (7 jours)</SelectItem>
                 <SelectItem value="technique">Technique</SelectItem>
                 <SelectItem value="administrative">Administrative</SelectItem>
                 <SelectItem value="autre">Autre</SelectItem>
@@ -181,11 +195,11 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
         </div>
 
         <div>
-          <Label htmlFor="description">Description *</Label>
+          <Label htmlFor="description_probleme">Description du Problème *</Label>
           <Textarea
-            id="description"
-            value={formData.description}
-            onChange={(e) => handleChange('description', e.target.value)}
+            id="description_probleme"
+            value={formData.description_probleme}
+            onChange={(e) => handleChange('description_probleme', e.target.value)}
             placeholder="Décrivez la réclamation en détail..."
             rows={4}
             required
@@ -193,11 +207,11 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
         </div>
 
         <div>
-          <Label htmlFor="intervention_concernee">Recherche par Numéro d'Intervention</Label>
+          <Label htmlFor="intervention_id">Recherche par Numéro d'Intervention</Label>
           <div className="space-y-2 relative" ref={dropdownRef}>
             <div className="relative">
               <Input
-                value={formData.intervention_concernee}
+                value={formData.intervention_id}
                 onChange={(e) => handleInterventionInputChange(e.target.value)}
                 placeholder="Entrez le numéro d'intervention..."
                 className="pr-8"
@@ -241,10 +255,10 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
             )}
             
             {/* Message si aucune intervention trouvée */}
-            {showDropdown && searchResults.length === 0 && !isSearching && formData.intervention_concernee.length >= 2 && (
+            {showDropdown && searchResults.length === 0 && !isSearching && formData.intervention_id && formData.intervention_id.length >= 2 && (
               <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg p-3">
                 <div className="text-sm text-gray-500 text-center">
-                  Aucune intervention trouvée pour "{formData.intervention_concernee}"
+                  Aucune intervention trouvée pour "{formData.intervention_id}"
                 </div>
               </div>
             )}
@@ -268,8 +282,8 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="employe_responsable">Employé Responsable</Label>
-            <Select value={formData.employe_responsable} onValueChange={(value) => handleChange('employe_responsable', value)}>
+            <Label htmlFor="employe_id">Employé Responsable</Label>
+            <Select value={formData.employe_id?.toString()} onValueChange={(value) => handleChange('employe_id', value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Sélectionnez un employé" />
               </SelectTrigger>
@@ -283,11 +297,11 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
             </Select>
           </div>
           <div>
-            <Label htmlFor="client">Client *</Label>
+            <Label htmlFor="nom_client">Client *</Label>
             <Input
-              id="client"
-              value={formData.client}
-              onChange={(e) => handleChange('client', e.target.value)}
+              id="nom_client"
+              value={formData.nom_client}
+              onChange={(e) => handleChange('nom_client', e.target.value)}
               placeholder="Nom du client"
               required
             />
@@ -303,7 +317,7 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="basse">Basse</SelectItem>
-                <SelectItem value="moyenne">Moyenne</SelectItem>
+                <SelectItem value="normale">Normale</SelectItem>
                 <SelectItem value="haute">Haute</SelectItem>
                 <SelectItem value="critique">Critique</SelectItem>
               </SelectContent>
@@ -333,18 +347,18 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
                 Échéance: {formData.deadline_calculated}
               </div>
               <div className="text-xs text-blue-600">
-                {formData.type_reclamation === 'client' ? '7 jours' : '14 jours'} pour traitement
+                {formData.type_reclamation === 'client' ? '5 jours' : '7 jours'} pour traitement
               </div>
             </div>
           </div>
         )}
 
         <div>
-          <Label htmlFor="resolution">Résolution</Label>
+          <Label htmlFor="description_solution">Résolution</Label>
           <Textarea
-            id="resolution"
-            value={formData.resolution}
-            onChange={(e) => handleChange('resolution', e.target.value)}
+            id="description_solution"
+            value={formData.description_solution}
+            onChange={(e) => handleChange('description_solution', e.target.value)}
             placeholder="Décrivez la résolution de la réclamation..."
             rows={3}
           />
@@ -352,12 +366,12 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="date_creation">Date de Création *</Label>
+            <Label htmlFor="date_reclamation">Date de Création *</Label>
             <Input
-              id="date_creation"
+              id="date_reclamation"
               type="date"
-              value={formData.date_creation}
-              onChange={(e) => handleChange('date_creation', e.target.value)}
+              value={formData.date_reclamation}
+              onChange={(e) => handleChange('date_reclamation', e.target.value)}
               required
             />
           </div>
@@ -373,11 +387,11 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
         </div>
 
         <div>
-          <Label htmlFor="commentaires">Commentaires</Label>
+          <Label htmlFor="commentaires_internes">Commentaires</Label>
           <Textarea
-            id="commentaires"
-            value={formData.commentaires}
-            onChange={(e) => handleChange('commentaires', e.target.value)}
+            id="commentaires_internes"
+            value={formData.commentaires_internes}
+            onChange={(e) => handleChange('commentaires_internes', e.target.value)}
             placeholder="Commentaires supplémentaires..."
             rows={2}
           />

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 import { sendPenaliteNotification } from "@/lib/socketio"
+import { logHistorique, getClientIP, getUserAgent, generateDescription } from "@/lib/historique"
 import webpush from 'web-push'
 
 // Configuration VAPID (clés fournies par l'utilisateur)
@@ -283,6 +284,18 @@ export async function POST(request: NextRequest) {
 
     const result = await query(insertQuery, values)
     
+    // Enregistrer dans l'historique
+    await logHistorique({
+      action: 'CREATE',
+      tableName: 'penalites',
+      recordId: result.rows[0].id,
+      section: 'Pénalités',
+      description: generateDescription('CREATE', 'Pénalités', `Pénalité ${numeroPenalite} - Montant: ${cleanedData.montant}€`),
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
+    
     // Mettre à jour le total des pénalités de l'employé
     await query(`
       UPDATE employes 
@@ -379,8 +392,35 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "ID pénalité requis" }, { status: 400 })
     }
 
+    console.log('📝 Données reçues pour mise à jour:', updateData)
+
+    // Supprimer les champs qui ne doivent pas être dans la base de données
+    delete updateData.num_inter
+    delete updateData.prenom_employe
+    delete updateData.nom_employe
+    delete updateData.auto_calculate
+    delete updateData.intervention_id
+    delete updateData.date_payement
+
+    // Nettoyer TOUS les champs : supprimer ceux qui sont vides ou undefined
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === '' || updateData[key] === undefined || updateData[key] === null) {
+        delete updateData[key]
+      }
+    })
+
+    // Convertir les champs numériques string en number
+    const integerFields = ['employe_id', 'montant']
+    integerFields.forEach(field => {
+      if (updateData[field] !== undefined && typeof updateData[field] === 'string' && !isNaN(Number(updateData[field]))) {
+        updateData[field] = Number(updateData[field])
+      }
+    })
+
+    console.log('✅ Données après nettoyage:', updateData)
+
     // Filtrer les champs à mettre à jour
-    const fields = Object.keys(updateData).filter(key => updateData[key] !== undefined)
+    const fields = Object.keys(updateData)
     
     if (fields.length === 0) {
       return NextResponse.json({ error: "Aucune donnée à mettre à jour" }, { status: 400 })
@@ -389,6 +429,10 @@ export async function PUT(request: NextRequest) {
     // Construire la requête SQL
     const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ')
     const values = [id, ...fields.map(field => updateData[field])]
+
+    // Récupérer les anciennes valeurs avant la mise à jour
+    const oldDataResult = await query('SELECT * FROM penalites WHERE id = $1', [id])
+    const oldData = oldDataResult.rows[0]
 
     const updateQuery = `
       UPDATE penalites 
@@ -402,6 +446,19 @@ export async function PUT(request: NextRequest) {
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "Pénalité non trouvée" }, { status: 404 })
     }
+
+    // Enregistrer dans l'historique
+    await logHistorique({
+      action: 'UPDATE',
+      tableName: 'penalites',
+      recordId: id,
+      section: 'Pénalités',
+      description: generateDescription('UPDATE', 'Pénalités', `Pénalité ${result.rows[0].numero_penalite}`),
+      oldValues: oldData,
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
 
     // Mettre à jour le total des pénalités de l'employé si le montant a changé
     if (updateData.montant !== undefined) {
@@ -436,15 +493,28 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "ID pénalité requis" }, { status: 400 })
     }
 
-    // Récupérer l'employé_id avant suppression
-    const employeResult = await query('SELECT employe_id FROM penalites WHERE id = $1', [id])
+    // Récupérer l'employé_id et toutes les données avant suppression
+    const employeResult = await query('SELECT * FROM penalites WHERE id = $1', [id])
     if (employeResult.rows.length === 0) {
       return NextResponse.json({ error: "Pénalité non trouvée" }, { status: 404 })
     }
 
     const employeId = employeResult.rows[0].employe_id
+    const deletedData = employeResult.rows[0]
 
     const result = await query('DELETE FROM penalites WHERE id = $1 RETURNING *', [id])
+    
+    // Enregistrer dans l'historique
+    await logHistorique({
+      action: 'DELETE',
+      tableName: 'penalites',
+      recordId: parseInt(id),
+      section: 'Pénalités',
+      description: generateDescription('DELETE', 'Pénalités', `Pénalité ${deletedData.numero_penalite}`),
+      oldValues: deletedData,
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
     
     // Mettre à jour le total des pénalités de l'employé
     await query(`

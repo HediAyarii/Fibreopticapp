@@ -1,6 +1,7 @@
-"use client"
+﻿"use client"
 
 import React from "react"
+import dynamic from "next/dynamic"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -58,6 +59,17 @@ import EmployeeSyncManager from "@/components/EmployeeSyncManager"
 import UserManagement from "@/components/UserManagement"
 import { useUserPermissions } from "@/hooks/useUserPermissions"
 import { useSmartRealtime } from "@/hooks/useSmartRealtime"
+
+// Import dynamique sans SSR pour éviter les erreurs d'hydratation
+const RaccByTypeStatistics = dynamic(() => import("@/components/RaccByTypeStatistics"), { 
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center p-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div></div>
+})
+
+const ParcoursStatistics = dynamic(() => import("@/components/ParcoursStatistics"), { 
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center p-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div></div>
+})
 // import { useEmployeeUpdates } from "@/hooks/useEmployeeUpdates" // Désactivé pour éviter les erreurs de build
 import {
   Building2,
@@ -285,6 +297,7 @@ export default function EmployeeTracker() {
   const [selectedClaim, setSelectedClaim] = useState<any>(null)
   const [showImageModal, setShowImageModal] = useState(false)
   const [selectedImage, setSelectedImage] = useState<string>('')
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
   // Transfer material states
   const [showTransferModal, setShowTransferModal] = useState(false)
@@ -293,6 +306,7 @@ export default function EmployeeTracker() {
   const [transferDepotDestination, setTransferDepotDestination] = useState<'AXECOM' | 'ERT'>('AXECOM')
   const [transferMotif, setTransferMotif] = useState<string>('')
   const [transferComments, setTransferComments] = useState<string>('')
+  const [stockSortOrder, setStockSortOrder] = useState<'asc' | 'desc'>('desc')
   const [transferring, setTransferring] = useState(false)
 
   // Interventions filtering states - Initialisé avec le mois précédent
@@ -2568,6 +2582,23 @@ La page va se recharger automatiquement...`)
                 Se connecter
               </Button>
             </form>
+            <div className="mt-8 p-4 glass-card border border-white/20 rounded-xl">
+              <p className="font-semibold text-sm mb-3 text-center">Comptes de test :</p>
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>Super Admin:</span>
+                  <span>admin@fibertech.com / admin123</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Chef Équipe:</span>
+                  <span>chef@fibertech.com / chef123</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Conduite Activité:</span>
+                  <span>activite@fibertech.com / activite123</span>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -3075,14 +3106,46 @@ La page va se recharger automatiquement...`)
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5 text-red-500" />
-                    Statistiques des Interventions Échouées
+                    Clôtures et Échecs Terminés
                   </CardTitle>
                   <CardDescription>
-                    Analyse des interventions échouées et leurs motifs par technicien
+                    Analyse des interventions terminées (clôtures et échecs) par technicien
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <FailureStatistics />
+                </CardContent>
+              </Card>
+
+              {/* Statistiques RACC par Type de Logement */}
+              <Card className="glass-card border border-white/20 hover-lift">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-blue-500" />
+                    RACC par Type de Logement
+                  </CardTitle>
+                  <CardDescription>
+                    Répartition des raccordements clôturés par type (Pavillon/Immeuble) - AXECOM vs ERT OUEST
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <RaccByTypeStatistics />
+                </CardContent>
+              </Card>
+
+              {/* Statistiques par Type de Parcours */}
+              <Card className="glass-card border border-white/20 hover-lift">
+                {/* <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-purple-500" />
+                    Type de Parcours
+                  </CardTitle>
+                  <CardDescription>
+                    Analyse des interventions clôturées et échecs par type de parcours - AXECOM vs ERT OUEST
+                  </CardDescription>
+                </CardHeader> */}
+                <CardContent>
+                  <ParcoursStatistics />
                 </CardContent>
               </Card>
             </div>
@@ -5138,21 +5201,46 @@ La page va se recharger automatiquement...`)
                           <th className="text-left p-4 font-semibold">Type</th>
                                <th className="text-left p-4 font-semibold">Marque</th>
                                <th className="text-left p-4 font-semibold">Modèle</th>
-                               <th className="text-left p-4 font-semibold">Numéro Série</th>
+                               <th className="text-left p-4 font-semibold">Valeur Totale</th>
                                <th className="text-left p-4 font-semibold">Dépôt</th>
-                               <th className="text-left p-4 font-semibold">Stock</th>
+                               <th className="text-left p-4 font-semibold">
+                                 <button 
+                                   onClick={() => setStockSortOrder(stockSortOrder === 'asc' ? 'desc' : 'asc')}
+                                   className="flex items-center gap-2 hover:text-primary transition-colors"
+                                 >
+                                   Stock
+                                   {stockSortOrder === 'desc' ? (
+                                     <ChevronRight className="w-4 h-4 transform -rotate-90" />
+                                   ) : (
+                                     <ChevronRight className="w-4 h-4 transform rotate-90" />
+                                   )}
+                                 </button>
+                               </th>
                             <th className="text-left p-4 font-semibold">Statut</th>
                             <th className="text-left p-4 font-semibold">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                             {materials.slice(0, 50).map((material, index) => (
+                             {materials
+                               .sort((a, b) => {
+                                 const quantiteA = a.quantite || 0
+                                 const quantiteB = b.quantite || 0
+                                 return stockSortOrder === 'desc' 
+                                   ? quantiteB - quantiteA 
+                                   : quantiteA - quantiteB
+                               })
+                               .slice(0, 50)
+                               .map((material, index) => (
                                <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                  <td className="p-4 font-medium">{material.nom_equipement}</td>
                                  <td className="p-4">{material.type_equipement}</td>
                                  <td className="p-4">{material.marque}</td>
                                  <td className="p-4">{material.modele}</td>
-                                 <td className="p-4">{material.numero_serie}</td>
+                                 <td className="p-4">
+                                   <span className="font-semibold text-green-600">
+                                     {((material.quantite || 0) * (material.prix_unitaire || 0)).toFixed(2)} €
+                                   </span>
+                                 </td>
                                  <td className="p-4">{material.depot || 'AXECOM'}</td>
                                  <td className="p-4">
                                    <div className="flex items-center gap-2">
@@ -5626,7 +5714,9 @@ La page va se recharger automatiquement...`)
                          <p>Ajoutez des réclamations pour commencer à gérer les plaintes.</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
+                    <>
+                      {/* Version Desktop - Tableau */}
+                      <div className="hidden lg:block overflow-x-auto">
                       <table className="w-full border-collapse">
                         <thead>
                           <tr className="border-b border-white/10">
@@ -5755,7 +5845,9 @@ La page va se recharger automatiquement...`)
                                       size="sm"
                                       onClick={() => {
                                         setSelectedClaim(claim)
-                                        setShowPhotosModal(true)
+                                        setSelectedImage(claim.photos[0].url)
+                                        setSelectedImageIndex(0)
+                                        setShowImageModal(true)
                                       }}
                                       className="text-xs"
                                     >
@@ -5829,6 +5921,84 @@ La page va se recharger automatiquement...`)
                         </tbody>
                       </table>
                     </div>
+                    
+                    {/* Version Mobile - Cartes */}
+                    <div className="lg:hidden space-y-4">
+                      {claims.slice(0, 50).map((claim, index) => (
+                        <Card key={`mobile-${index}`} className="glass-card border border-white/10">
+                          <CardContent className="p-4 space-y-3">
+                            {/* En-tête */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge 
+                                variant={claim.statut === 'ouverte' ? 'default' : 'secondary'}
+                                className={
+                                  claim.statut === 'ouverte' ? 'bg-orange-500/20 text-orange-400' : 
+                                  claim.statut === 'en_cours' ? 'bg-blue-500/20 text-blue-400' :
+                                  claim.statut === 'resolue' ? 'bg-green-500/20 text-green-400' :
+                                  'bg-gray-500/20 text-gray-400'
+                                }
+                              >
+                                {claim.statut === 'en_cours' ? 'En cours' : 
+                                 claim.statut === 'resolue' ? 'Résolu' :
+                                 claim.statut || 'ouverte'}
+                              </Badge>
+                              <Badge 
+                                variant="outline"
+                                className={
+                                  claim.priorite === 'critique' ? 'bg-red-500/20 text-red-400' :
+                                  claim.priorite === 'haute' ? 'bg-orange-500/20 text-orange-400' :
+                                  'bg-blue-500/20 text-blue-400'
+                                }
+                              >
+                                {claim.priorite || 'normale'}
+                              </Badge>
+                            </div>
+                            
+                            <div>
+                              <h3 className="font-semibold text-sm mb-1">{claim.nom_client || 'Non spécifié'}</h3>
+                              <p className="text-xs text-muted-foreground line-clamp-2">{claim.description_probleme || 'Non spécifié'}</p>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-white/10">
+                              <div><span className="text-muted-foreground">Type:</span> <span className="font-medium">{claim.type_reclamation || 'N/A'}</span></div>
+                              <div><span className="text-muted-foreground">Employé:</span> <span className="font-medium">{claim.employe_nom || 'N/A'}</span></div>
+                              <div><span className="text-muted-foreground">Date:</span> <span className="font-medium">{claim.created_at ? new Date(claim.created_at).toLocaleDateString('fr-FR') : 'N/A'}</span></div>
+                              {claim.photos && claim.photos.length > 0 && (
+                                <div className="flex items-center gap-1">
+                                  <Camera className="w-3 h-3 text-green-500" />
+                                  <span className="text-green-600">{claim.photos.length} photo(s)</span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="flex gap-2 pt-2">
+                              {claim.statut === 'en_cours' && (
+                                <>
+                                  <Button size="sm" onClick={() => handleValidateClaim(claim.id, 'approve')} className="flex-1 bg-green-500/20 text-green-400 text-xs">
+                                    <CheckCircle className="w-3 h-3 mr-1" />Accepter
+                                  </Button>
+                                  <Button size="sm" onClick={() => handleValidateClaim(claim.id, 'reject')} className="flex-1 bg-red-500/20 text-red-400 text-xs">
+                                    <X className="w-3 h-3 mr-1" />Rejeter
+                                  </Button>
+                                </>
+                              )}
+                              {claim.photos && claim.photos.length > 0 && (
+                                <Button size="sm" onClick={() => { setSelectedClaim(claim); setSelectedImage(claim.photos[0].url); setSelectedImageIndex(0); setShowImageModal(true); }} className="flex-1">
+                                  <Eye className="w-3 h-3 mr-1" />Voir
+                                </Button>
+                              )}
+                              <Button size="sm" onClick={() => { setEditingItem(claim); setShowClaimModal(true); }}>
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button size="sm" onClick={() => handleDelete('claim', claim.id)} className="text-red-400">
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                    </>
                   )}
                   </CardContent>
                 </Card>
@@ -6994,10 +7164,7 @@ La page va se recharger automatiquement...`)
                           <img
                             src={photo.url}
                             alt={`Photo justificative ${index + 1}`}
-                            className="w-full h-48 object-cover rounded-lg border border-gray-200"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = '/placeholder.jpg'
-                            }}
+                            className="w-full h-48 object-contain rounded-lg border border-gray-200 bg-gray-50"
                           />
                           <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
                             <Button
@@ -7006,6 +7173,7 @@ La page va se recharger automatiquement...`)
                               className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                               onClick={() => {
                                 setSelectedImage(photo.url)
+                                setSelectedImageIndex(index)
                                 setShowImageModal(true)
                               }}
                             >
@@ -7043,24 +7211,70 @@ La page va se recharger automatiquement...`)
 
       {/* Modal d'agrandissement des images */}
       <Dialog open={showImageModal} onOpenChange={setShowImageModal}>
-        <DialogContent className="max-w-6xl max-h-[90vh] p-0">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0">
           <DialogHeader className="p-6 pb-0">
             <DialogTitle className="flex items-center gap-2">
               <Camera className="w-5 h-5" />
-              Aperçu de l'image
+              Aperçu de l'image {selectedClaim?.photos?.length > 0 && `(${selectedImageIndex + 1}/${selectedClaim.photos.length})`}
             </DialogTitle>
           </DialogHeader>
           
-          <div className="p-6 pt-0">
+          <div className="p-6 pt-4 space-y-4">
+            {/* Détails de la résolution */}
+            {selectedClaim?.commentaires_internes && (
+              <div>
+                <h4 className="font-medium mb-2 text-sm text-gray-700">Détails de la résolution :</h4>
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800">
+                    {selectedClaim.commentaires_internes}
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            {/* Image */}
             <div className="relative">
               <img
                 src={selectedImage}
                 alt="Image agrandie"
-                className="w-full h-auto max-h-[70vh] object-contain rounded-lg border border-gray-200"
+                className="w-full h-auto max-h-[60vh] object-contain rounded-lg border border-gray-200"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = '/placeholder.jpg'
                 }}
               />
+              
+              {/* Boutons de navigation */}
+              {selectedClaim?.photos?.length > 1 && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white shadow-lg"
+                    onClick={() => {
+                      const newIndex = selectedImageIndex > 0 ? selectedImageIndex - 1 : selectedClaim.photos.length - 1
+                      setSelectedImageIndex(newIndex)
+                      setSelectedImage(selectedClaim.photos[newIndex].url)
+                    }}
+                    disabled={selectedClaim.photos.length <= 1}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white shadow-lg"
+                    onClick={() => {
+                      const newIndex = selectedImageIndex < selectedClaim.photos.length - 1 ? selectedImageIndex + 1 : 0
+                      setSelectedImageIndex(newIndex)
+                      setSelectedImage(selectedClaim.photos[newIndex].url)
+                    }}
+                    disabled={selectedClaim.photos.length <= 1}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
             </div>
           </div>
           

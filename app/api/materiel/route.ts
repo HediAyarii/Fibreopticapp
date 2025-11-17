@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
+import { logHistorique, getClientIP, getUserAgent, generateDescription } from "@/lib/historique"
 
 export async function GET(request: NextRequest) {
   try {
@@ -147,6 +148,18 @@ export async function POST(request: NextRequest) {
 
     const result = await query(insertQuery, values)
     
+    // Enregistrer dans l'historique
+    await logHistorique({
+      action: 'CREATE',
+      tableName: 'materiel',
+      recordId: result.rows[0].id,
+      section: 'Matériel',
+      description: generateDescription('CREATE', 'Matériel', `${nom_equipement} - ${type_materiel} (Dépôt: ${depot})`),
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
+    
     return NextResponse.json({
       success: true,
       materiel: result.rows[0]
@@ -208,6 +221,13 @@ export async function PUT(request: NextRequest) {
     const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ')
     const values = [id, ...fields.map(field => cleanedData[field])]
 
+    // Récupérer les anciennes valeurs avant la mise à jour
+    const oldDataResult = await query('SELECT * FROM materiel WHERE id = $1', [id])
+    if (oldDataResult.rows.length === 0) {
+      return NextResponse.json({ error: "Matériel non trouvé" }, { status: 404 })
+    }
+    const oldData = oldDataResult.rows[0]
+
     const updateQuery = `
       UPDATE materiel 
       SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
@@ -217,9 +237,18 @@ export async function PUT(request: NextRequest) {
 
     const result = await query(updateQuery, values)
     
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Matériel non trouvé" }, { status: 404 })
-    }
+    // Enregistrer dans l'historique
+    await logHistorique({
+      action: 'UPDATE',
+      tableName: 'materiel',
+      recordId: id,
+      section: 'Matériel',
+      description: generateDescription('UPDATE', 'Matériel', `${result.rows[0].nom_equipement} - ${result.rows[0].type_materiel}`),
+      oldValues: oldData,
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
 
     return NextResponse.json({
       success: true,
@@ -252,6 +281,8 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json({ error: "Matériel non trouvé" }, { status: 404 })
       }
 
+      const deletedData = materielResult.rows[0]
+
       // 2. Récupérer toutes les affectations liées à ce matériel
       const affectationsResult = await query(
         'SELECT id, quantite_assignee FROM affectations_materiel WHERE materiel_id = $1',
@@ -267,7 +298,19 @@ export async function DELETE(request: NextRequest) {
       // 4. Supprimer le matériel
       const result = await query('DELETE FROM materiel WHERE id = $1 RETURNING *', [id])
 
-      // 5. Valider la transaction
+      // 5. Enregistrer dans l'historique
+      await logHistorique({
+        action: 'DELETE',
+        tableName: 'materiel',
+        recordId: parseInt(id),
+        section: 'Matériel',
+        description: generateDescription('DELETE', 'Matériel', `${deletedData.nom_equipement} - ${deletedData.type_materiel} (${affectationsResult.rows.length} affectation(s) supprimée(s))`),
+        oldValues: deletedData,
+        ipAddress: getClientIP(request),
+        userAgent: getUserAgent(request)
+      })
+
+      // 6. Valider la transaction
       await query('COMMIT')
 
       return NextResponse.json({

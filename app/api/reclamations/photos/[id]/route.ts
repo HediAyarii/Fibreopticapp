@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/database'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,9 +16,9 @@ export async function GET(
       return NextResponse.json({ error: 'ID de photo invalide' }, { status: 400 })
     }
 
-    // Récupérer l'image depuis la base de données
+    // Récupérer le chemin de l'image depuis la base de données
     const result = await query(`
-      SELECT photo_data, photo_type, photo_name, photo_size
+      SELECT photo_path, mime_type, photo_name, file_size
       FROM reclamation_photos 
       WHERE id = $1
     `, [photoId])
@@ -26,18 +28,36 @@ export async function GET(
     }
 
     const photo = result.rows[0]
-    const imageBuffer = photo.photo_data
+    
+    if (!photo.photo_path) {
+      console.error(`Photo ${photoId} n'a pas de photo_path`)
+      return NextResponse.json({ error: 'Chemin de photo manquant' }, { status: 404 })
+    }
 
-    // Retourner l'image avec les bons headers
-    return new NextResponse(imageBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': photo.photo_type || 'image/jpeg',
-        'Content-Length': photo.photo_size.toString(),
-        'Cache-Control': 'public, max-age=31536000', // Cache pour 1 an
-        'Content-Disposition': `inline; filename="${photo.photo_name}"`
-      }
-    })
+    // Lire le fichier depuis le système de fichiers
+    const filepath = join(process.cwd(), 'public', photo.photo_path)
+    console.log('Tentative de lecture du fichier:', filepath)
+    
+    try {
+      const imageBuffer = await readFile(filepath)
+
+      // Retourner l'image avec les bons headers
+      return new NextResponse(Buffer.from(imageBuffer), {
+        status: 200,
+        headers: {
+          'Content-Type': photo.mime_type || 'image/jpeg',
+          'Content-Length': photo.file_size?.toString() || imageBuffer.length.toString(),
+          'Cache-Control': 'public, max-age=31536000',
+          'Content-Disposition': `inline; filename="${photo.photo_name}"`
+        }
+      })
+    } catch (fileError) {
+      console.error('Erreur lecture fichier:', fileError)
+      return NextResponse.json({ 
+        error: 'Fichier photo non trouvé sur le serveur',
+        path: photo.photo_path 
+      }, { status: 404 })
+    }
 
   } catch (error) {
     console.error('Erreur récupération photo:', error)

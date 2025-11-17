@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
       result.rows.map(async (reclamation) => {
         try {
           const photosResult = await query(`
-            SELECT id, photo_name, photo_type, photo_size, uploaded_at
+            SELECT id, photo_name, photo_path, mime_type, file_size, uploaded_at
             FROM reclamation_photos 
             WHERE reclamation_id = $1
             ORDER BY uploaded_at ASC
@@ -69,10 +69,10 @@ export async function GET(request: NextRequest) {
             photos: photosResult.rows.map(photo => ({
               id: photo.id,
               name: photo.photo_name,
-              type: photo.photo_type,
-              size: photo.photo_size,
+              type: photo.mime_type,
+              size: photo.file_size,
               uploadedAt: photo.uploaded_at,
-              url: `/api/reclamations/photos/${photo.id}`
+              url: photo.photo_path || `/api/reclamations/photos/${photo.id}`
             }))
           }
         } catch (error) {
@@ -270,6 +270,10 @@ export async function PUT(request: NextRequest) {
         cleanedData[field] = false
       }
     })
+
+    // Supprimer les champs calculés côté frontend qui ne doivent pas être dans la base de données
+    delete cleanedData.deadline_calculated
+    delete cleanedData.deadline
 
     const fields = Object.keys(cleanedData).filter(key => cleanedData[key] !== undefined)
     if (fields.length === 0) {

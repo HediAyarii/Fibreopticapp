@@ -39,14 +39,26 @@ export async function POST(request: NextRequest) {
         const bytes = await photo.arrayBuffer()
         const buffer = Buffer.from(bytes)
         
-        // Stocker l'image directement en base de données
+        // Créer le dossier uploads s'il n'existe pas
+        const uploadDir = join(process.cwd(), 'public', 'uploads', 'reclamations')
+        await mkdir(uploadDir, { recursive: true })
+        
+        // Générer un nom de fichier unique
+        const timestamp = Date.now()
+        const filename = `${timestamp}-${photo.name}`
+        const filepath = join(uploadDir, filename)
+        
+        // Sauvegarder le fichier
+        await writeFile(filepath, buffer)
+        
+        // Stocker le chemin en base de données
         const result = await query(`
-          INSERT INTO reclamation_photos (reclamation_id, photo_data, photo_name, photo_type, photo_size, uploaded_by)
+          INSERT INTO reclamation_photos (reclamation_id, photo_path, photo_name, mime_type, file_size, uploaded_by)
           VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING id
         `, [
           parseInt(reclamationId),
-          buffer,
+          `/uploads/reclamations/${filename}`,
           photo.name,
           photo.type,
           photo.size,

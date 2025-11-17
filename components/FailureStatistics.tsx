@@ -49,9 +49,14 @@ interface FailureStats {
   }>
   temporalEvolution: Array<{
     week: string
-    total_failures: number
-    echec_terminer: number
-    with_reason: number
+    axecom_success: number
+    ert_success: number
+    total_success: number
+  }>
+  byHousingType: Array<{
+    entreprise: string
+    type_logement: string
+    count: number
   }>
   total: number
 }
@@ -70,12 +75,14 @@ export default function FailureStatistics({ className }: FailureStatisticsProps)
     return new Date().toISOString().split('T')[0]
   })
   const [selectedTechnician, setSelectedTechnician] = useState('all')
+  const [selectedEnterprise, setSelectedEnterprise] = useState('all')
+  const [selectedType, setSelectedType] = useState('all')
 
   const loadStatistics = async () => {
     setLoading(true)
     try {
-      console.log('🔄 Chargement des statistiques d\'échec pour la période:', { startDate, endDate, selectedTechnician })
-      const response = await fetch(`/api/statistics/failures?startDate=${startDate}&endDate=${endDate}&technicien=${selectedTechnician}`)
+      console.log('🔄 Chargement des statistiques d\'échec pour la période:', { startDate, endDate, selectedTechnician, selectedEnterprise, selectedType })
+      const response = await fetch(`/api/statistics/failures?startDate=${startDate}&endDate=${endDate}&technicien=${selectedTechnician}&entreprise=${selectedEnterprise}&type=${selectedType}`)
       const data = await response.json()
       console.log('📊 Données d\'échec reçues:', data)
       if (data.success) {
@@ -93,7 +100,7 @@ export default function FailureStatistics({ className }: FailureStatisticsProps)
 
   useEffect(() => {
     loadStatistics()
-  }, [startDate, endDate, selectedTechnician])
+  }, [startDate, endDate, selectedTechnician, selectedEnterprise, selectedType])
 
   if (!statistics) {
     return (
@@ -135,6 +142,34 @@ export default function FailureStatistics({ className }: FailureStatisticsProps)
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
+            </div>
+            <div>
+              <Label htmlFor="enterprise">Entreprise</Label>
+              <Select value={selectedEnterprise} onValueChange={setSelectedEnterprise}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les entreprises</SelectItem>
+                  <SelectItem value="AXECOM">AXECOM</SelectItem>
+                  <SelectItem value="ERT">ERT</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="type">Type</Label>
+              <Select value={selectedType} onValueChange={setSelectedType}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les types</SelectItem>
+                  <SelectItem value="RACC">RACC</SelectItem>
+                  <SelectItem value="SAV">SAV</SelectItem>
+                  <SelectItem value="RECO">RECO</SelectItem>
+                  <SelectItem value="PRESTA COMPL">PRESTA COMPL</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="technician">Technicien</Label>
@@ -224,35 +259,72 @@ export default function FailureStatistics({ className }: FailureStatisticsProps)
 
       {/* Graphiques */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Échecs par statut */}
+        {/* Échec Terminé vs Clôture Terminée */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <PieChart className="w-5 h-5" />
-              Échecs par Statut
+              Échec Terminé vs Clôture Terminée
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsPieChart>
-                  <Pie
-                    data={statistics.byStatus}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ statut, percentage }) => `${statut}: ${percentage}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="count"
-                  >
-                    {statistics.byStatus.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </RechartsPieChart>
-              </ResponsiveContainer>
+              {(() => {
+                const echecTerminer = statistics.byStatus.find(s => s.statut === 'ECHEC TERMINE')?.count || 0
+                const clotureTerminer = statistics.byStatus.find(s => s.statut === 'CLOTURE TERMINEE')?.count || 0
+                const totalTermines = echecTerminer + clotureTerminer
+                
+                console.log('📊 Données graphique:', {
+                  byStatus: statistics.byStatus,
+                  echecTerminer,
+                  clotureTerminer,
+                  totalTermines
+                })
+                
+                const chartData = [
+                  {
+                    name: 'ECHEC TERMINE',
+                    count: echecTerminer,
+                    percentage: totalTermines > 0 ? (echecTerminer / totalTermines * 100) : 0
+                  },
+                  {
+                    name: 'CLOTURE TERMINEE',
+                    count: clotureTerminer,
+                    percentage: totalTermines > 0 ? (clotureTerminer / totalTermines * 100) : 0
+                  }
+                ]
+                
+                if (totalTermines === 0) {
+                  return (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center text-gray-500">
+                        <p>Aucune intervention terminée pour cette période</p>
+                      </div>
+                    </div>
+                  )
+                }
+                
+                return (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={chartData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, count, percentage }) => `${name}: ${count} (${percentage.toFixed(1)}%)`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="count"
+                      >
+                        <Cell fill="#EF4444" />
+                        <Cell fill="#22C55E" />
+                      </Pie>
+                      <Tooltip />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                )
+              })()}
             </div>
           </CardContent>
         </Card>
@@ -286,6 +358,46 @@ export default function FailureStatistics({ className }: FailureStatisticsProps)
           </CardContent>
         </Card>
       </div>
+
+      {/* Graphique par Type de Logement et Entreprise */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="w-5 h-5" />
+            Clôtures Terminées par Type de Logement et Entreprise
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            {(() => {
+              // Transformer les données pour le graphique
+              const housingData: any = {}
+              
+              statistics.byHousingType.forEach(item => {
+                if (!housingData[item.type_logement]) {
+                  housingData[item.type_logement] = { name: item.type_logement }
+                }
+                housingData[item.type_logement][item.entreprise] = item.count
+              })
+              
+              const chartData = Object.values(housingData)
+              
+              return (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="ERT" fill="#EF4444" name="ERT" />
+                    <Bar dataKey="AXECOM" fill="#3B82F6" name="AXECOM" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )
+            })()}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Graphique des motifs par technicien */}
       <Card>
@@ -337,7 +449,7 @@ export default function FailureStatistics({ className }: FailureStatisticsProps)
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingDown className="w-5 h-5" />
-            Évolution Temporelle des Échecs
+            Évolution Temporelle des Succès
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -355,24 +467,17 @@ export default function FailureStatistics({ className }: FailureStatisticsProps)
                 />
                 <Line 
                   type="monotone" 
-                  dataKey="total_failures" 
+                  dataKey="ert_success" 
                   stroke="#EF4444" 
                   strokeWidth={2}
-                  name="Total Échecs"
+                  name="ERT (Clôture Terminée)"
                 />
                 <Line 
                   type="monotone" 
-                  dataKey="echec_terminer" 
-                  stroke="#F97316" 
+                  dataKey="axecom_success" 
+                  stroke="#3B82F6" 
                   strokeWidth={2}
-                  name="Échec Terminé"
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="with_reason" 
-                  stroke="#22C55E" 
-                  strokeWidth={2}
-                  name="Avec Motif"
+                  name="AXECOM (Clôture Terminée)"
                 />
               </LineChart>
             </ResponsiveContainer>

@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
+import { getUserFromRequest } from "@/lib/auth"
+import { logHistorique, getClientIP, getUserAgent, generateDescription } from "@/lib/historique"
 
 export async function GET() {
   try {
@@ -177,9 +179,34 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "ID affectation requis" }, { status: 400 })
     }
 
-    // Récupérer l'affectation pour vérifier le type
+    // 1️⃣ Récupérer l'utilisateur (headers en priorité, sinon JWT)
+    const userIdHeader = request.headers.get('X-User-Id')
+    const userNameHeader = request.headers.get('X-User-Name')
+
+    let user: { id: number; email?: string; username?: string; role?: string } | null = null
+
+    console.log('📥 Affectations DELETE - Headers reçus:', { userIdHeader, userNameHeader })
+
+    if (userIdHeader && userNameHeader) {
+      user = {
+        id: parseInt(userIdHeader, 10),
+        email: userNameHeader,
+        username: userNameHeader,
+        role: ''
+      }
+      console.log('✅ Affectations DELETE - User from headers:', user)
+    } else {
+      user = await getUserFromRequest(request)
+      console.log('🔍 Affectations DELETE - User from JWT (fallback):', user)
+    }
+
+    // 2️⃣ Récupérer l'affectation complète AVANT suppression
     const affectationResult = await query(
-      'SELECT materiel_id, quantite_assignee, type_affectation FROM affectations_materiel WHERE id = $1',
+      `SELECT am.*, m.nom_equipement, e.prenom, e.nom 
+       FROM affectations_materiel am
+       LEFT JOIN materiel m ON am.materiel_id = m.id
+       LEFT JOIN employes e ON am.employe_id = e.id
+       WHERE am.id = $1`,
       [id]
     )
 
@@ -187,18 +214,44 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Affectation non trouvée" }, { status: 404 })
     }
 
-    const affectation = affectationResult.rows[0]
+    const deletedData = affectationResult.rows[0]
 
-    // Supprimer l'affectation
+    // 3️⃣ Supprimer l'affectation
     await query('DELETE FROM affectations_materiel WHERE id = $1', [id])
 
-    // Remettre la quantité en stock seulement si ce n'est pas un matériel consommable
-    if (affectation.type_affectation !== 'consommable') {
+    // 4️⃣ Remettre la quantité en stock seulement si ce n'est pas un matériel consommable
+    if (deletedData.type_affectation !== 'consommable') {
       await query(
         'UPDATE materiel SET quantite = quantite + $1 WHERE id = $2',
-        [affectation.quantite_assignee, affectation.materiel_id]
+        [deletedData.quantite_assignee, deletedData.materiel_id]
       )
     }
+
+    // 5️⃣ Construire le label utilisateur + description
+    const userEmail = user?.email || user?.username || undefined
+    const userLabel = userEmail || 'Utilisateur inconnu'
+
+    const description = generateDescription(
+      'DELETE',
+      'Matériel',
+      `Désassignation: ${deletedData.nom_equipement} de ${deletedData.prenom} ${deletedData.nom} (Qté: ${deletedData.quantite_assignee})`,
+      userEmail
+    )
+
+    // 6️⃣ Enregistrer dans l'historique
+    await logHistorique({
+      userId: user?.id,
+      userName: userLabel,
+      action: 'DELETE',
+      tableName: 'affectations_materiel',
+      recordId: parseInt(id),
+      section: 'Matériel',
+      description,
+      oldValues: deletedData,
+      newValues: null,
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
 
     return NextResponse.json({
       success: true,

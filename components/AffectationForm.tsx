@@ -28,10 +28,12 @@ export function AffectationForm({ affectation, onSave, onCancel }: {
   const [employeOptions, setEmployeOptions] = useState([])
   const [materielSearch, setMaterielSearch] = useState('')
   const [employeSearch, setEmployeSearch] = useState('')
+  const [selectedDepot, setSelectedDepot] = useState('ALL') // Nouveau: filtre par dépôt
 
   useEffect(() => {
-    // Charger les options de matériel
-    fetch('/api/materiel')
+    // Charger les options de matériel avec filtre dépôt
+    const params = selectedDepot !== 'ALL' ? `?depot=${encodeURIComponent(selectedDepot)}` : ''
+    fetch(`/api/materiel${params}`)
       .then(res => res.json())
       .then(data => setMaterielOptions(data.materiel || []))
       .catch(err => console.error('Erreur chargement matériel:', err))
@@ -41,7 +43,7 @@ export function AffectationForm({ affectation, onSave, onCancel }: {
       .then(res => res.json())
       .then(data => setEmployeOptions(data.employes || []))
       .catch(err => console.error('Erreur chargement employés:', err))
-  }, [])
+  }, [selectedDepot]) // Recharger quand le dépôt change
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -86,6 +88,21 @@ export function AffectationForm({ affectation, onSave, onCancel }: {
       </DialogHeader>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Sélecteur de Dépôt */}
+        <div>
+          <Label htmlFor="depot_filter">Filtrer par Dépôt</Label>
+          <Select value={selectedDepot} onValueChange={setSelectedDepot}>
+            <SelectTrigger>
+              <SelectValue placeholder="Tous les dépôts" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Tous les dépôts</SelectItem>
+              <SelectItem value="AXECOM">AXECOM</SelectItem>
+              <SelectItem value="ERT">ERT</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label htmlFor="materiel_id">Matériel *</Label>
@@ -115,6 +132,7 @@ export function AffectationForm({ affectation, onSave, onCancel }: {
                           <span className="font-medium">{materiel.nom_equipement}</span>
                           <span className="text-sm text-muted-foreground">
                             {materiel.type_materiel} - {materiel.marque} {materiel.modele} - Stock: {materiel.quantite}
+                            {materiel.depot && ` - Dépôt: ${materiel.depot}`}
                           </span>
                         </div>
                       </SelectItem>

@@ -11,6 +11,8 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const technicien = searchParams.get('technicien') || 'all'
+    const entreprise = searchParams.get('entreprise') || 'all'
+    const type = searchParams.get('type') || 'all'
 
     if (!startDate || !endDate) {
       return NextResponse.json({ error: 'Dates de début et fin requises' }, { status: 400 })
@@ -36,7 +38,23 @@ export async function GET(request: NextRequest) {
     const stats: any = {}
 
     try {
-      // Statistiques générales des échecs
+      // Construction des conditions de filtrage
+      let enterpriseFilter = ''
+      let typeFilter = ''
+      
+      if (entreprise !== 'all') {
+        if (entreprise === 'AXECOM') {
+          enterpriseFilter = `AND (grille ILIKE '%AXECOM MANCHE%' OR grille ILIKE '%B2B : AXECOM MANCHE%')`
+        } else if (entreprise === 'ERT') {
+          enterpriseFilter = `AND (grille IS NULL OR (grille NOT ILIKE '%AXECOM MANCHE%' AND grille NOT ILIKE '%B2B : AXECOM MANCHE%'))`
+        }
+      }
+      
+      if (type !== 'all') {
+        typeFilter = `AND type_intervention = '${type}'`
+      }
+
+      // Statistiques générales des échecs ET clôtures terminées
       const failureStats = await query(`
         SELECT 
           statut,
@@ -45,7 +63,7 @@ export async function GET(request: NextRequest) {
         FROM interventions 
         WHERE statut IS NOT NULL 
           AND statut != ''
-          AND statut ILIKE '%ECHEC%'
+          AND (statut ILIKE '%ECHEC%' OR statut = 'CLOTURE TERMINEE')
           AND date_rdv IS NOT NULL 
           AND date_rdv != ''
           AND (
@@ -53,6 +71,8 @@ export async function GET(request: NextRequest) {
             OR (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND date_rdv::date >= $1::date AND date_rdv::date <= $2::date)
             OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $2::date)
           )
+          ${enterpriseFilter}
+          ${typeFilter}
         GROUP BY statut
         ORDER BY count DESC
       `, [startDateFormatted, endDateFormatted])
@@ -76,6 +96,8 @@ export async function GET(request: NextRequest) {
             OR (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND date_rdv::date >= $1::date AND date_rdv::date <= $2::date)
             OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $2::date)
           )
+          ${enterpriseFilter}
+          ${typeFilter}
         GROUP BY motif_echec
         ORDER BY count DESC
         LIMIT 10
@@ -95,7 +117,7 @@ export async function GET(request: NextRequest) {
           nom_technicien,
           prenom_technicien,
           COUNT(*) as total_failures,
-          COUNT(CASE WHEN statut = 'ECHEC TERMINER' THEN 1 END) as echec_terminer,
+          COUNT(CASE WHEN statut = 'ECHEC TERMINE' THEN 1 END) as echec_terminer,
           COUNT(CASE WHEN motif_echec IS NOT NULL AND motif_echec != '' THEN 1 END) as with_reason,
           ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) as percentage
         FROM interventions 
@@ -109,6 +131,8 @@ export async function GET(request: NextRequest) {
             OR (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND date_rdv::date >= $1::date AND date_rdv::date <= $2::date)
             OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $2::date)
           )
+          ${enterpriseFilter}
+          ${typeFilter}
           ${technicienFilter}
         GROUP BY nom_technicien, prenom_technicien
         ORDER BY total_failures DESC
@@ -136,6 +160,8 @@ export async function GET(request: NextRequest) {
             OR (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND date_rdv::date >= $1::date AND date_rdv::date <= $2::date)
             OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $2::date)
           )
+          ${enterpriseFilter}
+          ${typeFilter}
           ${technicienFilter}
         GROUP BY nom_technicien, prenom_technicien, motif_echec
         ORDER BY nom_technicien, prenom_technicien, count DESC
@@ -160,12 +186,14 @@ export async function GET(request: NextRequest) {
             OR (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND date_rdv::date >= $1::date AND date_rdv::date <= $2::date)
             OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $2::date)
           )
+          ${enterpriseFilter}
+          ${typeFilter}
           ${technicienFilter}
         GROUP BY echec_niveau_1, echec_niveau_2
         ORDER BY count DESC
       `, queryParams)
 
-      // Évolution temporelle des échecs
+      // Évolution temporelle des succès (CLOTURE TERMINEE) par entreprise
       const temporalEvolution = await query(`
         SELECT 
           DATE_TRUNC('week', 
@@ -176,13 +204,13 @@ export async function GET(request: NextRequest) {
               ELSE NULL
             END
           ) as week,
-          COUNT(*) as total_failures,
-          COUNT(CASE WHEN statut = 'ECHEC TERMINER' THEN 1 END) as echec_terminer,
-          COUNT(CASE WHEN motif_echec IS NOT NULL AND motif_echec != '' THEN 1 END) as with_reason
+          COUNT(CASE WHEN statut = 'CLOTURE TERMINEE' AND (grille ILIKE '%AXECOM MANCHE%' OR grille ILIKE '%B2B : AXECOM MANCHE%') THEN 1 END) as axecom_success,
+          COUNT(CASE WHEN statut = 'CLOTURE TERMINEE' AND (grille IS NULL OR (grille NOT ILIKE '%AXECOM MANCHE%' AND grille NOT ILIKE '%B2B : AXECOM MANCHE%')) THEN 1 END) as ert_success,
+          COUNT(CASE WHEN statut = 'CLOTURE TERMINEE' THEN 1 END) as total_success
         FROM interventions 
         WHERE statut IS NOT NULL 
           AND statut != ''
-          AND statut ILIKE '%ECHEC%'
+          AND statut = 'CLOTURE TERMINEE'
           AND date_rdv IS NOT NULL 
           AND date_rdv != ''
           AND (
@@ -190,6 +218,7 @@ export async function GET(request: NextRequest) {
             OR (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND date_rdv::date >= $1::date AND date_rdv::date <= $2::date)
             OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $2::date)
           )
+          ${typeFilter}
           ${technicienFilter}
         GROUP BY DATE_TRUNC('week', 
           CASE 
@@ -215,7 +244,37 @@ export async function GET(request: NextRequest) {
             OR (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND date_rdv::date >= $1::date AND date_rdv::date <= $2::date)
             OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $2::date)
           )
+          ${enterpriseFilter}
+          ${typeFilter}
           ${technicienFilter}
+      `, queryParams)
+
+      // Statistiques par type de logement et entreprise (CLOTURE TERMINEE uniquement)
+      const byHousingType = await query(`
+        SELECT 
+          CASE 
+            WHEN grille ILIKE '%AXECOM MANCHE%' OR grille ILIKE '%B2B : AXECOM MANCHE%' THEN 'AXECOM'
+            ELSE 'ERT'
+          END as entreprise,
+          CASE 
+            WHEN type_logement ILIKE '%PAVILLON%' THEN 'Pavillon'
+            WHEN type_logement ILIKE '%IMMEUBLE%' THEN 'Immeuble'
+            ELSE 'Autre'
+          END as type_logement,
+          COUNT(*) as count
+        FROM interventions 
+        WHERE statut = 'CLOTURE TERMINEE'
+          AND date_rdv IS NOT NULL 
+          AND date_rdv != ''
+          AND (
+            (date_rdv ~ '^[0-9]{2}\\.[0-9]{2}\\.[0-9]{4}$' AND TO_DATE(date_rdv, 'DD.MM.YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD.MM.YYYY') <= $2::date)
+            OR (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND date_rdv::date >= $1::date AND date_rdv::date <= $2::date)
+            OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $2::date)
+          )
+          ${typeFilter}
+          ${technicienFilter}
+        GROUP BY entreprise, type_logement
+        ORDER BY entreprise, type_logement
       `, queryParams)
 
       // Convertir les chaînes en nombres pour les graphiques
@@ -254,9 +313,14 @@ export async function GET(request: NextRequest) {
 
       const processedTemporalEvolution = temporalEvolution.rows.map((row: any) => ({
         ...row,
-        total_failures: parseInt(row.total_failures) || 0,
-        echec_terminer: parseInt(row.echec_terminer) || 0,
-        with_reason: parseInt(row.with_reason) || 0
+        axecom_success: parseInt(row.axecom_success) || 0,
+        ert_success: parseInt(row.ert_success) || 0,
+        total_success: parseInt(row.total_success) || 0
+      }))
+
+      const processedByHousingType = byHousingType.rows.map((row: any) => ({
+        ...row,
+        count: parseInt(row.count) || 0
       }))
 
       stats.failures = {
@@ -266,6 +330,7 @@ export async function GET(request: NextRequest) {
         motifsByTechnician: processedMotifsByTechnician,
         byLevel: processedFailuresByLevel,
         temporalEvolution: processedTemporalEvolution,
+        byHousingType: processedByHousingType,
         total: parseInt(totalFailures.rows[0]?.total || '0')
       }
 
@@ -278,6 +343,7 @@ export async function GET(request: NextRequest) {
         motifsByTechnician: [],
         byLevel: [],
         temporalEvolution: [],
+        byHousingType: [],
         total: 0
       }
     }
@@ -288,7 +354,9 @@ export async function GET(request: NextRequest) {
       period: {
         startDate,
         endDate,
-        technicien
+        technicien,
+        entreprise,
+        type
       }
     })
     

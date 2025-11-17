@@ -21,6 +21,7 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
   const [formData, setFormData] = useState({
     numero_penalite: penalty?.numero_penalite || '',
     employe_id: penalty?.employe_id || '',
+    type_penalite: penalty?.type_penalite || 'dossier_non_cloture',
     motif: penalty?.motif || '',
     montant: penalty?.montant || '',
     date_attribution: penalty?.date_attribution || new Date().toISOString().split('T')[0],
@@ -40,12 +41,19 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
+  // États pour la recherche de réclamations
+  const [selectedReclamation, setSelectedReclamation] = useState<any>(null)
+  const [reclamationSearchResults, setReclamationSearchResults] = useState<any[]>([])
+  const [isSearchingReclamation, setIsSearchingReclamation] = useState(false)
+  const [showReclamationDropdown, setShowReclamationDropdown] = useState(false)
+  const reclamationDropdownRef = useRef<HTMLDivElement>(null)
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const submitData = {
       ...formData,
-      type_penalite: 'dossier_non_cloture', // Always dossier non clôturé
-      intervention_concernee: selectedIntervention?.id || null
+      intervention_concernee: selectedIntervention?.id || null,
+      reclamation_concernee: selectedReclamation?.id || formData.reclamation_concernee || null
     }
     onSave(submitData)
   }
@@ -53,7 +61,7 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
   const handleChange = (field: string, value: any) => {
     let newFormData = { ...formData, [field]: value }
     
-    // Auto-calculate penalty based on checkboxes
+    // Auto-calculate penalty based on checkboxes or type
     if (field === 'j_plus_1' && value) {
       newFormData.j_plus_n = false
       newFormData.montant = '60'
@@ -62,9 +70,14 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
       newFormData.j_plus_1 = false
       newFormData.montant = '140'
       newFormData.motif = 'Dossier clôturé à J+n'
-    } else if (field === 'j_plus_1' && !value && field === 'j_plus_n' && !value) {
-      newFormData.montant = ''
-      newFormData.motif = ''
+    } else if (field === 'type_penalite') {
+      // Reset montant and motif when changing type
+      if (value === 'autre' || value === 'reclamation') {
+        newFormData.j_plus_1 = false
+        newFormData.j_plus_n = false
+        newFormData.montant = ''
+        newFormData.motif = ''
+      }
     }
     
     setFormData(newFormData)
@@ -127,11 +140,72 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
     return () => clearTimeout(timeoutId)
   }
 
+  // Fonctions pour la recherche de réclamations
+  const searchReclamations = async (searchTerm: string) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setReclamationSearchResults([])
+      setShowReclamationDropdown(false)
+      return
+    }
+
+    setIsSearchingReclamation(true)
+    try {
+      const response = await fetch(`/api/reclamations/search?q=${encodeURIComponent(searchTerm)}&limit=10`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setReclamationSearchResults(data.reclamations)
+        setShowReclamationDropdown(data.reclamations.length > 0)
+      } else {
+        setReclamationSearchResults([])
+        setShowReclamationDropdown(false)
+      }
+    } catch (error) {
+      console.error('Erreur lors de la recherche de réclamations:', error)
+      setReclamationSearchResults([])
+      setShowReclamationDropdown(false)
+    } finally {
+      setIsSearchingReclamation(false)
+    }
+  }
+
+  const handleReclamationInputChange = (value: string) => {
+    setFormData(prev => ({ ...prev, reclamation_concernee: value }))
+    
+    // Si on efface le champ, réinitialiser la sélection
+    if (!value) {
+      setSelectedReclamation(null)
+      setReclamationSearchResults([])
+      setShowReclamationDropdown(false)
+      return
+    }
+
+    // Rechercher les réclamations avec un délai pour éviter trop de requêtes
+    const timeoutId = setTimeout(() => {
+      searchReclamations(value)
+    }, 300)
+
+    return () => clearTimeout(timeoutId)
+  }
+
+  const handleReclamationSelect = (reclamation: any) => {
+    setSelectedReclamation(reclamation)
+    setFormData(prev => ({
+      ...prev,
+      reclamation_concernee: reclamation.numero_reclamation, // Pour l'affichage
+      employe_id: reclamation.employe_id || prev.employe_id
+    }))
+    setShowReclamationDropdown(false)
+  }
+
   // Fermer la liste déroulante quand on clique ailleurs
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowDropdown(false)
+      }
+      if (reclamationDropdownRef.current && !reclamationDropdownRef.current.contains(event.target as Node)) {
+        setShowReclamationDropdown(false)
       }
     }
 
@@ -167,127 +241,288 @@ export function PenaltyForm({ penalty, employees, interventions, onSave, onCance
             </p>
           </div>
           <div>
-            <Label>Type de Pénalité</Label>
-            <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
-              <div className="text-sm font-medium text-gray-800">
-                Dossier Non Clôturé
-              </div>
-              <div className="text-xs text-gray-600">
-                Type fixe pour les pénalités
-              </div>
-            </div>
+            <Label htmlFor="type_penalite">Type de Pénalité *</Label>
+            <Select value={formData.type_penalite} onValueChange={(value) => handleChange('type_penalite', value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sélectionnez un type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="reclamation">Réclamation</SelectItem>
+                <SelectItem value="dossier_non_cloture">Dossier Non Clôturé</SelectItem>
+                <SelectItem value="autre">Autre</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
-        <div>
-          <Label htmlFor="num_inter">Recherche par Numéro d'Intervention</Label>
-          <div className="space-y-2 relative" ref={dropdownRef}>
-            <div className="relative">
-              <Input
-                value={formData.num_inter}
-                onChange={(e) => handleInterventionInputChange(e.target.value)}
-                placeholder="Entrez le numéro d'intervention..."
-                className="pr-8"
-              />
-              {isSearching && (
-                <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+        {formData.type_penalite === 'reclamation' && (
+          <>
+            <div>
+              <Label htmlFor="reclamation_concernee">Recherche de Réclamation</Label>
+              <div className="space-y-2 relative" ref={reclamationDropdownRef}>
+                <div className="relative">
+                  <Input
+                    value={formData.reclamation_concernee}
+                    onChange={(e) => handleReclamationInputChange(e.target.value)}
+                    placeholder="Numéro réclamation, numéro intervention ou nom technicien..."
+                    className="pr-8"
+                  />
+                  {isSearchingReclamation && (
+                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Liste déroulante des résultats */}
+                {showReclamationDropdown && reclamationSearchResults.length > 0 && (
+                  <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    {reclamationSearchResults.map((reclamation) => (
+                      <div
+                        key={reclamation.id}
+                        onClick={() => handleReclamationSelect(reclamation)}
+                        className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-medium text-sm text-gray-900">
+                              {reclamation.numero_reclamation}
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              Intervention: {reclamation.num_inter}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Technicien: {reclamation.prenom_technicien} {reclamation.nom_technicien}
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-400 text-right">
+                            <div>{new Date(reclamation.date_reclamation).toLocaleDateString('fr-FR')}</div>
+                            <div className="capitalize">{reclamation.type_reclamation}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Message si aucune réclamation trouvée */}
+                {showReclamationDropdown && reclamationSearchResults.length === 0 && !isSearchingReclamation && formData.reclamation_concernee.length >= 2 && (
+                  <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg p-3">
+                    <div className="text-sm text-gray-500 text-center">
+                      Aucune réclamation trouvée pour "{formData.reclamation_concernee}"
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Réclamation sélectionnée */}
+              {selectedReclamation && (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-md mt-2">
+                  <div className="text-sm font-medium text-purple-800">
+                    Réclamation sélectionnée: {selectedReclamation.numero_reclamation}
+                  </div>
+                  <div className="text-xs text-purple-600">
+                    Intervention: {selectedReclamation.num_inter} | Technicien: {selectedReclamation.prenom_technicien} {selectedReclamation.nom_technicien}
+                  </div>
+                  <div className="text-xs text-purple-500">
+                    Date: {new Date(selectedReclamation.date_reclamation).toLocaleDateString('fr-FR')} | Type: {selectedReclamation.type_reclamation}
+                  </div>
                 </div>
               )}
             </div>
-            
-            {/* Liste déroulante des résultats */}
-            {showDropdown && searchResults.length > 0 && (
-              <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                {searchResults.map((intervention) => (
-                  <div
-                    key={intervention.id}
-                    onClick={() => handleInterventionSelect(intervention)}
-                    className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium text-sm text-gray-900">
-                          {intervention.num_inter}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          Client: {intervention.client}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Technicien: {intervention.prenom_technicien} {intervention.nom_technicien}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="montant_reclamation">Montant de la Pénalité (€) *</Label>
+                <Input
+                  id="montant_reclamation"
+                  type="number"
+                  step="0.01"
+                  value={formData.montant}
+                  onChange={(e) => handleChange('montant', e.target.value)}
+                  placeholder="Entrez le montant"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="motif_reclamation">Motif *</Label>
+                <Textarea
+                  id="motif_reclamation"
+                  value={formData.motif}
+                  onChange={(e) => handleChange('motif', e.target.value)}
+                  placeholder="Motif de la pénalité"
+                  rows={3}
+                  required
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {formData.type_penalite === 'dossier_non_cloture' && (
+          <>
+            <div>
+              <Label htmlFor="num_inter">Recherche par Numéro d'Intervention</Label>
+              <div className="space-y-2 relative" ref={dropdownRef}>
+                <div className="relative">
+                  <Input
+                    value={formData.num_inter}
+                    onChange={(e) => handleInterventionInputChange(e.target.value)}
+                    placeholder="Entrez le numéro d'intervention..."
+                    className="pr-8"
+                  />
+                  {isSearching && (
+                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Liste déroulante des résultats */}
+                {showDropdown && searchResults.length > 0 && (
+                  <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    {searchResults.map((intervention) => (
+                      <div
+                        key={intervention.id}
+                        onClick={() => handleInterventionSelect(intervention)}
+                        className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-medium text-sm text-gray-900">
+                              {intervention.num_inter}
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              Client: {intervention.client}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Technicien: {intervention.prenom_technicien} {intervention.nom_technicien}
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-400 text-right">
+                            <div>{new Date(intervention.date_rdv).toLocaleDateString('fr-FR')}</div>
+                            <div className="capitalize">{intervention.statut}</div>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-xs text-gray-400 text-right">
-                        <div>{new Date(intervention.date_rdv).toLocaleDateString('fr-FR')}</div>
-                        <div className="capitalize">{intervention.statut}</div>
-                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Message si aucune intervention trouvée */}
+                {showDropdown && searchResults.length === 0 && !isSearching && formData.num_inter.length >= 2 && (
+                  <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg p-3">
+                    <div className="text-sm text-gray-500 text-center">
+                      Aucune intervention trouvée pour "{formData.num_inter}"
                     </div>
                   </div>
-                ))}
+                )}
               </div>
-            )}
-            
-            {/* Message si aucune intervention trouvée */}
-            {showDropdown && searchResults.length === 0 && !isSearching && formData.num_inter.length >= 2 && (
-              <div className="absolute z-50 w-full bg-white border border-gray-200 rounded-md shadow-lg p-3">
-                <div className="text-sm text-gray-500 text-center">
-                  Aucune intervention trouvée pour "{formData.num_inter}"
+              
+              {/* Intervention sélectionnée */}
+              {selectedIntervention && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md mt-2">
+                  <div className="text-sm font-medium text-blue-800">
+                    Intervention sélectionnée: {selectedIntervention.num_inter}
+                  </div>
+                  <div className="text-xs text-blue-600">
+                    Client: {selectedIntervention.client} | Technicien: {selectedIntervention.prenom_technicien} {selectedIntervention.nom_technicien}
+                  </div>
+                  <div className="text-xs text-blue-500">
+                    Date RDV: {new Date(selectedIntervention.date_rdv).toLocaleDateString('fr-FR')} | Statut: {selectedIntervention.statut}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-          
-          {/* Intervention sélectionnée */}
-          {selectedIntervention && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md mt-2">
-              <div className="text-sm font-medium text-blue-800">
-                Intervention sélectionnée: {selectedIntervention.num_inter}
-              </div>
-              <div className="text-xs text-blue-600">
-                Client: {selectedIntervention.client} | Technicien: {selectedIntervention.prenom_technicien} {selectedIntervention.nom_technicien}
-              </div>
-              <div className="text-xs text-blue-500">
-                Date RDV: {new Date(selectedIntervention.date_rdv).toLocaleDateString('fr-FR')} | Statut: {selectedIntervention.statut}
-              </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <div>
-          <Label>Calcul Automatique de la Pénalité</Label>
-          <div className="space-y-3 p-4 border border-gray-200 rounded-md">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="j_plus_1"
-                checked={formData.j_plus_1}
-                onCheckedChange={(checked) => handleChange('j_plus_1', checked)}
-              />
-              <Label htmlFor="j_plus_1" className="text-sm font-medium">
-                J+1 (60€)
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="j_plus_n"
-                checked={formData.j_plus_n}
-                onCheckedChange={(checked) => handleChange('j_plus_n', checked)}
-              />
-              <Label htmlFor="j_plus_n" className="text-sm font-medium">
-                J+n (140€)
-              </Label>
-            </div>
-            {(formData.j_plus_1 || formData.j_plus_n) && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-                <div className="text-sm font-medium text-green-800">
-                  Montant: {formData.montant}€
+            <div>
+              <Label>Calcul Automatique de la Pénalité</Label>
+              <div className="space-y-3 p-4 border border-gray-200 rounded-md">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="j_plus_1"
+                    checked={formData.j_plus_1}
+                    onCheckedChange={(checked) => handleChange('j_plus_1', checked)}
+                  />
+                  <Label htmlFor="j_plus_1" className="text-sm font-medium">
+                    J+1 (60€)
+                  </Label>
                 </div>
-                <div className="text-xs text-green-600">
-                  Motif: {formData.motif}
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="j_plus_n"
+                    checked={formData.j_plus_n}
+                    onCheckedChange={(checked) => handleChange('j_plus_n', checked)}
+                  />
+                  <Label htmlFor="j_plus_n" className="text-sm font-medium">
+                    J+n (140€)
+                  </Label>
                 </div>
+                {(formData.j_plus_1 || formData.j_plus_n) && (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                    <div className="text-sm font-medium text-green-800">
+                      Montant: {formData.montant}€
+                    </div>
+                    <div className="text-xs text-green-600">
+                      Motif: {formData.motif}
+                    </div>
+                  </div>
+                )}
+                {!formData.j_plus_1 && !formData.j_plus_n && (
+                  <div className="space-y-3 pl-6 border-l-2 border-blue-300">
+                    <div>
+                      <Label htmlFor="montant">Montant (€) *</Label>
+                      <Input
+                        id="montant"
+                        type="number"
+                        step="0.01"
+                        value={formData.montant}
+                        onChange={(e) => handleChange('montant', e.target.value)}
+                        placeholder="Entrez le montant"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="motif">Motif *</Label>
+                      <Textarea
+                        id="motif"
+                        value={formData.motif}
+                        onChange={(e) => handleChange('motif', e.target.value)}
+                        placeholder="Décrivez le motif de la pénalité"
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          </>
+        )}
+
+        {formData.type_penalite === 'autre' && (
+          <div className="space-y-4 p-4 border border-gray-200 rounded-md">
+            <div>
+              <Label htmlFor="montant_autre">Montant (€) *</Label>
+              <Input
+                id="montant_autre"
+                type="number"
+                step="0.01"
+                value={formData.montant}
+                onChange={(e) => handleChange('montant', e.target.value)}
+                placeholder="Entrez le montant"
+              />
+            </div>
+            <div>
+              <Label htmlFor="motif_autre">Motif *</Label>
+              <Textarea
+                id="motif_autre"
+                value={formData.motif}
+                onChange={(e) => handleChange('motif', e.target.value)}
+                placeholder="Décrivez le motif de la pénalité"
+                rows={4}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
