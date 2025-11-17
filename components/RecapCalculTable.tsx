@@ -178,7 +178,30 @@ export function RecapCalculTable() {
       if (response.ok) {
         const data = await response.json()
         const total = (data.couts || []).reduce((sum: number, cout: any) => {
-          const impot = parseFloat(cout.impot || 0)
+          const taxe = parseFloat(cout.taxe || 0)
+          const charge = parseFloat(cout.charge || 0)
+          
+          // Si pourcentage_taxe = 0%, alors impôt = 0 (pas de charge pour l'entreprise)
+          // Si pourcentage_taxe = 100%, alors impôt = charge complète
+          // Si pourcentage_taxe = 50%, alors impôt = charge / 2
+          // Sinon, calculer proportionnellement
+          let impot = 0
+          
+          if (Math.abs(taxe - 0) < 0.01) {
+            // 0% de taxe = 0 impôt (l'employé paye tout)
+            impot = 0
+          } else if (Math.abs(taxe - 100) < 0.01) {
+            // 100% de taxe = charge complète
+            impot = charge
+          } else if (Math.abs(taxe - 50) < 0.01) {
+            // 50% de taxe = moitié de la charge
+            impot = charge / 2
+          } else {
+            // Autre pourcentage = proportionnel (formule inversée car taxe = ce que paie le technicien)
+            // Si taxe = 30%, l'entreprise paye 70% donc impot = charge * (100 - taxe) / 100
+            impot = charge * ((100 - taxe) / 100)
+          }
+          
           return sum + (isNaN(impot) ? 0 : impot)
         }, 0)
         setTotalImpot(total)
