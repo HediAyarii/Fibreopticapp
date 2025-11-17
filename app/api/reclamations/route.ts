@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 import { addNoCacheHeaders } from "@/lib/cache-headers"
+import { sendReclamationNotification } from "@/lib/socketio"
 
 export const dynamic = 'force-dynamic'
 
@@ -218,6 +219,26 @@ export async function POST(request: NextRequest) {
     ]
 
     const result = await query(insertQuery, values)
+    
+    // Envoyer une notification au technicien
+    if (cleanedData.employe_id) {
+      try {
+        const reclamationData = {
+          numero_reclamation: numeroReclamation,
+          type_reclamation: type_reclamation,
+          priorite: priorite || 'normale',
+          description: cleanedData.description_probleme.substring(0, 100),
+          delai_resolution: 0,
+          intervention_client: nom_client,
+          date_creation: new Date().toISOString()
+        }
+        
+        const socketNotificationSent = sendReclamationNotification(cleanedData.employe_id, reclamationData)
+        console.log(`📨 Notification Socket.IO réclamation: ${socketNotificationSent ? 'OUI' : 'NON'}`)
+      } catch (notificationError) {
+        console.error('❌ Erreur envoi notification réclamation:', notificationError)
+      }
+    }
     
     const response = NextResponse.json({
       success: true,

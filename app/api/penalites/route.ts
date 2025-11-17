@@ -336,13 +336,7 @@ export async function POST(request: NextRequest) {
               icon: '/placeholder-logo.png',
               badge: '/placeholder-logo.png',
               tag: 'penalite-notification',
-              requireInteraction: true,
-              data: {
-                type: 'penalite',
-                numero_penalite: numeroPenalite,
-                montant: cleanedData.montant,
-                url: '/technicien/dashboard'
-              }
+              requireInteraction: true
             })
             
             // Envoyer à toutes les souscriptions de l'employé
