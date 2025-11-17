@@ -250,6 +250,7 @@ export default function EmployeeTracker() {
   const [employees, setEmployees] = useState<any[]>([])
   const [materials, setMaterials] = useState<any[]>([])
   const [depotFilter, setDepotFilter] = useState<'ALL' | 'AXECOM' | 'ERT'>('ALL')
+  const [materialSearch, setMaterialSearch] = useState<string>('')
   const [penalties, setPenalties] = useState<any[]>([])
   const [claims, setClaims] = useState<any[]>([])
   const [affectations, setAffectations] = useState<any[]>([])
@@ -5120,6 +5121,16 @@ La page va se recharger automatiquement...`)
                    <p className="text-muted-foreground">Gestion du matériel</p>
                  </div>
                  <div className="flex items-center gap-3">
+                   <div className="relative">
+                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                     <Input
+                       type="text"
+                       placeholder="Rechercher un équipement..."
+                       value={materialSearch}
+                       onChange={(e) => setMaterialSearch(e.target.value)}
+                       className="pl-10 w-64 bg-white/5 border-white/20"
+                     />
+                   </div>
                    <select
                      value={depotFilter}
                      onChange={async (e) => {
@@ -5180,6 +5191,141 @@ La page va se recharger automatiquement...`)
                 </Button>
                   </div>
                 </CardHeader>
+                
+                {/* Stock Statistics by Depot */}
+                <div className="px-6 pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Total Stock All Depots */}
+                    <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/10 border border-blue-500/20">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-1">Stock Total</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                              {materials
+                                .filter((m) => {
+                                  if (!materialSearch) return true
+                                  const searchLower = materialSearch.toLowerCase()
+                                  return (
+                                    m.nom_equipement?.toLowerCase().includes(searchLower) ||
+                                    m.type_equipement?.toLowerCase().includes(searchLower) ||
+                                    m.marque?.toLowerCase().includes(searchLower) ||
+                                    m.modele?.toLowerCase().includes(searchLower) ||
+                                    m.numero_serie?.toLowerCase().includes(searchLower) ||
+                                    m.depot?.toLowerCase().includes(searchLower)
+                                  )
+                                })
+                                .reduce((sum, m) => sum + ((m.quantite || 0) * (m.prix_unitaire || 0)), 0)
+                                .toFixed(2)} €
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {materials.filter((m) => {
+                                if (!materialSearch) return true
+                                const searchLower = materialSearch.toLowerCase()
+                                return (
+                                  m.nom_equipement?.toLowerCase().includes(searchLower) ||
+                                  m.type_equipement?.toLowerCase().includes(searchLower) ||
+                                  m.marque?.toLowerCase().includes(searchLower) ||
+                                  m.modele?.toLowerCase().includes(searchLower) ||
+                                  m.numero_serie?.toLowerCase().includes(searchLower) ||
+                                  m.depot?.toLowerCase().includes(searchLower)
+                                )
+                              }).length} articles
+                            </p>
+                          </div>
+                          <Package className="w-8 h-8 text-blue-500 opacity-50" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* AXECOM Stock */}
+                    <Card className="bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/20">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-1">Stock AXECOM</p>
+                            <p className="text-2xl font-bold text-green-600">
+                              {materials
+                                .filter((m) => {
+                                  if (m.depot !== 'AXECOM') return false
+                                  if (!materialSearch) return true
+                                  const searchLower = materialSearch.toLowerCase()
+                                  return (
+                                    m.nom_equipement?.toLowerCase().includes(searchLower) ||
+                                    m.type_equipement?.toLowerCase().includes(searchLower) ||
+                                    m.marque?.toLowerCase().includes(searchLower) ||
+                                    m.modele?.toLowerCase().includes(searchLower) ||
+                                    m.numero_serie?.toLowerCase().includes(searchLower)
+                                  )
+                                })
+                                .reduce((sum, m) => sum + ((m.quantite || 0) * (m.prix_unitaire || 0)), 0)
+                                .toFixed(2)} €
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {materials.filter((m) => {
+                                if (m.depot !== 'AXECOM') return false
+                                if (!materialSearch) return true
+                                const searchLower = materialSearch.toLowerCase()
+                                return (
+                                  m.nom_equipement?.toLowerCase().includes(searchLower) ||
+                                  m.type_equipement?.toLowerCase().includes(searchLower) ||
+                                  m.marque?.toLowerCase().includes(searchLower) ||
+                                  m.modele?.toLowerCase().includes(searchLower) ||
+                                  m.numero_serie?.toLowerCase().includes(searchLower)
+                                )
+                              }).length} articles
+                            </p>
+                          </div>
+                          <Package className="w-8 h-8 text-green-500 opacity-50" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* ERT Stock */}
+                    <Card className="bg-gradient-to-br from-orange-500/10 to-orange-600/10 border border-orange-500/20">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-1">Stock ERT</p>
+                            <p className="text-2xl font-bold text-orange-600">
+                              {materials
+                                .filter((m) => {
+                                  if (m.depot !== 'ERT') return false
+                                  if (!materialSearch) return true
+                                  const searchLower = materialSearch.toLowerCase()
+                                  return (
+                                    m.nom_equipement?.toLowerCase().includes(searchLower) ||
+                                    m.type_equipement?.toLowerCase().includes(searchLower) ||
+                                    m.marque?.toLowerCase().includes(searchLower) ||
+                                    m.modele?.toLowerCase().includes(searchLower) ||
+                                    m.numero_serie?.toLowerCase().includes(searchLower)
+                                  )
+                                })
+                                .reduce((sum, m) => sum + ((m.quantite || 0) * (m.prix_unitaire || 0)), 0)
+                                .toFixed(2)} €
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {materials.filter((m) => {
+                                if (m.depot !== 'ERT') return false
+                                if (!materialSearch) return true
+                                const searchLower = materialSearch.toLowerCase()
+                                return (
+                                  m.nom_equipement?.toLowerCase().includes(searchLower) ||
+                                  m.type_equipement?.toLowerCase().includes(searchLower) ||
+                                  m.marque?.toLowerCase().includes(searchLower) ||
+                                  m.modele?.toLowerCase().includes(searchLower) ||
+                                  m.numero_serie?.toLowerCase().includes(searchLower)
+                                )
+                              }).length} articles
+                            </p>
+                          </div>
+                          <Package className="w-8 h-8 text-orange-500 opacity-50" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+
                 <CardContent>
                   {loadingMaterials ? (
                     <div className="text-center py-8">
@@ -5222,6 +5368,18 @@ La page va se recharger automatiquement...`)
                       </thead>
                       <tbody>
                              {materials
+                               .filter((material) => {
+                                 if (!materialSearch) return true
+                                 const searchLower = materialSearch.toLowerCase()
+                                 return (
+                                   material.nom_equipement?.toLowerCase().includes(searchLower) ||
+                                   material.type_equipement?.toLowerCase().includes(searchLower) ||
+                                   material.marque?.toLowerCase().includes(searchLower) ||
+                                   material.modele?.toLowerCase().includes(searchLower) ||
+                                   material.numero_serie?.toLowerCase().includes(searchLower) ||
+                                   material.depot?.toLowerCase().includes(searchLower)
+                                 )
+                               })
                                .sort((a, b) => {
                                  const quantiteA = a.quantite || 0
                                  const quantiteB = b.quantite || 0
