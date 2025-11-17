@@ -87,19 +87,13 @@ export function useSocketIO({ employeeId, onNotification }: UseSocketIOProps) {
   useEffect(() => {
     if (!employeeId) return
 
-    // Détecter si on est sur ngrok (HTTPS) - désactiver Socket.IO pour ngrok
-    const isNgrok = window.location.hostname.includes('ngrok-free.app')
-    
-    // Si on est sur ngrok, ne pas initialiser Socket.IO (les notifications push suffisent)
-    if (isNgrok) {
-      console.log('🔇 Socket.IO désactivé pour ngrok - les notifications push sont suffisantes')
-      setConnected(false) // Marquer comme déconnecté
-      return
-    }
-
+    // Déterminer l'URL du socket basée sur l'environnement
+    // En production, utiliser le domaine actuel, en dev utiliser localhost
     const socketUrl = process.env.NODE_ENV === 'production' 
-      ? process.env.NEXT_PUBLIC_APP_URL || ''
-      : process.env.NEXT_PUBLIC_SOCKET_IO_URL || 'http://localhost:3000'
+      ? window.location.origin
+      : 'http://localhost:3000'
+
+    console.log('🔌 Connexion Socket.IO à:', socketUrl)
 
     const socketInstance = io(socketUrl, {
       path: '/api/socketio',
@@ -107,7 +101,9 @@ export function useSocketIO({ employeeId, onNotification }: UseSocketIOProps) {
       upgrade: true,
       rememberUpgrade: false,
       timeout: 20000,
-      forceNew: true
+      forceNew: true,
+      secure: window.location.protocol === 'https:',
+      rejectUnauthorized: false
     })
 
     // Gérer la connexion

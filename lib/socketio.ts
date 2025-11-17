@@ -44,20 +44,33 @@ export function initializeSocketIO(server: NetServer) {
 
   console.log('🔌 Initialisation du serveur Socket.IO...')
   
+  // Configuration CORS dynamique basée sur l'environnement
+  const allowedOrigins = process.env.NODE_ENV === 'production'
+    ? [
+        process.env.NEXT_PUBLIC_APP_URL || 'https://tech.networkcom.paris',
+        'https://tech.networkcom.paris',
+        'http://localhost:3000'
+      ]
+    : [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000'
+      ]
+
+  console.log('🔐 CORS autorisés:', allowedOrigins)
+  
   io = new SocketIOServer(server, {
     path: '/api/socketio',
     addTrailingSlash: false,
     cors: {
-      origin: process.env.NODE_ENV === 'production' 
-        ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
-        : [
-            'http://localhost:3000', 
-            'http://127.0.0.1:3000',
-            'https://7555cde4b50c.ngrok-free.app'
-          ],
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
       credentials: true
-    }
+    },
+    // Configuration pour reverse proxy
+    transports: ['polling', 'websocket'],
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000
   })
 
   io.on('connection', (socket) => {
