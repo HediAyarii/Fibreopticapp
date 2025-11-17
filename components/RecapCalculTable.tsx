@@ -459,7 +459,7 @@ export function RecapCalculTable() {
         </div>
 
         {/* Statistiques globales */}
-        <div className="grid grid-cols-1 md:grid-cols-8 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -505,6 +505,9 @@ export function RecapCalculTable() {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -550,6 +553,9 @@ export function RecapCalculTable() {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">

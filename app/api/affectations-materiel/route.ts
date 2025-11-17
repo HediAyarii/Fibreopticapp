@@ -32,14 +32,16 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json()
     const {
       materiel_id,
       employe_id,
       quantite_assignee,
       date_affectation,
       commentaires,
-      type_affectation = 'permanent'
-    } = await request.json()
+      type_affectation = 'permanent',
+      _user
+    } = body
 
     // Validation des champs obligatoires
     if (!materiel_id || materiel_id === '' || !employe_id || employe_id === '' || !quantite_assignee || quantite_assignee === '') {
@@ -121,13 +123,14 @@ export async function POST(request: NextRequest) {
       [newQuantite, materielId]
     )
 
-    // Enregistrer dans l'historique
+    // Enregistrer dans l'historique avec l'email de l'utilisateur
     await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
       action: 'CREATE',
       tableName: 'affectations_materiel',
       recordId: result.rows[0].id,
       section: 'Matériel',
-      description: generateDescription('CREATE', 'Matériel', `Assignation: ${materiel.nom_equipement} à ${employe.prenom} ${employe.nom} (Qté: ${quantiteAssignee})`),
+      description: `Assignation de matériel - ${materiel.nom_equipement} à ${employe.prenom} ${employe.nom} (Quantité: ${quantiteAssignee}, Type: ${type_affectation})`,
       newValues: result.rows[0],
       ipAddress: getClientIP(request),
       userAgent: getUserAgent(request)
@@ -145,7 +148,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, ...updateData } = await request.json()
+    const body = await request.json()
+    const { id, _user, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID affectation requis" }, { status: 400 })
@@ -155,6 +159,25 @@ export async function PUT(request: NextRequest) {
     if (fields.length === 0) {
       return NextResponse.json({ error: "Aucune donnée à mettre à jour" }, { status: 400 })
     }
+
+    // Récupérer les anciennes valeurs avant la mise à jour
+    const oldDataResult = await query(`
+      SELECT 
+        am.*,
+        m.nom_equipement,
+        e.nom as employe_nom,
+        e.prenom as employe_prenom
+      FROM affectations_materiel am
+      LEFT JOIN materiel m ON am.materiel_id = m.id
+      LEFT JOIN employes e ON am.employe_id = e.id
+      WHERE am.id = $1
+    `, [id])
+
+    if (oldDataResult.rows.length === 0) {
+      return NextResponse.json({ error: "Affectation non trouvée" }, { status: 404 })
+    }
+
+    const oldData = oldDataResult.rows[0]
 
     const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ')
     const values = [id, ...fields.map(field => updateData[field])]
@@ -171,6 +194,45 @@ export async function PUT(request: NextRequest) {
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "Affectation non trouvée" }, { status: 404 })
     }
+
+    const newData = result.rows[0]
+
+    // Générer une description détaillée des modifications
+    const changes: string[] = []
+    
+    if (oldData.quantite_assignee !== newData.quantite_assignee) {
+      changes.push(`Quantité: ${oldData.quantite_assignee} → ${newData.quantite_assignee}`)
+    }
+    if (oldData.statut !== newData.statut) {
+      changes.push(`Statut: ${oldData.statut} → ${newData.statut}`)
+    }
+    if (oldData.type_affectation !== newData.type_affectation) {
+      changes.push(`Type: ${oldData.type_affectation} → ${newData.type_affectation}`)
+    }
+    if (oldData.commentaires !== newData.commentaires) {
+      changes.push(`Commentaires modifiés`)
+    }
+    if (oldData.date_affectation !== newData.date_affectation) {
+      changes.push(`Date modifiée`)
+    }
+    
+    const detailedDescription = changes.length > 0 
+      ? `${oldData.nom_equipement} → ${oldData.employe_prenom} ${oldData.employe_nom} - ${changes.join(', ')}`
+      : `${oldData.nom_equipement} → ${oldData.employe_prenom} ${oldData.employe_nom} (aucune modification détectable)`
+
+    // Enregistrer dans l'historique
+    await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
+      action: 'UPDATE',
+      tableName: 'affectations_materiel',
+      recordId: id,
+      section: 'Matériel',
+      description: `Modification d'assignation - ${detailedDescription}`,
+      oldValues: oldData,
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
 
     return NextResponse.json({
       success: true,

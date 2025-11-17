@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/database'
+import { logHistorique, getClientIP, getUserAgent } from '@/lib/historique'
 // import { broadcastEmployeeUpdate, broadcastPersonalDataUpdate } from '../employees-updates/route' // Supprimé pour éviter les erreurs de build
 
 // Force dynamic rendering for this route
@@ -78,6 +79,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json()
     const {
       prenom,
       nom,
@@ -86,8 +88,9 @@ export async function POST(request: NextRequest) {
       statut,
       email,
       telephone,
-      date_embauche
-    } = await request.json()
+      date_embauche,
+      _user
+    } = body
 
     if (!prenom || !nom || !matricule || 
         prenom.trim() === '' || nom.trim() === '' || matricule.trim() === '') {
@@ -129,6 +132,19 @@ export async function POST(request: NextRequest) {
       new Date()
     ])
 
+    // Enregistrer dans l'historique
+    await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
+      action: 'CREATE',
+      tableName: 'employes',
+      recordId: result.rows[0].id,
+      section: 'Employés',
+      description: `Nouvel employé - ${prenom} ${nom} - Matricule: ${matricule} - Niveau: ${niveau_acces || 'technicien'}`,
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
+
     return NextResponse.json({
       success: true,
       employe: result.rows[0],
@@ -143,11 +159,21 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, ...updateData } = await request.json()
+    const body = await request.json()
+    const { id, _user, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
     }
+
+    // Récupérer les anciennes valeurs avant la mise à jour
+    const oldDataResult = await query('SELECT * FROM employes WHERE id = $1', [id])
+    
+    if (oldDataResult.rows.length === 0) {
+      return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
+    }
+    
+    const oldData = oldDataResult.rows[0]
 
     const updateFields: string[] = []
     const params: any[] = []
@@ -197,6 +223,37 @@ export async function PUT(request: NextRequest) {
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
     }
+
+    const newData = result.rows[0]
+
+    // Générer une description détaillée des modifications
+    const changes: string[] = []
+    
+    if (oldData.statut !== newData.statut) {
+      changes.push(`Statut: ${oldData.statut} → ${newData.statut}`)
+    }
+    if (oldData.niveau_acces !== newData.niveau_acces) {
+      changes.push(`Niveau: ${oldData.niveau_acces} → ${newData.niveau_acces}`)
+    }
+    if (oldData.salaire_base !== newData.salaire_base) {
+      changes.push(`Salaire: ${oldData.salaire_base || 'N/A'}€ → ${newData.salaire_base || 'N/A'}€`)
+    }
+    if (oldData.pourcentage_taxe !== newData.pourcentage_taxe) {
+      changes.push(`Taxe: ${oldData.pourcentage_taxe || 0}% → ${newData.pourcentage_taxe || 0}%`)
+    }
+    if (oldData.email !== newData.email) {
+      changes.push(`Email: ${oldData.email || 'N/A'} → ${newData.email || 'N/A'}`)
+    }
+    if (oldData.telephone !== newData.telephone) {
+      changes.push(`Téléphone: ${oldData.telephone || 'N/A'} → ${newData.telephone || 'N/A'}`)
+    }
+    if (oldData.rib_salaire !== newData.rib_salaire) {
+      changes.push(`RIB modifié`)
+    }
+    
+    const detailedDescription = changes.length > 0 
+      ? `${oldData.prenom} ${oldData.nom} (${oldData.matricule}) - ${changes.join(', ')}`
+      : `${oldData.prenom} ${oldData.nom} (${oldData.matricule}) (aucune modification détectable)`
 
     // Diffusion des mises à jour supprimée (utilise le polling automatique à la place)
     console.log(`📡 Employé ${result.rows[0].prenom} ${result.rows[0].nom} mis à jour (ID: ${id})`)
@@ -267,6 +324,20 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Enregistrer dans l'historique
+    await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
+      action: 'UPDATE',
+      tableName: 'employes',
+      recordId: id,
+      section: 'Employés',
+      description: `Modification employé - ${detailedDescription}`,
+      oldValues: oldData,
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
+
     return NextResponse.json({
       success: true,
       employe: result.rows[0],
@@ -281,12 +352,21 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
+    const body = await request.json()
+    const { id, _user } = body
 
     if (!id) {
       return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
     }
+
+    // Récupérer les données avant suppression
+    const oldDataResult = await query('SELECT * FROM employes WHERE id = $1', [id])
+    
+    if (oldDataResult.rows.length === 0) {
+      return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
+    }
+    
+    const deletedData = oldDataResult.rows[0]
 
     const result = await query(
       'DELETE FROM employes WHERE id = $1 RETURNING *',
@@ -296,6 +376,19 @@ export async function DELETE(request: NextRequest) {
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Employé non trouvé' }, { status: 404 })
     }
+
+    // Enregistrer dans l'historique
+    await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
+      action: 'DELETE',
+      tableName: 'employes',
+      recordId: parseInt(id),
+      section: 'Employés',
+      description: `Suppression employé - ${deletedData.prenom} ${deletedData.nom} - Matricule: ${deletedData.matricule} - ${deletedData.niveau_acces}`,
+      oldValues: deletedData,
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
 
     return NextResponse.json({
       success: true,

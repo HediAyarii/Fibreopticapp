@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 import { addNoCacheHeaders } from "@/lib/cache-headers"
 import { sendReclamationNotification } from "@/lib/socketio"
+import { logHistorique, getClientIP, getUserAgent } from "@/lib/historique"
 
 export const dynamic = 'force-dynamic'
 
@@ -96,7 +97,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const data = await request.json()
+    const body = await request.json()
+    const { _user, ...data } = body
     
     console.log("📝 Received reclamation data:", {
       keys: Object.keys(data),
@@ -240,6 +242,26 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Enregistrer dans l'historique
+    const employeInfo = cleanedData.employe_id 
+      ? await query('SELECT nom, prenom FROM employes WHERE id = $1', [cleanedData.employe_id])
+      : null
+    const employeNom = employeInfo?.rows.length > 0 
+      ? `${employeInfo.rows[0].prenom} ${employeInfo.rows[0].nom}` 
+      : technicien_responsable || 'Technicien non assigné'
+
+    await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
+      action: 'CREATE',
+      tableName: 'reclamations',
+      recordId: result.rows[0].id,
+      section: 'Réclamations',
+      description: `Nouvelle réclamation - ${numeroReclamation} - ${nom_client} - ${type_reclamation} - Assignée à ${employeNom}`,
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
+
     const response = NextResponse.json({
       success: true,
       reclamation: result.rows[0]
@@ -254,7 +276,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, ...updateData } = await request.json()
+    const body = await request.json()
+    const { id, _user, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID réclamation requis" }, { status: 400 })
@@ -301,6 +324,20 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Aucune donnée à mettre à jour" }, { status: 400 })
     }
 
+    // Récupérer les anciennes valeurs avec infos employé
+    const oldDataResult = await query(`
+      SELECT r.*, e.nom as employe_nom, e.prenom as employe_prenom
+      FROM reclamations r
+      LEFT JOIN employes e ON r.employe_id = e.id
+      WHERE r.id = $1
+    `, [id])
+    
+    if (oldDataResult.rows.length === 0) {
+      return NextResponse.json({ error: "Réclamation non trouvée" }, { status: 404 })
+    }
+    
+    const oldData = oldDataResult.rows[0]
+
     const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ')
     const values = [id, ...fields.map(field => cleanedData[field])]
 
@@ -317,6 +354,57 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Réclamation non trouvée" }, { status: 404 })
     }
 
+    const newData = result.rows[0]
+
+    // Générer une description détaillée des modifications
+    const changes: string[] = []
+    
+    if (oldData.statut !== newData.statut) {
+      changes.push(`Statut: ${oldData.statut} → ${newData.statut}`)
+    }
+    if (oldData.priorite !== newData.priorite) {
+      changes.push(`Priorité: ${oldData.priorite} → ${newData.priorite}`)
+    }
+    if (oldData.employe_id !== newData.employe_id) {
+      const newEmployeInfo = newData.employe_id 
+        ? await query('SELECT nom, prenom FROM employes WHERE id = $1', [newData.employe_id])
+        : null
+      const oldEmployeName = oldData.employe_prenom && oldData.employe_nom 
+        ? `${oldData.employe_prenom} ${oldData.employe_nom}` 
+        : 'Non assigné'
+      const newEmployeName = newEmployeInfo?.rows.length > 0 
+        ? `${newEmployeInfo.rows[0].prenom} ${newEmployeInfo.rows[0].nom}` 
+        : 'Non assigné'
+      changes.push(`Technicien: ${oldEmployeName} → ${newEmployeName}`)
+    }
+    if (oldData.description_solution !== newData.description_solution) {
+      changes.push(`Solution ajoutée/modifiée`)
+    }
+    if (oldData.date_resolution !== newData.date_resolution && newData.date_resolution) {
+      changes.push(`Résolue le ${new Date(newData.date_resolution).toLocaleDateString('fr-FR')}`)
+    }
+    if (oldData.satisfaction_client !== newData.satisfaction_client) {
+      changes.push(`Satisfaction: ${oldData.satisfaction_client || 'N/A'} → ${newData.satisfaction_client || 'N/A'}`)
+    }
+    
+    const detailedDescription = changes.length > 0 
+      ? `${oldData.numero_reclamation} - ${oldData.nom_client} - ${changes.join(', ')}`
+      : `${oldData.numero_reclamation} - ${oldData.nom_client} (aucune modification détectable)`
+
+    // Enregistrer dans l'historique
+    await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
+      action: 'UPDATE',
+      tableName: 'reclamations',
+      recordId: id,
+      section: 'Réclamations',
+      description: `Modification réclamation - ${detailedDescription}`,
+      oldValues: oldData,
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
+
     const response = NextResponse.json({
       success: true,
       reclamation: result.rows[0]
@@ -331,18 +419,43 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
+    const body = await request.json()
+    const { id, _user } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID réclamation requis" }, { status: 400 })
     }
+
+    // Récupérer les données avant suppression
+    const oldDataResult = await query(
+      'SELECT * FROM reclamations WHERE id = $1',
+      [id]
+    )
+    
+    if (oldDataResult.rows.length === 0) {
+      return NextResponse.json({ error: "Réclamation non trouvée" }, { status: 404 })
+    }
+    
+    const deletedData = oldDataResult.rows[0]
 
     const result = await query('DELETE FROM reclamations WHERE id = $1 RETURNING *', [id])
     
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "Réclamation non trouvée" }, { status: 404 })
     }
+
+    // Enregistrer dans l'historique
+    await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
+      action: 'DELETE',
+      tableName: 'reclamations',
+      recordId: parseInt(id),
+      section: 'Réclamations',
+      description: `Suppression réclamation - ${deletedData.numero_reclamation} - ${deletedData.nom_client} - ${deletedData.type_reclamation}`,
+      oldValues: deletedData,
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
 
     return NextResponse.json({
       success: true,

@@ -200,6 +200,9 @@ const loadFuelDataFromDatabase = async () => {
 }
 
 export default function EmployeeTracker() {
+  // Prevent hydration mismatch
+  const [mounted, setMounted] = useState(false)
+  
   // Helper function to safely check if data is valid
   const isValidArray = (data: any): data is any[] => {
     return Array.isArray(data) && data.length >= 0
@@ -544,6 +547,10 @@ export default function EmployeeTracker() {
   }
 
   // Load data from database on component mount
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   useEffect(() => {
     if (isLoggedIn) {
       // Charger SEULEMENT les données essentielles au démarrage
@@ -1516,19 +1523,19 @@ La page va se recharger automatiquement...`)
           section = 'Matériel'
           break
         case 'penalty':
-          apiEndpoint = `/api/penalites?id=${id}`
+          apiEndpoint = `/api/penalites`
           successMessage = 'Pénalité supprimée avec succès'
           tableName = 'penalites'
           section = 'Pénalités'
           break
         case 'claim':
-          apiEndpoint = `/api/reclamations?id=${id}`
+          apiEndpoint = `/api/reclamations`
           successMessage = 'Réclamation supprimée avec succès'
           tableName = 'reclamations'
           section = 'Réclamations'
           break
         case 'employee':
-          apiEndpoint = `/api/employes?id=${id}`
+          apiEndpoint = `/api/employes`
           successMessage = 'Employé supprimé avec succès'
           tableName = 'employes'
           section = 'Employés'
@@ -1593,6 +1600,7 @@ La page va se recharger automatiquement...`)
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          id: id,
           _user: {
             email: user?.email || 'Inconnu',
             name: user?.name || 'Utilisateur',
@@ -1846,7 +1854,9 @@ La page va se recharger automatiquement...`)
     try {
       const url = editingItem ? "/api/employes" : "/api/employes"
       const method = editingItem ? "PUT" : "POST"
-      const body = editingItem ? { id: editingItem.id, ...employeeData } : employeeData
+      const body = editingItem 
+        ? { id: editingItem.id, ...employeeData, _user: { email: user?.email, name: user?.name } } 
+        : { ...employeeData, _user: { email: user?.email, name: user?.name } }
 
       const response = await fetch(url, {
         method,
@@ -2087,8 +2097,8 @@ La page va se recharger automatiquement...`)
       delete apiData.deadline // Supprimer le champ deadline car l'API attend date_resolution
       
       const body = editingItem 
-        ? { id: editingItem.id, ...apiData }
-        : apiData
+        ? { id: editingItem.id, ...apiData, _user: { email: user?.email, name: user?.name } }
+        : { ...apiData, _user: { email: user?.email, name: user?.name } }
 
       const response = await fetch(url, {
         method,
@@ -2205,7 +2215,9 @@ La page va se recharger automatiquement...`)
     try {
       const url = editingItem ? "/api/penalites" : "/api/penalites"
       const method = editingItem ? "PUT" : "POST"
-      const body = editingItem ? { id: editingItem.id, ...penaltyData } : penaltyData
+      const body = editingItem 
+        ? { id: editingItem.id, ...penaltyData, _user: { email: user?.email, name: user?.name } } 
+        : { ...penaltyData, _user: { email: user?.email, name: user?.name } }
 
       const response = await fetch(url, {
         method,
@@ -2252,7 +2264,9 @@ La page va se recharger automatiquement...`)
     try {
       const url = editingItem ? "/api/reclamations" : "/api/reclamations"
       const method = editingItem ? "PUT" : "POST"
-      const body = editingItem ? { id: editingItem.id, ...claimData } : claimData
+      const body = editingItem 
+        ? { id: editingItem.id, ...claimData, _user: { email: user?.email, name: user?.name } } 
+        : { ...claimData, _user: { email: user?.email, name: user?.name } }
 
       const response = await fetch(url, {
         method,
@@ -2701,6 +2715,14 @@ La page va se recharger automatiquement...`)
             </div>
           </CardContent>
         </Card>
+      </div>
+    )
+  }
+
+  if (!mounted) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -3217,7 +3239,7 @@ La page va se recharger automatiquement...`)
               </Card>
 
               {/* Statistiques des Échecs */}
-              <Card className="glass-card border border-white/20 hover-lift">
+              {/* <Card className="glass-card border border-white/20 hover-lift">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5 text-red-500" />
@@ -3230,10 +3252,10 @@ La page va se recharger automatiquement...`)
                 <CardContent>
                   <FailureStatistics />
                 </CardContent>
-              </Card>
+              </Card> */}
 
               {/* Statistiques RACC par Type de Logement */}
-              <Card className="glass-card border border-white/20 hover-lift">
+              {/* <Card className="glass-card border border-white/20 hover-lift">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Building2 className="w-5 h-5 text-blue-500" />
@@ -3246,11 +3268,11 @@ La page va se recharger automatiquement...`)
                 <CardContent>
                   <RaccByTypeStatistics />
                 </CardContent>
-              </Card>
+              </Card> */}
 
               {/* Statistiques par Type de Parcours */}
-              <Card className="glass-card border border-white/20 hover-lift">
-                {/* <CardHeader>
+              {/* <Card className="glass-card border border-white/20 hover-lift">
+                <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <TrendingUp className="w-5 h-5 text-purple-500" />
                     Type de Parcours
@@ -3258,11 +3280,11 @@ La page va se recharger automatiquement...`)
                   <CardDescription>
                     Analyse des interventions clôturées et échecs par type de parcours - AXECOM vs ERT OUEST
                   </CardDescription>
-                </CardHeader> */}
+                </CardHeader>
                 <CardContent>
                   <ParcoursStatistics />
                 </CardContent>
-              </Card>
+              </Card> */}
             </div>
           )}
 
@@ -5865,6 +5887,56 @@ La page va se recharger automatiquement...`)
               </div>
             </div>
             
+            {/* Carte Clôtures et Échecs - wrapped to prevent hydration issues */}
+            <div suppressHydrationWarning>
+              <Card className="glass-card border border-white/20 hover-lift">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                    Clôtures et Échecs Terminés
+                  </CardTitle>
+                  <CardDescription>
+                    Analyse des interventions terminées (clôtures et échecs) par technicien
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FailureStatistics />
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Carte Répartition par Type de Parcours */}
+            <Card className="glass-card border border-white/20 hover-lift">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-purple-500" />
+                  Type de Parcours
+                </CardTitle>
+                <CardDescription>
+                  Analyse des interventions clôturées et échecs par type de parcours - AXECOM vs ERT OUEST
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ParcoursStatistics />
+              </CardContent>
+            </Card>
+
+            {/* Carte RACC par Type de Logement */}
+            <Card className="glass-card border border-white/20 hover-lift">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-blue-500" />
+                  RACC par Type de Logement
+                </CardTitle>
+                <CardDescription>
+                  Répartition des raccordements clôturés par type (Pavillon/Immeuble) - AXECOM vs ERT OUEST
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RaccByTypeStatistics />
+              </CardContent>
+            </Card>
+
             {/* Interface de statistiques */}
             <StatisticsDashboard />
           </div>
@@ -8371,6 +8443,7 @@ function CostModal({ isOpen, onClose, onSave, categories, editingCost, type }: {
 
 // Composant de tableau de bord des statistiques
 function StatisticsDashboard() {
+  const [mounted, setMounted] = useState(false)
   const [statistics, setStatistics] = useState<any>({
     interventions: { byStatus: [], byMonth: [], byEmployee: [], total: 0 },
     penalties: { byStatus: [], byEmployee: [] },
@@ -8415,6 +8488,11 @@ function StatisticsDashboard() {
   const [endDate, setEndDate] = useState(statisticsDefaultDates.end)
   const [selectedType, setSelectedType] = useState('all')
 
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const loadStatistics = async () => {
     setLoading(true)
     try {
@@ -8444,6 +8522,19 @@ function StatisticsDashboard() {
   }, [startDate, endDate, selectedType])
 
   const COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6B7280']
+
+  // Prevent hydration mismatch - render only after mount
+  if (!mounted) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <p className="text-muted-foreground">Chargement des statistiques...</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

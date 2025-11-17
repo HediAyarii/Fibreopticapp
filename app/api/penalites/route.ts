@@ -135,6 +135,7 @@ export async function PATCH(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json()
     const {
       numero_penalite,
       employe_id,
@@ -148,8 +149,9 @@ export async function POST(request: NextRequest) {
       auto_calculate,
       date_attribution,
       j_plus_1,
-      j_plus_n
-    } = await request.json()
+      j_plus_n,
+      _user
+    } = body
 
     let intervention_concernee = null
     let type_penalite = 'dossier_non_cloture' // Toujours défini sur dossier non clôturé
@@ -284,18 +286,6 @@ export async function POST(request: NextRequest) {
 
     const result = await query(insertQuery, values)
     
-    // Enregistrer dans l'historique
-    await logHistorique({
-      action: 'CREATE',
-      tableName: 'penalites',
-      recordId: result.rows[0].id,
-      section: 'Pénalités',
-      description: generateDescription('CREATE', 'Pénalités', `Pénalité ${numeroPenalite} - Montant: ${cleanedData.montant}€`),
-      newValues: result.rows[0],
-      ipAddress: getClientIP(request),
-      userAgent: getUserAgent(request)
-    })
-    
     // Mettre à jour le total des pénalités de l'employé
     await query(`
       UPDATE employes 
@@ -368,6 +358,27 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Enregistrer dans l'historique avec l'utilisateur
+    const employeInfo = await query(
+      'SELECT nom, prenom FROM employes WHERE id = $1',
+      [cleanedData.employe_id]
+    )
+    const employeNom = employeInfo.rows.length > 0 
+      ? `${employeInfo.rows[0].prenom} ${employeInfo.rows[0].nom}` 
+      : 'Employé inconnu'
+
+    await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
+      action: 'CREATE',
+      tableName: 'penalites',
+      recordId: result.rows[0].id,
+      section: 'Pénalités',
+      description: `Nouvelle pénalité - ${employeNom} - ${numeroPenalite} - ${cleanedData.montant}€ (${finalMotif})`,
+      newValues: result.rows[0],
+      ipAddress: getClientIP(request),
+      userAgent: getUserAgent(request)
+    })
+
     return NextResponse.json({
       success: true,
       penalite: result.rows[0]
@@ -380,7 +391,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, ...updateData } = await request.json()
+    const body = await request.json()
+    const { id, _user, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID pénalité requis" }, { status: 400 })
@@ -424,8 +436,18 @@ export async function PUT(request: NextRequest) {
     const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ')
     const values = [id, ...fields.map(field => updateData[field])]
 
-    // Récupérer les anciennes valeurs avant la mise à jour
-    const oldDataResult = await query('SELECT * FROM penalites WHERE id = $1', [id])
+    // Récupérer les anciennes valeurs avant la mise à jour avec infos employé
+    const oldDataResult = await query(`
+      SELECT p.*, e.nom as employe_nom, e.prenom as employe_prenom
+      FROM penalites p
+      LEFT JOIN employes e ON p.employe_id = e.id
+      WHERE p.id = $1
+    `, [id])
+    
+    if (oldDataResult.rows.length === 0) {
+      return NextResponse.json({ error: "Pénalité non trouvée" }, { status: 404 })
+    }
+    
     const oldData = oldDataResult.rows[0]
 
     const updateQuery = `
@@ -441,13 +463,42 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Pénalité non trouvée" }, { status: 404 })
     }
 
+    const newData = result.rows[0]
+
+    // Générer une description détaillée des modifications
+    const changes: string[] = []
+    
+    if (oldData.montant !== newData.montant) {
+      changes.push(`Montant: ${oldData.montant}€ → ${newData.montant}€`)
+    }
+    if (oldData.motif !== newData.motif) {
+      changes.push(`Motif: ${oldData.motif} → ${newData.motif}`)
+    }
+    if (oldData.type_penalite !== newData.type_penalite) {
+      changes.push(`Type: ${oldData.type_penalite} → ${newData.type_penalite}`)
+    }
+    if (oldData.statut !== newData.statut) {
+      changes.push(`Statut: ${oldData.statut} → ${newData.statut}`)
+    }
+    if (oldData.manager_approbateur !== newData.manager_approbateur) {
+      changes.push(`Manager: ${oldData.manager_approbateur} → ${newData.manager_approbateur}`)
+    }
+    if (oldData.commentaires !== newData.commentaires) {
+      changes.push(`Commentaires modifiés`)
+    }
+    
+    const detailedDescription = changes.length > 0 
+      ? `${oldData.numero_penalite} - ${oldData.employe_prenom} ${oldData.employe_nom} - ${changes.join(', ')}`
+      : `${oldData.numero_penalite} - ${oldData.employe_prenom} ${oldData.employe_nom} (aucune modification détectable)`
+
     // Enregistrer dans l'historique
     await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
       action: 'UPDATE',
       tableName: 'penalites',
       recordId: id,
       section: 'Pénalités',
-      description: generateDescription('UPDATE', 'Pénalités', `Pénalité ${result.rows[0].numero_penalite}`),
+      description: `Modification pénalité - ${detailedDescription}`,
       oldValues: oldData,
       newValues: result.rows[0],
       ipAddress: getClientIP(request),
@@ -480,15 +531,21 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
+    const body = await request.json()
+    const { id, _user } = body
 
     if (!id) {
       return NextResponse.json({ error: "ID pénalité requis" }, { status: 400 })
     }
 
     // Récupérer l'employé_id et toutes les données avant suppression
-    const employeResult = await query('SELECT * FROM penalites WHERE id = $1', [id])
+    const employeResult = await query(`
+      SELECT p.*, e.nom as employe_nom, e.prenom as employe_prenom
+      FROM penalites p
+      LEFT JOIN employes e ON p.employe_id = e.id
+      WHERE p.id = $1
+    `, [id])
+    
     if (employeResult.rows.length === 0) {
       return NextResponse.json({ error: "Pénalité non trouvée" }, { status: 404 })
     }
@@ -500,11 +557,12 @@ export async function DELETE(request: NextRequest) {
     
     // Enregistrer dans l'historique
     await logHistorique({
+      userName: _user?.email || _user?.name || 'Utilisateur inconnu',
       action: 'DELETE',
       tableName: 'penalites',
       recordId: parseInt(id),
       section: 'Pénalités',
-      description: generateDescription('DELETE', 'Pénalités', `Pénalité ${deletedData.numero_penalite}`),
+      description: `Suppression pénalité - ${deletedData.numero_penalite} - ${deletedData.employe_prenom} ${deletedData.employe_nom} - ${deletedData.montant}€`,
       oldValues: deletedData,
       ipAddress: getClientIP(request),
       userAgent: getUserAgent(request)
