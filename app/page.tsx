@@ -251,6 +251,8 @@ export default function EmployeeTracker() {
   const [materials, setMaterials] = useState<any[]>([])
   const [depotFilter, setDepotFilter] = useState<'ALL' | 'AXECOM' | 'ERT'>('ALL')
   const [materialSearch, setMaterialSearch] = useState<string>('')
+  const [materialPage, setMaterialPage] = useState<number>(1)
+  const [materialItemsPerPage] = useState<number>(20)
   const [penalties, setPenalties] = useState<any[]>([])
   const [claims, setClaims] = useState<any[]>([])
   const [affectations, setAffectations] = useState<any[]>([])
@@ -5127,7 +5129,10 @@ La page va se recharger automatiquement...`)
                        type="text"
                        placeholder="Rechercher un équipement..."
                        value={materialSearch}
-                       onChange={(e) => setMaterialSearch(e.target.value)}
+                       onChange={(e) => {
+                         setMaterialSearch(e.target.value)
+                         setMaterialPage(1) // Réinitialiser à la page 1 lors d'une recherche
+                       }}
                        className="pl-10 w-64 bg-white/5 border-white/20"
                      />
                    </div>
@@ -5367,28 +5372,34 @@ La page va se recharger automatiquement...`)
                         </tr>
                       </thead>
                       <tbody>
-                             {materials
-                               .filter((material) => {
-                                 if (!materialSearch) return true
-                                 const searchLower = materialSearch.toLowerCase()
-                                 return (
-                                   material.nom_equipement?.toLowerCase().includes(searchLower) ||
-                                   material.type_equipement?.toLowerCase().includes(searchLower) ||
-                                   material.marque?.toLowerCase().includes(searchLower) ||
-                                   material.modele?.toLowerCase().includes(searchLower) ||
-                                   material.numero_serie?.toLowerCase().includes(searchLower) ||
-                                   material.depot?.toLowerCase().includes(searchLower)
-                                 )
-                               })
-                               .sort((a, b) => {
-                                 const quantiteA = a.quantite || 0
-                                 const quantiteB = b.quantite || 0
-                                 return stockSortOrder === 'desc' 
-                                   ? quantiteB - quantiteA 
-                                   : quantiteA - quantiteB
-                               })
-                               .slice(0, 50)
-                               .map((material, index) => (
+                             {(() => {
+                               const filteredMaterials = materials
+                                 .filter((material) => {
+                                   if (!materialSearch) return true
+                                   const searchLower = materialSearch.toLowerCase()
+                                   return (
+                                     material.nom_equipement?.toLowerCase().includes(searchLower) ||
+                                     material.type_equipement?.toLowerCase().includes(searchLower) ||
+                                     material.marque?.toLowerCase().includes(searchLower) ||
+                                     material.modele?.toLowerCase().includes(searchLower) ||
+                                     material.numero_serie?.toLowerCase().includes(searchLower) ||
+                                     material.depot?.toLowerCase().includes(searchLower)
+                                   )
+                                 })
+                                 .sort((a, b) => {
+                                   const quantiteA = a.quantite || 0
+                                   const quantiteB = b.quantite || 0
+                                   return stockSortOrder === 'desc' 
+                                     ? quantiteB - quantiteA 
+                                     : quantiteA - quantiteB
+                                 })
+                               
+                               const totalPages = Math.ceil(filteredMaterials.length / materialItemsPerPage)
+                               const startIndex = (materialPage - 1) * materialItemsPerPage
+                               const endIndex = startIndex + materialItemsPerPage
+                               const paginatedMaterials = filteredMaterials.slice(startIndex, endIndex)
+                               
+                               return paginatedMaterials.map((material, index) => (
                                <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                  <td className="p-4 font-medium">{material.nom_equipement}</td>
                                  <td className="p-4">{material.type_equipement}</td>
@@ -5465,11 +5476,83 @@ La page va se recharger automatiquement...`)
                               </div>
                             </td>
                           </tr>
-                        ))}
+                        ))
+                             })()}
                       </tbody>
                     </table>
                   </div>
                   )}
+                  
+                  {/* Pagination Controls */}
+                  {!loadingMaterials && materials.length > 0 && (() => {
+                    const filteredCount = materials.filter((material) => {
+                      if (!materialSearch) return true
+                      const searchLower = materialSearch.toLowerCase()
+                      return (
+                        material.nom_equipement?.toLowerCase().includes(searchLower) ||
+                        material.type_equipement?.toLowerCase().includes(searchLower) ||
+                        material.marque?.toLowerCase().includes(searchLower) ||
+                        material.modele?.toLowerCase().includes(searchLower) ||
+                        material.numero_serie?.toLowerCase().includes(searchLower) ||
+                        material.depot?.toLowerCase().includes(searchLower)
+                      )
+                    }).length
+                    
+                    const totalPages = Math.ceil(filteredCount / materialItemsPerPage)
+                    
+                    if (totalPages <= 1) return null
+                    
+                    return (
+                      <div className="flex items-center justify-between px-4 py-4 border-t border-white/10">
+                        <div className="text-sm text-muted-foreground">
+                          Affichage de {((materialPage - 1) * materialItemsPerPage) + 1} à {Math.min(materialPage * materialItemsPerPage, filteredCount)} sur {filteredCount} résultats
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setMaterialPage(1)}
+                            disabled={materialPage === 1}
+                            className="glass-card border border-white/20"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                            <ChevronLeft className="w-4 h-4 -ml-2" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setMaterialPage(p => Math.max(1, p - 1))}
+                            disabled={materialPage === 1}
+                            className="glass-card border border-white/20"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </Button>
+                          <div className="flex items-center gap-2 px-4">
+                            <span className="text-sm font-medium">Page {materialPage} sur {totalPages}</span>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setMaterialPage(p => Math.min(totalPages, p + 1))}
+                            disabled={materialPage === totalPages}
+                            className="glass-card border border-white/20"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setMaterialPage(totalPages)}
+                            disabled={materialPage === totalPages}
+                            className="glass-card border border-white/20"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                            <ChevronRight className="w-4 h-4 -ml-2" />
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
 
