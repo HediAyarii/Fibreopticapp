@@ -179,10 +179,25 @@ export async function POST(request: NextRequest) {
       intervention_id
     })
 
+    // Vérifier si l'intervention existe si un ID est fourni
+    let validInterventionId = null
+    if (intervention_id && intervention_id !== '') {
+      const interventionCheck = await query(
+        'SELECT id FROM interventions WHERE id = $1',
+        [intervention_id]
+      )
+      if (interventionCheck.rows.length > 0) {
+        validInterventionId = intervention_id
+        console.log(`✅ Intervention ${intervention_id} trouvée - lien créé automatiquement`)
+      } else {
+        console.log(`⚠️ Intervention ${intervention_id} non trouvée - réclamation créée sans lien`)
+      }
+    }
+
     // Nettoyer les données : convertir les chaînes vides en null pour les champs entiers et dates
     const cleanedData = {
       client_id: client_id === '' ? null : client_id,
-      intervention_id: intervention_id === '' ? null : intervention_id,
+      intervention_id: validInterventionId, // Utiliser l'ID validé ou null
       employe_id: employe_id === '' ? null : employe_id,
       satisfaction_client: satisfaction_client === '' ? null : satisfaction_client,
       cout_reclamation: cout_reclamation === '' ? null : (cout_reclamation || 0),

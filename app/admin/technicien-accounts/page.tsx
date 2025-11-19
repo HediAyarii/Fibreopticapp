@@ -121,12 +121,46 @@ export default function AdminTechnicienAccounts() {
     }
   }
 
+  const handleResetLoginAttempts = async (accountId: number) => {
+    try {
+      const response = await fetch('/api/admin/technicien-accounts', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: accountId,
+          reset_login_attempts: true
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setAccounts(prev => 
+          prev.map(acc => 
+            acc.id === accountId 
+              ? { ...acc, login_attempts: 0, is_locked: false }
+              : acc
+          )
+        )
+      } else {
+        setError(data.error || 'Erreur lors de la réinitialisation')
+      }
+    } catch (error) {
+      setError('Erreur de connexion au serveur')
+    }
+  }
+
   const getStatusBadge = (account: TechnicienAccount) => {
     if (!account.is_active) {
       return <Badge variant="secondary">Inactif</Badge>
     }
     if (account.is_locked) {
-      return <Badge variant="destructive">Verrouillé</Badge>
+      return <Badge variant="destructive" className="bg-red-500 text-white">🔒 Verrouillé</Badge>
+    }
+    if (account.login_attempts >= 2) {
+      return <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300">⚠️ Alerte</Badge>
     }
     return <Badge variant="default" className="bg-green-100 text-green-800">Actif</Badge>
   }
@@ -245,11 +279,48 @@ export default function AdminTechnicienAccounts() {
                       </div>
                     </div>
 
-                    {account.login_attempts > 0 && (
-                      <div className="mt-2">
+                    {account.is_locked && (
+                      <div className="mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                        <div className="flex items-center gap-2 text-red-800">
+                          <Lock className="w-4 h-4" />
+                          <span className="font-medium text-sm">
+                            Compte verrouillé après {account.login_attempts} tentatives échouées
+                          </span>
+                        </div>
+                        <p className="text-xs text-red-700 mt-1">
+                          Cliquez sur "Réinitialiser" pour débloquer le compte
+                        </p>
+                      </div>
+                    )}
+
+                    {account.login_attempts > 0 && !account.is_locked && (
+                      <div className="mt-2 flex items-center gap-2">
                         <Badge variant="outline" className="text-orange-600 border-orange-200">
                           {account.login_attempts} tentative(s) échouée(s)
                         </Badge>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleResetLoginAttempts(account.id)}
+                          className="text-blue-600 hover:text-blue-700 text-xs"
+                        >
+                          <RefreshCw className="w-3 h-3 mr-1" />
+                          Réinitialiser
+                        </Button>
+                      </div>
+                    )}
+
+                    {account.is_locked && (
+                      <div className="mt-2">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleResetLoginAttempts(account.id)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          <Unlock className="w-4 h-4 mr-2" />
+                          Débloquer et Réinitialiser
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -301,9 +372,12 @@ export default function AdminTechnicienAccounts() {
         <h4 className="font-medium text-blue-900 mb-2">Informations sur les comptes techniciens :</h4>
         <ul className="text-sm text-blue-800 space-y-1">
           <li>• <strong>Actif/Désactif :</strong> Contrôle si le technicien peut se connecter</li>
-          <li>• <strong>Verrouillé/Déverrouillé :</strong> Verrouille le compte après plusieurs tentatives de connexion échouées</li>
+          <li>• <strong>Verrouillé/Déverrouillé :</strong> Verrouille le compte après 3 tentatives de connexion échouées</li>
+          <li>• <strong>Réinitialiser :</strong> Remet les tentatives à zéro et déverrouille automatiquement le compte</li>
           <li>• <strong>Suppression :</strong> Supprime définitivement le compte (irréversible)</li>
           <li>• Chaque technicien ne peut voir que ses propres données (interventions, réclamations, pénalités, carburant)</li>
+          <li>• <span className="text-orange-700">⚠️ Un compte avec 2+ tentatives montre une alerte orange</span></li>
+          <li>• <span className="text-red-700">🔒 Un compte verrouillé (3 tentatives) est bloqué jusqu'à réinitialisation</span></li>
         </ul>
       </div>
     </div>

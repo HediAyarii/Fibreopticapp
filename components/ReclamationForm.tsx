@@ -152,6 +152,26 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
     }
   }, [])
 
+  // Charger les détails de l'intervention lors de l'édition
+  useEffect(() => {
+    const loadInterventionDetails = async () => {
+      if (reclamation?.intervention_id && !selectedIntervention) {
+        try {
+          const response = await fetch(`/api/interventions/search?q=${reclamation.intervention_id}&limit=1`)
+          const data = await response.json()
+          
+          if (data.success && data.interventions && data.interventions.length > 0) {
+            setSelectedIntervention(data.interventions[0])
+          }
+        } catch (error) {
+          console.error('Erreur lors du chargement de l\'intervention:', error)
+        }
+      }
+    }
+
+    loadInterventionDetails()
+  }, [reclamation?.intervention_id])
+
   return (
     <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>

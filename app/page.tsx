@@ -2711,7 +2711,7 @@ La page va se recharger automatiquement...`)
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50" suppressHydrationWarning>
       <header className="glass-card border-0 border-b border-white/20 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex h-20 items-center justify-between px-8">
           <div className="flex items-center gap-4">
@@ -3091,7 +3091,7 @@ La page va se recharger automatiquement...`)
         )}
 
         {activeTab === "dashboard" && (
-          <div className="space-y-8">
+          <div className="space-y-8" suppressHydrationWarning>
                 <div className="flex items-center justify-between">
                   <div>
                   <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
@@ -3114,7 +3114,7 @@ La page va se recharger automatiquement...`)
               </div>
 
               {/* KPI Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" suppressHydrationWarning>
                 <Card className="glass-card border border-white/20 hover-lift">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">
@@ -3182,7 +3182,7 @@ La page va se recharger automatiquement...`)
               </div>
 
               {/* Recent Interventions */}
-              <Card className="glass-card border border-white/20 hover-lift">
+              <Card className="glass-card border border-white/20 hover-lift" suppressHydrationWarning>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileText className="w-5 h-5" />
@@ -6187,9 +6187,10 @@ La page va se recharger automatiquement...`)
                                    })()}
                                  </td>
                                  <td className="p-4">
-                                   {claim.intervention_client ? (
+                                   {claim.intervention_id ? (
                                      <div className="flex items-center gap-2">
-                                       <span className="text-sm">{claim.intervention_client}</span>
+                                       <FileText className="w-4 h-4 text-blue-500" />
+                                       <span className="text-sm font-mono">{claim.intervention_id}</span>
                                   </div>
                                    ) : (
                                      <span className="text-muted-foreground text-sm">Aucune</span>

@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, is_active, is_locked, password } = await request.json()
+    const { id, is_active, is_locked, password, reset_login_attempts } = await request.json()
 
     if (!id) {
       return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
@@ -140,6 +140,16 @@ export async function PUT(request: NextRequest) {
       const passwordHash = await bcrypt.hash(password, 10)
       updateFields.push(`password_hash = $${paramIndex}`)
       params.push(passwordHash)
+      paramIndex++
+    }
+
+    // Réinitialiser les tentatives de connexion et déverrouiller le compte
+    if (reset_login_attempts) {
+      updateFields.push(`login_attempts = $${paramIndex}`)
+      params.push(0)
+      paramIndex++
+      updateFields.push(`is_locked = $${paramIndex}`)
+      params.push(false)
       paramIndex++
     }
 
