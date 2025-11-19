@@ -84,7 +84,7 @@ BEGIN
     SELECT COUNT(*) INTO count_axecom FROM materiel WHERE depot = 'AXECOM';
     SELECT COUNT(*) INTO count_ert FROM materiel WHERE depot = 'ERT';
     
-    RAISE NOTICE '========================================';
+    RAISE NOTICE '=========================================';
     RAISE NOTICE 'RÉSUMÉ DE LA MIGRATION';
     RAISE NOTICE '========================================';
     RAISE NOTICE 'Total matériel : %', count_materiel;
