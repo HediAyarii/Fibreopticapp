@@ -46,6 +46,9 @@ import { EmployeeMaterialValueTable } from "@/components/EmployeeMaterialValueTa
 import { RecapCalculTable } from "@/components/RecapCalculTable"
 import { ReclamationForm } from "@/components/ReclamationForm"
 import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesForms"
+import { VehiculeForm } from "@/components/VehiculeForm"
+import { AssignationVehiculeForm } from "@/components/AssignationVehiculeForm"
+import { EntretienVehiculeForm } from "@/components/EntretienVehiculeForm"
 import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
@@ -114,6 +117,9 @@ import {
   Filter,
   MessageSquare,
   RotateCcw,
+  Car,
+  Wrench,
+  UserCheck,
 } from "lucide-react"
 
 // User authentication data
@@ -263,6 +269,18 @@ export default function EmployeeTracker() {
   const [consommationCarburant, setConsommationCarburant] = useState<any[]>([])
   const [employeesFromInterventions, setEmployeesFromInterventions] = useState<any[]>([])
   const [totalRevenue, setTotalRevenue] = useState<number>(0) // CA Total réel
+
+  // États pour les véhicules
+  const [vehicules, setVehicules] = useState<any[]>([])
+  const [assignationsVehicules, setAssignationsVehicules] = useState<any[]>([])
+  const [entretiensVehicules, setEntretiensVehicules] = useState<any[]>([])
+  const [loadingVehicules, setLoadingVehicules] = useState(false)
+  const [showVehiculeModal, setShowVehiculeModal] = useState(false)
+  const [showAssignationVehiculeModal, setShowAssignationVehiculeModal] = useState(false)
+  const [showEntretienVehiculeModal, setShowEntretienVehiculeModal] = useState(false)
+  const [editingVehicule, setEditingVehicule] = useState<any>(null)
+  const [editingAssignationVehicule, setEditingAssignationVehicule] = useState<any>(null)
+  const [editingEntretienVehicule, setEditingEntretienVehicule] = useState<any>(null)
 
   // Filtres pour réclamations
   const [claimSearchTerm, setClaimSearchTerm] = useState('')
@@ -647,6 +665,20 @@ export default function EmployeeTracker() {
       case 'tarifs':
         if (tarifs.length === 0) {
           loadTarifsFromDatabase()
+        }
+        break
+      case 'vehicules':
+        if (vehicules.length === 0) {
+          setLoadingVehicules(true)
+          Promise.all([
+            loadVehiculesFromDatabase(),
+            loadAssignationsVehiculesFromDatabase(),
+            loadEntretiensVehiculesFromDatabase()
+          ]).then(([vehiculesData, assignationsData, entretiensData]) => {
+            setVehicules(vehiculesData)
+            setAssignationsVehicules(assignationsData)
+            setEntretiensVehicules(entretiensData)
+          }).finally(() => setLoadingVehicules(false))
         }
         break
       // dashboard, employes, penalites, reclamations sont déjà chargés
@@ -2365,6 +2397,228 @@ La page va se recharger automatiquement...`)
     }
   }
 
+  // CRUD Functions for Vehicules
+  const loadVehiculesFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/vehicules")
+      if (!response.ok) throw new Error("Erreur lors du chargement des véhicules")
+      const data = await response.json()
+      return data.vehicules || []
+    } catch (error) {
+      console.error("Erreur chargement véhicules:", error)
+      return []
+    }
+  }
+
+  const loadAssignationsVehiculesFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/assignations-vehicules")
+      if (!response.ok) throw new Error("Erreur lors du chargement des assignations")
+      const data = await response.json()
+      return data.assignations || []
+    } catch (error) {
+      console.error("Erreur chargement assignations véhicules:", error)
+      return []
+    }
+  }
+
+  const loadEntretiensVehiculesFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/entretiens-vehicules")
+      if (!response.ok) throw new Error("Erreur lors du chargement des entretiens")
+      const data = await response.json()
+      return data.entretiens || []
+    } catch (error) {
+      console.error("Erreur chargement entretiens véhicules:", error)
+      return []
+    }
+  }
+
+  const saveVehicule = async (vehiculeData: any) => {
+    try {
+      const url = "/api/vehicules"
+      const method = editingVehicule ? "PUT" : "POST"
+      const body = editingVehicule 
+        ? { id: editingVehicule.id, ...vehiculeData } 
+        : vehiculeData
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+
+      const vehiculesData = await loadVehiculesFromDatabase()
+      setVehicules(vehiculesData)
+      setShowVehiculeModal(false)
+      setEditingVehicule(null)
+      alert(editingVehicule ? "Véhicule modifié avec succès" : "Véhicule ajouté avec succès")
+    } catch (error) {
+      console.error("Erreur sauvegarde véhicule:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+    }
+  }
+
+  const saveAssignationVehicule = async (assignationData: any) => {
+    try {
+      const url = "/api/assignations-vehicules"
+      const method = editingAssignationVehicule ? "PUT" : "POST"
+      const body = editingAssignationVehicule 
+        ? { id: editingAssignationVehicule.id, ...assignationData } 
+        : assignationData
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+
+      const [vehiculesData, assignationsData] = await Promise.all([
+        loadVehiculesFromDatabase(),
+        loadAssignationsVehiculesFromDatabase()
+      ])
+      setVehicules(vehiculesData)
+      setAssignationsVehicules(assignationsData)
+      setShowAssignationVehiculeModal(false)
+      setEditingAssignationVehicule(null)
+      alert(editingAssignationVehicule ? "Assignation modifiée avec succès" : "Assignation créée avec succès")
+    } catch (error) {
+      console.error("Erreur sauvegarde assignation:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+    }
+  }
+
+  const saveEntretienVehicule = async (entretienData: any) => {
+    try {
+      const url = "/api/entretiens-vehicules"
+      const method = editingEntretienVehicule ? "PUT" : "POST"
+      const body = editingEntretienVehicule 
+        ? { id: editingEntretienVehicule.id, ...entretienData } 
+        : entretienData
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+
+      const [vehiculesData, entretiensData] = await Promise.all([
+        loadVehiculesFromDatabase(),
+        loadEntretiensVehiculesFromDatabase()
+      ])
+      setVehicules(vehiculesData)
+      setEntretiensVehicules(entretiensData)
+      setShowEntretienVehiculeModal(false)
+      setEditingEntretienVehicule(null)
+      alert(editingEntretienVehicule ? "Entretien modifié avec succès" : "Entretien ajouté avec succès")
+    } catch (error) {
+      console.error("Erreur sauvegarde entretien:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+    }
+  }
+
+  const deleteVehicule = async (id: number) => {
+    try {
+      const response = await fetch(`/api/vehicules?id=${id}`, {
+        method: "DELETE"
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la suppression")
+      }
+
+      const vehiculesData = await loadVehiculesFromDatabase()
+      setVehicules(vehiculesData)
+      alert("Véhicule supprimé avec succès")
+    } catch (error) {
+      console.error("Erreur suppression véhicule:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
+    }
+  }
+
+  const deleteAssignationVehicule = async (id: number) => {
+    try {
+      // Au lieu de supprimer, on termine l'assignation en mettant la date de fin
+      const assignation = assignationsVehicules.find(a => a.id === id)
+      if (!assignation) {
+        alert("Assignation introuvable")
+        return
+      }
+
+      // Demander le kilométrage de fin
+      const kmFin = prompt(`Kilométrage actuel du véhicule ${assignation.matricule} ?`, assignation.kilometrage_debut?.toString() || '0')
+      if (kmFin === null) return // Annulation
+      
+      const response = await fetch('/api/assignations-vehicules', {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: id,
+          vehicule_id: assignation.vehicule_id,
+          employe_id: assignation.employe_id,
+          date_assignation: assignation.date_assignation,
+          date_fin: new Date().toISOString().split('T')[0], // Date du jour
+          kilometrage_debut: assignation.kilometrage_debut,
+          kilometrage_fin: parseInt(kmFin) || 0,
+          statut: 'terminee',
+          commentaires: assignation.commentaires
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la fin de l'assignation")
+      }
+
+      const [vehiculesData, assignationsData] = await Promise.all([
+        loadVehiculesFromDatabase(),
+        loadAssignationsVehiculesFromDatabase()
+      ])
+      setVehicules(vehiculesData)
+      setAssignationsVehicules(assignationsData)
+      alert("Assignation terminée avec succès")
+    } catch (error) {
+      console.error("Erreur lors de la fin de l'assignation:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la fin de l'assignation")
+    }
+  }
+
+  const deleteEntretienVehicule = async (id: number) => {
+    try {
+      const response = await fetch(`/api/entretiens-vehicules?id=${id}`, {
+        method: "DELETE"
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la suppression")
+      }
+
+      const entretiensData = await loadEntretiensVehiculesFromDatabase()
+      setEntretiensVehicules(entretiensData)
+      alert("Entretien supprimé avec succès")
+    } catch (error) {
+      console.error("Erreur suppression entretien:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
+    }
+  }
+
   // Function to handle assignation
   const handleAssignation = async () => {
     try {
@@ -3033,6 +3287,21 @@ La page va se recharger automatiquement...`)
                     >
                       <Building2 className="w-5 h-5" />
                       Tarifs
+                    </Button>
+                )}
+
+                {hasPermission('vehicules') && (
+                  <Button
+                  variant="ghost"
+                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                    activeTab === "vehicules"
+                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                          : "glass-card border border-white/20 hover:bg-primary/5"
+                      }`}
+                  onClick={() => setActiveTab("vehicules")}
+                    >
+                      <Car className="w-5 h-5" />
+                      Véhicules
                     </Button>
                 )}
 
@@ -6594,6 +6863,422 @@ La page va se recharger automatiquement...`)
               </div>
           )}
 
+           {/* Vehicules Section */}
+           {activeTab === "vehicules" && (
+             <div className="space-y-6">
+               <div className="flex justify-between items-center">
+                  <div>
+                   <h2 className="text-3xl font-bold">Gestion des Véhicules</h2>
+                   <p className="text-muted-foreground">Flotte, assignations et entretien</p>
+                  </div>
+              </div>
+              
+               {/* Vehicules Management Section */}
+                    <div className="space-y-6">
+                 {/* Section 1: Liste des Véhicules */}
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                            <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-primary/10 rounded-lg">
+                           <Car className="w-5 h-5 text-primary" />
+                          </div>
+                                <div>
+                           <CardTitle className="text-xl font-bold">Flotte de Véhicules</CardTitle>
+                           <CardDescription>
+                             {vehicules.length} véhicule(s) dans la flotte
+                           </CardDescription>
+                            </div>
+                              </div>
+                       <Button onClick={() => { setEditingVehicule(null); setShowVehiculeModal(true); }}>
+                         <Plus className="w-4 h-4 mr-2" />
+                         Nouveau Véhicule
+                       </Button>
+                            </div>
+                   </CardHeader>
+                   <CardContent>
+                     {loadingVehicules ? (
+                       <div className="text-center py-8">
+                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                         <p className="mt-2 text-muted-foreground">Chargement des véhicules...</p>
+                       </div>
+                     ) : vehicules.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <Car className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucun véhicule</h3>
+                         <p>Ajoutez des véhicules à votre flotte</p>
+                       </div>
+                     ) : (
+                       <div className="overflow-x-auto">
+                         <table className="w-full border-collapse">
+                           <thead>
+                             <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Matricule</th>
+                               <th className="text-left p-4 font-semibold">Marque/Modèle</th>
+                               <th className="text-left p-4 font-semibold">Année</th>
+                               <th className="text-left p-4 font-semibold">Kilométrage</th>
+                               <th className="text-left p-4 font-semibold">Type</th>
+                               <th className="text-left p-4 font-semibold">Statut</th>
+                               <th className="text-left p-4 font-semibold">Technicien Assigné</th>
+                               <th className="text-left p-4 font-semibold">Actions</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {vehicules.map((vehicule) => (
+                               <tr key={vehicule.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                 <td className="p-4">
+                                   <span className="font-mono font-semibold">{vehicule.matricule}</span>
+                                 </td>
+                                 <td className="p-4">
+                                   <div>
+                                     <div className="font-medium">{vehicule.marque}</div>
+                                     <div className="text-sm text-muted-foreground">{vehicule.modele}</div>
+                                   </div>
+                                 </td>
+                                 <td className="p-4">{vehicule.annee}</td>
+                                 <td className="p-4">{vehicule.kilometrage?.toLocaleString()} km</td>
+                                 <td className="p-4">
+                                   <Badge variant="outline">{vehicule.type_vehicule}</Badge>
+                                 </td>
+                                 <td className="p-4">
+                                   <Badge className={
+                                     vehicule.statut === 'disponible' ? 'bg-green-500/20 text-green-400' :
+                                     vehicule.statut === 'en_service' ? 'bg-blue-500/20 text-blue-400' :
+                                     vehicule.statut === 'en_maintenance' ? 'bg-yellow-500/20 text-yellow-400' :
+                                     'bg-red-500/20 text-red-400'
+                                   }>
+                                     {vehicule.statut === 'disponible' ? 'Disponible' :
+                                      vehicule.statut === 'en_service' ? 'En Service' :
+                                      vehicule.statut === 'en_maintenance' ? 'En Maintenance' : 'Hors Service'}
+                                   </Badge>
+                                 </td>
+                                 <td className="p-4">
+                                   {vehicule.employe_nom ? (
+                                     <span className="text-sm">{vehicule.employe_prenom} {vehicule.employe_nom}</span>
+                                   ) : (
+                                     <span className="text-muted-foreground text-sm">Non assigné</span>
+                                   )}
+                                 </td>
+                                 <td className="p-4">
+                                   <div className="flex gap-2">
+                                     <Button
+                                       variant="outline"
+                                       size="sm"
+                                       onClick={() => {
+                                         setEditingVehicule(vehicule)
+                                         setShowVehiculeModal(true)
+                                       }}
+                                     >
+                                       <Edit className="w-4 h-4" />
+                                     </Button>
+                                     <Button
+                                       variant="outline"
+                                       size="sm"
+                                       onClick={() => {
+                                         if (confirm('Êtes-vous sûr de vouloir supprimer ce véhicule?')) {
+                                           deleteVehicule(vehicule.id)
+                                         }
+                                       }}
+                                       className="text-red-400 hover:text-red-300"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                                     </Button>
+                                   </div>
+                                 </td>
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
+                     )}
+                   </CardContent>
+                 </Card>
+
+                 {/* Section 2: Assignations de Véhicules */}
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                            <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-blue-500/10 rounded-lg">
+                           <UserCheck className="w-5 h-5 text-blue-500" />
+                          </div>
+                                <div>
+                           <CardTitle className="text-xl font-bold">Assignations Actives</CardTitle>
+                           <CardDescription>
+                             {assignationsVehicules.filter(a => a.statut === 'active').length} assignation(s) en cours
+                           </CardDescription>
+                            </div>
+                              </div>
+                       <Button onClick={() => { setEditingAssignationVehicule(null); setShowAssignationVehiculeModal(true); }}>
+                         <Plus className="w-4 h-4 mr-2" />
+                         Nouvelle Assignation
+                       </Button>
+                            </div>
+                   </CardHeader>
+                   <CardContent>
+                     {assignationsVehicules.filter(a => a.statut === 'active').length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucune assignation active</h3>
+                         <p>Assignez des véhicules aux techniciens</p>
+                       </div>
+                     ) : (
+                       <div className="overflow-x-auto">
+                         <table className="w-full border-collapse">
+                           <thead>
+                             <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Véhicule</th>
+                               <th className="text-left p-4 font-semibold">Technicien</th>
+                               <th className="text-left p-4 font-semibold">Date Début</th>
+                               <th className="text-left p-4 font-semibold">KM Début</th>
+                               <th className="text-left p-4 font-semibold">Durée</th>
+                               <th className="text-left p-4 font-semibold">Actions</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {assignationsVehicules.filter(a => a.statut === 'active').map((assignation) => {
+                               const dateDebut = new Date(assignation.date_assignation)
+                               const aujourdhui = new Date()
+                               const dureeJours = Math.floor((aujourdhui.getTime() - dateDebut.getTime()) / (1000 * 60 * 60 * 24))
+                               
+                               return (
+                                 <tr key={assignation.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                   <td className="p-4">
+                                     <div>
+                                       <div className="font-mono font-semibold">{assignation.matricule}</div>
+                                       <div className="text-sm text-muted-foreground">{assignation.marque} {assignation.modele}</div>
+                                     </div>
+                                   </td>
+                                   <td className="p-4">
+                                     <span>{assignation.employe_prenom} {assignation.employe_nom}</span>
+                                   </td>
+                                   <td className="p-4">
+                                     {assignation.date_assignation ? new Date(assignation.date_assignation).toLocaleDateString('fr-FR') : '-'}
+                                   </td>
+                                   <td className="p-4">{assignation.kilometrage_debut?.toLocaleString() || 0} km</td>
+                                   <td className="p-4">
+                                     <Badge variant="outline">{dureeJours} jour{dureeJours > 1 ? 's' : ''}</Badge>
+                                   </td>
+                                   <td className="p-4">
+                                     <div className="flex gap-2">
+                                       <Button
+                                         variant="outline"
+                                         size="sm"
+                                         onClick={() => {
+                                           setEditingAssignationVehicule(assignation)
+                                           setShowAssignationVehiculeModal(true)
+                                         }}
+                                       >
+                                         <Edit className="w-4 h-4" />
+                                       </Button>
+                                       <Button
+                                         variant="outline"
+                                         size="sm"
+                                         onClick={() => {
+                                           if (confirm(`Terminer l'assignation du véhicule ${assignation.matricule} ?`)) {
+                                             deleteAssignationVehicule(assignation.id)
+                                           }
+                                         }}
+                                         className="text-orange-400 hover:text-orange-300"
+                                       >
+                                         <CheckCircle className="w-4 h-4 mr-1" />
+                                         Terminer
+                                       </Button>
+                                     </div>
+                                   </td>
+                                 </tr>
+                               )
+                             })}
+                           </tbody>
+                         </table>
+                       </div>
+                     )}
+                   </CardContent>
+                 </Card>
+
+                 {/* Section 2b: Historique des Assignations */}
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                            <div className="flex items-center gap-3">
+                       <div className="p-2 bg-gray-500/10 rounded-lg">
+                         <History className="w-5 h-5 text-gray-500" />
+                          </div>
+                                <div>
+                           <CardTitle className="text-xl font-bold">Historique des Assignations</CardTitle>
+                           <CardDescription>
+                             {assignationsVehicules.filter(a => a.statut === 'terminee').length} assignation(s) terminée(s)
+                           </CardDescription>
+                            </div>
+                              </div>
+                   </CardHeader>
+                   <CardContent>
+                     {assignationsVehicules.filter(a => a.statut === 'terminee').length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucun historique</h3>
+                         <p>Les assignations terminées apparaîtront ici</p>
+                       </div>
+                     ) : (
+                       <div className="overflow-x-auto">
+                         <table className="w-full border-collapse">
+                           <thead>
+                             <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Véhicule</th>
+                               <th className="text-left p-4 font-semibold">Technicien</th>
+                               <th className="text-left p-4 font-semibold">Date Début</th>
+                               <th className="text-left p-4 font-semibold">Date Fin</th>
+                               <th className="text-left p-4 font-semibold">KM Début</th>
+                               <th className="text-left p-4 font-semibold">KM Fin</th>
+                               <th className="text-left p-4 font-semibold">KM Parcourus</th>
+                               <th className="text-left p-4 font-semibold">Durée</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {assignationsVehicules.filter(a => a.statut === 'terminee').map((assignation) => {
+                               const dateDebut = new Date(assignation.date_assignation)
+                               const dateFin = assignation.date_fin ? new Date(assignation.date_fin) : new Date()
+                               const dureeJours = Math.floor((dateFin.getTime() - dateDebut.getTime()) / (1000 * 60 * 60 * 24))
+                               const kmParcourus = (assignation.kilometrage_fin || 0) - (assignation.kilometrage_debut || 0)
+                               
+                               return (
+                                 <tr key={assignation.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                   <td className="p-4">
+                                     <div>
+                                       <div className="font-mono font-semibold">{assignation.matricule}</div>
+                                       <div className="text-sm text-muted-foreground">{assignation.marque} {assignation.modele}</div>
+                                     </div>
+                                   </td>
+                                   <td className="p-4">
+                                     <span>{assignation.employe_prenom} {assignation.employe_nom}</span>
+                                   </td>
+                                   <td className="p-4">
+                                     {assignation.date_assignation ? new Date(assignation.date_assignation).toLocaleDateString('fr-FR') : '-'}
+                                   </td>
+                                   <td className="p-4">
+                                     {assignation.date_fin ? new Date(assignation.date_fin).toLocaleDateString('fr-FR') : '-'}
+                                   </td>
+                                   <td className="p-4">{assignation.kilometrage_debut?.toLocaleString() || 0} km</td>
+                                   <td className="p-4">{assignation.kilometrage_fin?.toLocaleString() || 0} km</td>
+                                   <td className="p-4">
+                                     <span className={kmParcourus > 0 ? 'font-semibold text-blue-400' : ''}>
+                                       {kmParcourus.toLocaleString()} km
+                                     </span>
+                                   </td>
+                                   <td className="p-4">
+                                     <Badge variant="secondary">{dureeJours} jour{dureeJours > 1 ? 's' : ''}</Badge>
+                                   </td>
+                                 </tr>
+                               )
+                             })}
+                           </tbody>
+                         </table>
+                       </div>
+                     )}
+                   </CardContent>
+                 </Card>
+
+                 {/* Section 3: Entretiens de Véhicules */}
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                            <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-orange-500/10 rounded-lg">
+                           <Wrench className="w-5 h-5 text-orange-500" />
+                          </div>
+                                <div>
+                           <CardTitle className="text-xl font-bold">Entretiens et Réparations</CardTitle>
+                           <CardDescription>
+                             {entretiensVehicules.length} entretien(s) enregistré(s)
+                           </CardDescription>
+                            </div>
+                              </div>
+                       <Button onClick={() => { setEditingEntretienVehicule(null); setShowEntretienVehiculeModal(true); }}>
+                         <Plus className="w-4 h-4 mr-2" />
+                         Nouvel Entretien
+                       </Button>
+                            </div>
+                   </CardHeader>
+                   <CardContent>
+                     {entretiensVehicules.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <Wrench className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucun entretien</h3>
+                         <p>Enregistrez les entretiens et réparations des véhicules</p>
+                       </div>
+                     ) : (
+                       <div className="overflow-x-auto">
+                         <table className="w-full border-collapse">
+                           <thead>
+                             <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Véhicule</th>
+                               <th className="text-left p-4 font-semibold">Date</th>
+                               <th className="text-left p-4 font-semibold">Catégorie</th>
+                               <th className="text-left p-4 font-semibold">Coût</th>
+                               <th className="text-left p-4 font-semibold">Kilométrage</th>
+                               <th className="text-left p-4 font-semibold">Garage</th>
+                               <th className="text-left p-4 font-semibold">Actions</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {entretiensVehicules.map((entretien) => (
+                               <tr key={entretien.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                 <td className="p-4">
+                                   <div>
+                                     <div className="font-mono font-semibold">{entretien.matricule}</div>
+                                     <div className="text-sm text-muted-foreground">{entretien.marque} {entretien.modele}</div>
+                                   </div>
+                                 </td>
+                                 <td className="p-4">
+                                   {entretien.date_entretien ? new Date(entretien.date_entretien).toLocaleDateString('fr-FR') : '-'}
+                                 </td>
+                                 <td className="p-4">
+                                   <Badge variant="outline">{entretien.categorie_entretien}</Badge>
+                                 </td>
+                                 <td className="p-4">
+                                   <span className="font-semibold">{entretien.cout_entretien?.toFixed(2)} €</span>
+                                 </td>
+                                 <td className="p-4">{entretien.kilometrage_entretien?.toLocaleString() || '-'} km</td>
+                                 <td className="p-4">
+                                   {entretien.garage || <span className="text-muted-foreground">-</span>}
+                                 </td>
+                                 <td className="p-4">
+                                   <div className="flex gap-2">
+                                     <Button
+                                       variant="outline"
+                                       size="sm"
+                                       onClick={() => {
+                                         setEditingEntretienVehicule(entretien)
+                                         setShowEntretienVehiculeModal(true)
+                                       }}
+                                     >
+                                       <Edit className="w-4 h-4" />
+                                     </Button>
+                                     <Button
+                                       variant="outline"
+                                       size="sm"
+                                       onClick={() => {
+                                         if (confirm('Êtes-vous sûr de vouloir supprimer cet entretien?')) {
+                                           deleteEntretienVehicule(entretien.id)
+                                         }
+                                       }}
+                                       className="text-red-400 hover:text-red-300"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                                     </Button>
+                                   </div>
+                                 </td>
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
+                     )}
+                   </CardContent>
+                 </Card>
+               </div>
+              </div>
+          )}
+
            {/* Reports Section */}
            {activeTab === "reports" && (
              <div className="space-y-6">
@@ -7383,6 +8068,45 @@ La page va se recharger automatiquement...`)
             }}
           />
         </DialogContent>
+      </Dialog>
+
+      {/* Vehicule Modal */}
+      <Dialog open={showVehiculeModal} onOpenChange={setShowVehiculeModal}>
+        <VehiculeForm 
+          vehicule={editingVehicule} 
+          onSave={saveVehicule} 
+          onCancel={() => {
+            setShowVehiculeModal(false)
+            setEditingVehicule(null)
+          }}
+        />
+      </Dialog>
+
+      {/* Assignation Vehicule Modal */}
+      <Dialog open={showAssignationVehiculeModal} onOpenChange={setShowAssignationVehiculeModal}>
+        <AssignationVehiculeForm 
+          assignation={editingAssignationVehicule} 
+          vehicules={vehicules}
+          employees={employees}
+          onSave={saveAssignationVehicule} 
+          onCancel={() => {
+            setShowAssignationVehiculeModal(false)
+            setEditingAssignationVehicule(null)
+          }}
+        />
+      </Dialog>
+
+      {/* Entretien Vehicule Modal */}
+      <Dialog open={showEntretienVehiculeModal} onOpenChange={setShowEntretienVehiculeModal}>
+        <EntretienVehiculeForm 
+          entretien={editingEntretienVehicule} 
+          vehicules={vehicules}
+          onSave={saveEntretienVehicule} 
+          onCancel={() => {
+            setShowEntretienVehiculeModal(false)
+            setEditingEntretienVehicule(null)
+          }}
+        />
       </Dialog>
 
       {/* Articles Edit Modal */}

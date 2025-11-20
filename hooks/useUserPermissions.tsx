@@ -90,7 +90,8 @@ export function useUserPermissions() {
         'dashboard', 'employees', 'interventions', 'materials', 'fuel',
         'fuel-consumption', 'penalties', 'statistics', 'costs',
         'cout-par-salaire', 'claims', 'documents', 'recap-calcul',
-        'tarifs', 'recette-generer', 'technicien-accounts', 'compte-admin'
+        'tarifs', 'recette-generer', 'technicien-accounts', 'compte-admin',
+        'vehicules', 'reclamations-techniques'
       ]
     }
     
