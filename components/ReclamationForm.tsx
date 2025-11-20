@@ -53,6 +53,7 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
+  const [interventionDisplayValue, setInterventionDisplayValue] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -83,9 +84,10 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
 
   const handleInterventionSelect = (intervention: any) => {
     setSelectedIntervention(intervention)
+    setInterventionDisplayValue(intervention.num_inter) // Afficher le numéro d'intervention
     setFormData(prev => ({
       ...prev,
-      intervention_id: intervention.id.toString(),
+      intervention_id: intervention.id.toString(), // Stocker l'ID pour la base de données
       nom_client: intervention.client // Auto-fill client name
     }))
     setShowDropdown(false)
@@ -120,14 +122,21 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
   }
 
   const handleInterventionInputChange = (value: string) => {
-    setFormData(prev => ({ ...prev, intervention_id: value }))
+    setInterventionDisplayValue(value) // Mettre à jour la valeur d'affichage
     
     // Si on efface le champ, réinitialiser la sélection
     if (!value) {
       setSelectedIntervention(null)
       setSearchResults([])
       setShowDropdown(false)
+      setFormData(prev => ({ ...prev, intervention_id: '' }))
       return
+    }
+
+    // Si l'utilisateur tape quelque chose de différent de l'intervention sélectionnée
+    if (selectedIntervention && value !== selectedIntervention.num_inter) {
+      setSelectedIntervention(null)
+      setFormData(prev => ({ ...prev, intervention_id: value }))
     }
 
     // Rechercher les interventions avec un délai pour éviter trop de requêtes
@@ -156,21 +165,44 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
   useEffect(() => {
     const loadInterventionDetails = async () => {
       if (reclamation?.intervention_id && !selectedIntervention) {
-        try {
-          const response = await fetch(`/api/interventions/search?q=${reclamation.intervention_id}&limit=1`)
-          const data = await response.json()
-          
-          if (data.success && data.interventions && data.interventions.length > 0) {
-            setSelectedIntervention(data.interventions[0])
+        // Si on a déjà le numéro d'intervention dans les données, l'utiliser directement
+        if (reclamation.numero_intervention) {
+          setInterventionDisplayValue(reclamation.numero_intervention)
+          // Optionnellement, charger les détails complets de l'intervention
+          try {
+            const response = await fetch(`/api/interventions/search?q=${reclamation.numero_intervention}&limit=1`)
+            const data = await response.json()
+            
+            if (data.success && data.interventions && data.interventions.length > 0) {
+              setSelectedIntervention(data.interventions[0])
+            }
+          } catch (error) {
+            console.error('Erreur lors du chargement de l\'intervention:', error)
           }
-        } catch (error) {
-          console.error('Erreur lors du chargement de l\'intervention:', error)
+        } else {
+          // Sinon, rechercher par ID d'intervention
+          try {
+            const response = await fetch(`/api/interventions/search?q=${reclamation.intervention_id}&limit=1`)
+            const data = await response.json()
+            
+            if (data.success && data.interventions && data.interventions.length > 0) {
+              const intervention = data.interventions[0]
+              setSelectedIntervention(intervention)
+              setInterventionDisplayValue(intervention.num_inter) // Afficher le numéro, pas l'ID
+            } else {
+              // Si pas trouvé par recherche, afficher l'ID en attendant
+              setInterventionDisplayValue(reclamation.intervention_id)
+            }
+          } catch (error) {
+            console.error('Erreur lors du chargement de l\'intervention:', error)
+            setInterventionDisplayValue(reclamation.intervention_id)
+          }
         }
       }
     }
 
     loadInterventionDetails()
-  }, [reclamation?.intervention_id])
+  }, [reclamation?.intervention_id, reclamation?.numero_intervention])
 
   return (
     <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -231,7 +263,7 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
           <div className="space-y-2 relative" ref={dropdownRef}>
             <div className="relative">
               <Input
-                value={formData.intervention_id}
+                value={interventionDisplayValue}
                 onChange={(e) => handleInterventionInputChange(e.target.value)}
                 placeholder="Entrez le numéro d'intervention..."
                 className="pr-8"

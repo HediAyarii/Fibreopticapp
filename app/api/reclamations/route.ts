@@ -6,6 +6,33 @@ import { logHistorique, getClientIP, getUserAgent } from "@/lib/historique"
 
 export const dynamic = 'force-dynamic'
 
+// Fonction helper pour valider et nettoyer les valeurs entières
+const validateAndCleanInteger = (value: any, fieldName: string) => {
+  if (value === '' || value === undefined || value === null) {
+    return null
+  }
+  
+  if (typeof value === 'string' && !isNaN(Number(value))) {
+    const numValue = Number(value)
+    // Vérifier que la valeur est dans la plage des entiers PostgreSQL (32-bit)
+    if (numValue < -2147483648 || numValue > 2147483647) {
+      console.log(`⚠️ Valeur ${fieldName} trop grande: ${numValue}, réinitialisation à null`)
+      return null
+    }
+    return numValue
+  }
+  
+  if (typeof value === 'number') {
+    if (value < -2147483648 || value > 2147483647) {
+      console.log(`⚠️ Valeur ${fieldName} trop grande: ${value}, réinitialisation à null`)
+      return null
+    }
+    return value
+  }
+  
+  return null
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -179,29 +206,38 @@ export async function POST(request: NextRequest) {
       intervention_id
     })
 
-    // Vérifier si l'intervention existe si un ID est fourni
-    let validInterventionId = null
+    // Vérifier si l'intervention existe si un ID est fourni (avertissement seulement)
+    let validInterventionId = intervention_id || null
     if (intervention_id && intervention_id !== '') {
       const interventionCheck = await query(
         'SELECT id FROM interventions WHERE id = $1',
         [intervention_id]
       )
       if (interventionCheck.rows.length > 0) {
-        validInterventionId = intervention_id
         console.log(`✅ Intervention ${intervention_id} trouvée - lien créé automatiquement`)
       } else {
-        console.log(`⚠️ Intervention ${intervention_id} non trouvée - réclamation créée sans lien`)
+        console.log(`⚠️ AVERTISSEMENT: Intervention ${intervention_id} n'existe pas encore - réclamation créée avec lien vers intervention future`)
+      }
+    }
+
+    // Vérifier si l'employé existe si un ID est fourni (blocage car les employés doivent exister)
+    if (employe_id && employe_id !== '') {
+      const employeCheck = await query('SELECT id FROM employes WHERE id = $1', [employe_id])
+      if (employeCheck.rows.length === 0) {
+        return NextResponse.json({ 
+          error: `L'employé avec l'ID ${employe_id} n'existe pas dans la base de données.` 
+        }, { status: 400 })
       }
     }
 
     // Nettoyer les données : convertir les chaînes vides en null pour les champs entiers et dates
     const cleanedData = {
-      client_id: client_id === '' ? null : client_id,
-      intervention_id: validInterventionId, // Utiliser l'ID validé ou null
-      employe_id: employe_id === '' ? null : employe_id,
-      satisfaction_client: satisfaction_client === '' ? null : satisfaction_client,
-      cout_reclamation: cout_reclamation === '' ? null : (cout_reclamation || 0),
-      indemnisation: indemnisation === '' ? null : (indemnisation || 0),
+      client_id: validateAndCleanInteger(client_id, 'client_id'),
+      intervention_id: validateAndCleanInteger(validInterventionId, 'intervention_id'),
+      employe_id: validateAndCleanInteger(employe_id, 'employe_id'),
+      satisfaction_client: validateAndCleanInteger(satisfaction_client, 'satisfaction_client'),
+      cout_reclamation: validateAndCleanInteger(cout_reclamation, 'cout_reclamation') || 0,
+      indemnisation: validateAndCleanInteger(indemnisation, 'indemnisation') || 0,
       date_resolution: date_resolution === '' ? null : date_resolution,
       temps_resolution: temps_resolution === '' ? null : temps_resolution,
       materiel_defectueux: materiel_defectueux === '' ? null : materiel_defectueux,
@@ -311,11 +347,7 @@ export async function PUT(request: NextRequest) {
     const booleanFields = ['garantie_applicable', 'escalade_requise', 'manager_notifie']
     
     integerFields.forEach(field => {
-      if (cleanedData[field] === '' || cleanedData[field] === undefined) {
-        cleanedData[field] = null
-      } else if (typeof cleanedData[field] === 'string' && !isNaN(Number(cleanedData[field]))) {
-        cleanedData[field] = Number(cleanedData[field])
-      }
+      cleanedData[field] = validateAndCleanInteger(cleanedData[field], field)
     })
     
     dateFields.forEach(field => {
@@ -333,6 +365,26 @@ export async function PUT(request: NextRequest) {
     // Supprimer les champs calculés côté frontend qui ne doivent pas être dans la base de données
     delete cleanedData.deadline_calculated
     delete cleanedData.deadline
+
+    // Vérifier intervention_id si présent (avertissement seulement, pas de blocage)
+    if (cleanedData.intervention_id && cleanedData.intervention_id !== null) {
+      const interventionCheck = await query('SELECT id FROM interventions WHERE id = $1', [cleanedData.intervention_id])
+      if (interventionCheck.rows.length === 0) {
+        console.log(`⚠️ AVERTISSEMENT: L'intervention avec l'ID ${cleanedData.intervention_id} n'existe pas encore dans la base de données. Réclamation mise à jour avec un lien vers une intervention future.`)
+      } else {
+        console.log(`✅ Intervention ${cleanedData.intervention_id} trouvée et liée à la réclamation.`)
+      }
+    }
+
+    // Valider employe_id si présent (blocage pour les employés car ils doivent exister)
+    if (cleanedData.employe_id && cleanedData.employe_id !== null) {
+      const employeCheck = await query('SELECT id FROM employes WHERE id = $1', [cleanedData.employe_id])
+      if (employeCheck.rows.length === 0) {
+        return NextResponse.json({ 
+          error: `L'employé avec l'ID ${cleanedData.employe_id} n'existe pas dans la base de données.` 
+        }, { status: 400 })
+      }
+    }
 
     const fields = Object.keys(cleanedData).filter(key => cleanedData[key] !== undefined)
     if (fields.length === 0) {

@@ -2,7 +2,7 @@
 
 import React from "react"
 import dynamic from "next/dynamic"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -263,6 +263,11 @@ export default function EmployeeTracker() {
   const [consommationCarburant, setConsommationCarburant] = useState<any[]>([])
   const [employeesFromInterventions, setEmployeesFromInterventions] = useState<any[]>([])
   const [totalRevenue, setTotalRevenue] = useState<number>(0) // CA Total réel
+
+  // Filtres pour réclamations
+  const [claimSearchTerm, setClaimSearchTerm] = useState('')
+  const [claimEmployeeFilter, setClaimEmployeeFilter] = useState<string>('all')
+  const [claimDateFilter, setClaimDateFilter] = useState<string>('all')
 
   // Loading states
   const [loadingInterventions, setLoadingInterventions] = useState(false)
@@ -545,6 +550,58 @@ export default function EmployeeTracker() {
       console.log('⚠️ Erreur synchronisation automatique:', error)
     }
   }
+
+  // Filtrer les réclamations selon les critères de recherche
+  const filteredClaims = useMemo(() => {
+    let filtered = [...claims]
+    
+    // Filtre par numéro d'intervention
+    if (claimSearchTerm) {
+      const searchLower = claimSearchTerm.toLowerCase().trim()
+      filtered = filtered.filter(claim => {
+        const numInter = (claim.numero_intervention || claim.intervention_id || '').toString().toLowerCase()
+        return numInter.includes(searchLower)
+      })
+    }
+    
+    // Filtre par employé
+    if (claimEmployeeFilter !== 'all') {
+      filtered = filtered.filter(claim => 
+        claim.employe_id && claim.employe_id.toString() === claimEmployeeFilter
+      )
+    }
+    
+    // Filtre par date de création
+    if (claimDateFilter !== 'all') {
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      
+      filtered = filtered.filter(claim => {
+        if (!claim.created_at) return false
+        const claimDate = new Date(claim.created_at)
+        
+        switch (claimDateFilter) {
+          case 'today':
+            return claimDate >= today
+          case 'week':
+            const weekAgo = new Date(today)
+            weekAgo.setDate(today.getDate() - 7)
+            return claimDate >= weekAgo
+          case 'month':
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+            return claimDate >= monthStart
+          case 'last-month':
+            const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+            const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+            return claimDate >= lastMonthStart && claimDate <= lastMonthEnd
+          default:
+            return true
+        }
+      })
+    }
+    
+    return filtered
+  }, [claims, claimSearchTerm, claimEmployeeFilter, claimDateFilter])
 
   // Load data from database on component mount
   useEffect(() => {
@@ -6048,8 +6105,7 @@ La page va se recharger automatiquement...`)
                <div className="space-y-6">
                  {/* Section spéciale pour les réclamations en attente de validation */}
                  
-
-                 {claims.filter(claim => claim.statut === 'en_cours').length > 0 && (
+                 {filteredClaims.filter(claim => claim.statut === 'en_cours').length > 0 && (
                    <Card className="glass-card border border-yellow-500/30 bg-yellow-500/5 hover-lift">
                      <CardHeader>
                        <div className="flex items-center gap-3">
@@ -6058,7 +6114,7 @@ La page va se recharger automatiquement...`)
                          </div>
                          <div>
                            <CardTitle className="text-xl font-bold text-yellow-400">
-                             Réclamations en attente de validation ({claims.filter(claim => claim.statut === 'en_cours').length})
+                             Réclamations en attente de validation ({filteredClaims.filter(claim => claim.statut === 'en_cours').length})
                            </CardTitle>
                            <p className="text-yellow-300/80">Ces réclamations ont été résolues par les techniciens et attendent votre validation</p>
                          </div>
@@ -6066,7 +6122,7 @@ La page va se recharger automatiquement...`)
                      </CardHeader>
                      <CardContent>
                        <div className="grid gap-4">
-                         {claims.filter(claim => claim.statut === 'en_cours').map((claim) => (
+                         {filteredClaims.filter(claim => claim.statut === 'en_cours').map((claim) => (
                            <div key={claim.id} className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
                              <div className="flex items-center justify-between">
                                <div className="flex-1">
@@ -6117,22 +6173,132 @@ La page va se recharger automatiquement...`)
                        <div>
                          <CardTitle className="text-xl font-bold">Liste des Réclamations</CardTitle>
                     <CardDescription>
-                    {claims.length} réclamations trouvées dans la base de données
+                    {filteredClaims.length} réclamation{filteredClaims.length > 1 ? 's' : ''} {claimSearchTerm || claimEmployeeFilter !== 'all' || claimDateFilter !== 'all' ? `filtrée${filteredClaims.length > 1 ? 's' : ''} sur ${claims.length}` : 'dans la base de données'}
                     </CardDescription>
                        </div>
                      </div>
                   </CardHeader>
                 <CardContent>
+                  {/* Filtres et barre de recherche */}
+                  <div className="mb-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Barre de recherche par numéro d'intervention */}
+                      <div className="relative">
+                        <Label htmlFor="claim-search" className="mb-2 block text-sm font-medium">
+                          Rechercher par N° Intervention
+                        </Label>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            id="claim-search"
+                            type="text"
+                            placeholder="Ex: 120038249, 138855..."
+                            value={claimSearchTerm}
+                            onChange={(e) => setClaimSearchTerm(e.target.value)}
+                            className="pl-10 glass-card border border-white/20"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Filtre par employé */}
+                      <div>
+                        <Label htmlFor="claim-employee-filter" className="mb-2 block text-sm font-medium">
+                          Filtrer par Employé
+                        </Label>
+                        <Select value={claimEmployeeFilter} onValueChange={setClaimEmployeeFilter}>
+                          <SelectTrigger id="claim-employee-filter" className="glass-card border border-white/20">
+                            <SelectValue placeholder="Tous les employés" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Tous les employés</SelectItem>
+                            {employees.map((emp) => (
+                              <SelectItem key={emp.id} value={emp.id.toString()}>
+                                {emp.prenom} {emp.nom}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Filtre par date de création */}
+                      <div>
+                        <Label htmlFor="claim-date-filter" className="mb-2 block text-sm font-medium">
+                          Filtrer par Date de Création
+                        </Label>
+                        <Select value={claimDateFilter} onValueChange={setClaimDateFilter}>
+                          <SelectTrigger id="claim-date-filter" className="glass-card border border-white/20">
+                            <SelectValue placeholder="Toutes les dates" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Toutes les dates</SelectItem>
+                            <SelectItem value="today">Aujourd'hui</SelectItem>
+                            <SelectItem value="week">Cette semaine</SelectItem>
+                            <SelectItem value="month">Ce mois</SelectItem>
+                            <SelectItem value="last-month">Mois dernier</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Indicateur de filtres actifs */}
+                    {(claimSearchTerm || claimEmployeeFilter !== 'all' || claimDateFilter !== 'all') && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span className="font-medium">Filtres actifs:</span>
+                        {claimSearchTerm && (
+                          <Badge variant="outline" className="gap-1">
+                            Recherche: {claimSearchTerm}
+                            <X 
+                              className="w-3 h-3 cursor-pointer hover:text-destructive" 
+                              onClick={() => setClaimSearchTerm('')}
+                            />
+                          </Badge>
+                        )}
+                        {claimEmployeeFilter !== 'all' && (
+                          <Badge variant="outline" className="gap-1">
+                            Employé filtré
+                            <X 
+                              className="w-3 h-3 cursor-pointer hover:text-destructive" 
+                              onClick={() => setClaimEmployeeFilter('all')}
+                            />
+                          </Badge>
+                        )}
+                        {claimDateFilter !== 'all' && (
+                          <Badge variant="outline" className="gap-1">
+                            Date: {claimDateFilter === 'today' ? 'Aujourd\'hui' : 
+                                   claimDateFilter === 'week' ? 'Cette semaine' :
+                                   claimDateFilter === 'month' ? 'Ce mois' : 'Mois dernier'}
+                            <X 
+                              className="w-3 h-3 cursor-pointer hover:text-destructive" 
+                              onClick={() => setClaimDateFilter('all')}
+                            />
+                          </Badge>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setClaimSearchTerm('')
+                            setClaimEmployeeFilter('all')
+                            setClaimDateFilter('all')
+                          }}
+                          className="ml-2 h-7 text-xs"
+                        >
+                          Réinitialiser tout
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
                   {loadingClaims ? (
                     <div className="text-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                       <p className="mt-2 text-muted-foreground">Chargement des réclamations...</p>
                     </div>
-                  ) : claims.length === 0 ? (
+                  ) : filteredClaims.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <h3 className="text-lg font-semibold mb-2">Aucune réclamation trouvée</h3>
-                         <p>Ajoutez des réclamations pour commencer à gérer les plaintes.</p>
+                         <p>{claims.length === 0 ? 'Ajoutez des réclamations pour commencer à gérer les plaintes.' : 'Aucune réclamation ne correspond aux critères de recherche.'}</p>
                     </div>
                   ) : (
                     <>
@@ -6157,7 +6323,7 @@ La page va se recharger automatiquement...`)
                           </tr>
                         </thead>
                         <tbody>
-                             {claims.slice(0, 50).map((claim, index) => (
+                             {filteredClaims.slice(0, 50).map((claim, index) => (
                                <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                               <td className="p-4">
                                    {claim.date_resolution ? (
@@ -6190,7 +6356,7 @@ La page va se recharger automatiquement...`)
                                    {claim.intervention_id ? (
                                      <div className="flex items-center gap-2">
                                        <FileText className="w-4 h-4 text-blue-500" />
-                                       <span className="text-sm font-mono">{claim.intervention_id}</span>
+                                       <span className="text-sm font-mono">{claim.numero_intervention || claim.intervention_id}</span>
                                   </div>
                                    ) : (
                                      <span className="text-muted-foreground text-sm">Aucune</span>
@@ -6346,7 +6512,7 @@ La page va se recharger automatiquement...`)
                     
                     {/* Version Mobile - Cartes */}
                     <div className="lg:hidden space-y-4">
-                      {claims.slice(0, 50).map((claim, index) => (
+                      {filteredClaims.slice(0, 50).map((claim, index) => (
                         <Card key={`mobile-${index}`} className="glass-card border border-white/10">
                           <CardContent className="p-4 space-y-3">
                             {/* En-tête */}
