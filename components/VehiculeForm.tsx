@@ -23,13 +23,38 @@ export function VehiculeForm({
     modele: vehicule?.modele || '',
     annee: vehicule?.annee || new Date().getFullYear(),
     kilometrage: vehicule?.kilometrage || 0,
-    type_vehicule: vehicule?.type_vehicule || 'voiture',
+    type_vehicule: vehicule?.type_vehicule || 'utilitaire',
     couleur: vehicule?.couleur || '',
     numero_chassis: vehicule?.numero_chassis || '',
-    date_acquisition: vehicule?.date_acquisition || new Date().toISOString().split('T')[0],
+    carburant: vehicule?.carburant || 'diesel',
+    puissance_fiscale: vehicule?.puissance_fiscale || 0,
+    assurance_expiration: vehicule?.assurance_expiration || '',
+    visite_technique_expiration: vehicule?.visite_technique_expiration || '',
     statut: vehicule?.statut || 'disponible',
-    commentaires: vehicule?.commentaires || ''
+    notes: vehicule?.notes || ''
   })
+
+  // Mettre à jour le formulaire quand le véhicule change
+  useEffect(() => {
+    if (vehicule) {
+      setFormData({
+        matricule: vehicule.matricule || '',
+        marque: vehicule.marque || '',
+        modele: vehicule.modele || '',
+        annee: vehicule.annee || new Date().getFullYear(),
+        kilometrage: vehicule.kilometrage || 0,
+        type_vehicule: vehicule.type_vehicule || 'utilitaire',
+        couleur: vehicule.couleur || '',
+        numero_chassis: vehicule.numero_chassis || '',
+        carburant: vehicule.carburant || 'diesel',
+        puissance_fiscale: vehicule.puissance_fiscale || 0,
+        assurance_expiration: vehicule.assurance_expiration ? vehicule.assurance_expiration.split('T')[0] : '',
+        visite_technique_expiration: vehicule.visite_technique_expiration ? vehicule.visite_technique_expiration.split('T')[0] : '',
+        statut: vehicule.statut || 'disponible',
+        notes: vehicule.notes || ''
+      })
+    }
+  }, [vehicule])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -147,12 +172,49 @@ export function VehiculeForm({
           </div>
 
           <div>
-            <Label htmlFor="date_acquisition">Date d'Acquisition</Label>
+            <Label htmlFor="carburant">Carburant</Label>
+            <Select value={formData.carburant} onValueChange={(value) => handleChange('carburant', value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sélectionnez le carburant" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="diesel">Diesel</SelectItem>
+                <SelectItem value="essence">Essence</SelectItem>
+                <SelectItem value="electrique">Électrique</SelectItem>
+                <SelectItem value="hybride">Hybride</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="puissance_fiscale">Puissance Fiscale (CV)</Label>
             <Input
-              id="date_acquisition"
+              id="puissance_fiscale"
+              type="number"
+              min="0"
+              value={formData.puissance_fiscale}
+              onChange={(e) => handleChange('puissance_fiscale', parseInt(e.target.value) || 0)}
+              placeholder="Ex: 7"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="assurance_expiration">Expiration Assurance</Label>
+            <Input
+              id="assurance_expiration"
               type="date"
-              value={formData.date_acquisition}
-              onChange={(e) => handleChange('date_acquisition', e.target.value)}
+              value={formData.assurance_expiration}
+              onChange={(e) => handleChange('assurance_expiration', e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="visite_technique_expiration">Expiration Visite Technique</Label>
+            <Input
+              id="visite_technique_expiration"
+              type="date"
+              value={formData.visite_technique_expiration}
+              onChange={(e) => handleChange('visite_technique_expiration', e.target.value)}
             />
           </div>
 
@@ -173,12 +235,12 @@ export function VehiculeForm({
         </div>
 
         <div>
-          <Label htmlFor="commentaires">Commentaires</Label>
+          <Label htmlFor="notes">Notes</Label>
           <Textarea
-            id="commentaires"
-            value={formData.commentaires}
-            onChange={(e) => handleChange('commentaires', e.target.value)}
-            placeholder="Commentaires supplémentaires..."
+            id="notes"
+            value={formData.notes}
+            onChange={(e) => handleChange('notes', e.target.value)}
+            placeholder="Notes supplémentaires..."
             rows={3}
           />
         </div>

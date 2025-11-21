@@ -33,7 +33,8 @@ import {
   Upload,
   Check,
   X as XIcon,
-  Plus
+  Plus,
+  Car
 } from "lucide-react"
 import { useRouter } from 'next/navigation'
 import { fetchWithAuth } from '@/lib/authManager'
@@ -45,6 +46,7 @@ import { DocumentsAdministratifs } from '@/components/DocumentsAdministratifs'
 import { NewDocumentModal } from '@/components/NewDocumentModal'
 import { InterventionCategorieTable } from '@/components/InterventionCategorieTable'
 import TechnicienReclamations from '@/components/TechnicienReclamations'
+import { TechVehiculeKilometrage } from '@/components/TechVehiculeKilometrage'
 // import { useEmployeeUpdates } from '@/hooks/useEmployeeUpdates' // Désactivé pour éviter les erreurs de build
 
 interface User {
@@ -854,6 +856,17 @@ export default function TechnicienDashboard() {
                 <AlertCircle className="w-4 h-4 inline mr-2" />
                 Pénalités
               </button>
+              <button
+                onClick={() => handleTabChange('vehicule')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'vehicule'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Car className="w-4 h-4 inline mr-2" />
+                Mon Véhicule
+              </button>
         <button
           onClick={() => handleTabChange('donnees-personnelles')}
           className={`py-4 px-1 border-b-2 font-medium text-sm ${
@@ -895,6 +908,7 @@ export default function TechnicienDashboard() {
                 {activeTab === 'interventions' && 'Mes Interventions'}
                 {activeTab === 'reclamations' && 'Réclamations'}
                 {activeTab === 'penalites' && 'Pénalités'}
+                {activeTab === 'vehicule' && 'Mon Véhicule'}
                 {activeTab === 'donnees-personnelles' && 'Données Personnelles'}
             {activeTab === 'documents-administratifs' && 'Documents Administratifs'}
               </h2>
@@ -951,6 +965,17 @@ export default function TechnicienDashboard() {
               >
                 <AlertCircle className="w-4 h-4 inline mr-1" />
                 Pénalités
+              </button>
+              <button
+                onClick={() => handleTabChange('vehicule')}
+                className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium ${
+                  activeTab === 'vehicule'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <Car className="w-4 h-4 inline mr-1" />
+                Véhicule
               </button>
         <button
           onClick={() => handleTabChange('donnees-personnelles')}
@@ -1356,6 +1381,12 @@ export default function TechnicienDashboard() {
                 )}
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {activeTab === 'vehicule' && (
+          <div className="space-y-4 sm:space-y-6">
+            <TechVehiculeKilometrage employeId={user.id} />
           </div>
         )}
 

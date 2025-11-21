@@ -95,6 +95,12 @@ export function AssignationVehiculeForm({
           </div>
         </div>
 
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+          <p className="text-sm text-blue-400">
+            ℹ️ Le technicien entrera le kilométrage actuel du véhicule depuis son espace logintech
+          </p>
+        </div>
+
         <div>
           <Label htmlFor="commentaires">Commentaires</Label>
           <Textarea

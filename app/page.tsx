@@ -7055,7 +7055,14 @@ La page va se recharger automatiquement...`)
                                    <td className="p-4">
                                      {assignation.date_assignation ? new Date(assignation.date_assignation).toLocaleDateString('fr-FR') : '-'}
                                    </td>
-                                   <td className="p-4">{assignation.kilometrage_debut?.toLocaleString() || 0} km</td>
+                                   <td className="p-4">
+                                     {assignation.kilometrage_debut !== null && assignation.kilometrage_debut !== undefined
+                                       ? `${assignation.kilometrage_debut.toLocaleString()} km`
+                                       : assignation.kilometrage_vehicule !== null && assignation.kilometrage_vehicule !== undefined
+                                       ? `${assignation.kilometrage_vehicule.toLocaleString()} km`
+                                       : '0 km'
+                                     }
+                                   </td>
                                    <td className="p-4">
                                      <Badge variant="outline">{dureeJours} jour{dureeJours > 1 ? 's' : ''}</Badge>
                                    </td>

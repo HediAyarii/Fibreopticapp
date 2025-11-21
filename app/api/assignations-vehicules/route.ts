@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     
     let queryText = `
       SELECT av.*, 
-             v.matricule, v.marque, v.modele,
+             v.matricule, v.marque, v.modele, v.kilometrage as kilometrage_vehicule,
              e.nom as employe_nom, e.prenom as employe_prenom
       FROM assignations_vehicules av
       LEFT JOIN vehicules v ON av.vehicule_id = v.id

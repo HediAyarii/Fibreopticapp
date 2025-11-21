@@ -9,11 +9,8 @@ export async function GET(request: NextRequest) {
     const statut = searchParams.get('statut')
     
     let queryText = `
-      SELECT v.*, 
-             e.nom as employe_nom, 
-             e.prenom as employe_prenom
+      SELECT v.*
       FROM vehicules v
-      LEFT JOIN employes e ON v.employe_id = e.id
     `
     let params: any[] = []
     
@@ -51,32 +48,27 @@ export async function POST(request: NextRequest) {
       type_vehicule,
       couleur,
       numero_chassis,
-      date_mise_service,
       statut,
       notes,
-      employe_id,
-      immatriculation,
       carburant,
-      puissance_cv,
-      assurance_numero,
+      puissance_fiscale,
       assurance_expiration,
-      visite_technique_expiration,
-      cout_acquisition
+      visite_technique_expiration
     } = body
 
     const result = await query(
       `INSERT INTO vehicules (
         matricule, marque, modele, annee, kilometrage, type_vehicule, 
-        couleur, numero_chassis, date_mise_service, statut, notes, employe_id,
-        immatriculation, carburant, puissance_cv, assurance_numero,
-        assurance_expiration, visite_technique_expiration, cout_acquisition
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        couleur, numero_chassis, statut, notes,
+        carburant, puissance_fiscale,
+        assurance_expiration, visite_technique_expiration
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *`,
       [
         matricule, marque, modele, annee, kilometrage, type_vehicule,
-        couleur, numero_chassis, date_mise_service, statut || 'actif', notes, employe_id,
-        immatriculation, carburant, puissance_cv, assurance_numero,
-        assurance_expiration, visite_technique_expiration, cout_acquisition
+        couleur, numero_chassis, statut || 'disponible', notes,
+        carburant, puissance_fiscale,
+        assurance_expiration, visite_technique_expiration
       ]
     )
 
@@ -106,34 +98,42 @@ export async function PUT(request: NextRequest) {
       type_vehicule,
       couleur,
       numero_chassis,
-      date_mise_service,
       statut,
       notes,
-      employe_id,
-      immatriculation,
       carburant,
-      puissance_cv,
-      assurance_numero,
+      puissance_fiscale,
       assurance_expiration,
-      visite_technique_expiration,
-      cout_acquisition
+      visite_technique_expiration
     } = body
+
+    // Check if matricule is being changed to one that already exists
+    const matriculeCheck = await query(
+      'SELECT id FROM vehicules WHERE matricule = $1 AND id != $2',
+      [matricule, id]
+    )
+
+    if (matriculeCheck.rows.length > 0) {
+      return NextResponse.json(
+        { success: false, error: 'Ce matricule est déjà utilisé par un autre véhicule' },
+        { status: 400 }
+      )
+    }
 
     const result = await query(
       `UPDATE vehicules SET
         matricule = $1, marque = $2, modele = $3, annee = $4, kilometrage = $5,
-        type_vehicule = $6, couleur = $7, numero_chassis = $8, date_mise_service = $9,
-        statut = $10, notes = $11, employe_id = $12, immatriculation = $13,
-        carburant = $14, puissance_cv = $15, assurance_numero = $16,
-        assurance_expiration = $17, visite_technique_expiration = $18,
-        cout_acquisition = $19, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $20
+        type_vehicule = $6, couleur = $7, numero_chassis = $8,
+        statut = $9, notes = $10,
+        carburant = $11, puissance_fiscale = $12,
+        assurance_expiration = $13, visite_technique_expiration = $14,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $15
       RETURNING *`,
       [
         matricule, marque, modele, annee, kilometrage, type_vehicule,
-        couleur, numero_chassis, date_mise_service, statut, notes, employe_id,
-        immatriculation, carburant, puissance_cv, assurance_numero,
-        assurance_expiration, visite_technique_expiration, cout_acquisition, id
+        couleur, numero_chassis, statut, notes,
+        carburant, puissance_fiscale,
+        assurance_expiration, visite_technique_expiration, id
       ]
     )
 
