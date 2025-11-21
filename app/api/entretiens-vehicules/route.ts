@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const vehicule_id = searchParams.get('vehicule_id')
-    const categorie = searchParams.get('categorie')
+    const type_entretien = searchParams.get('type_entretien')
     
     let queryText = `
       SELECT ev.*, 
@@ -25,9 +25,9 @@ export async function GET(request: NextRequest) {
       paramIndex++
     }
     
-    if (categorie) {
-      queryText += ` AND ev.categorie_entretien = $${paramIndex}`
-      params.push(categorie)
+    if (type_entretien) {
+      queryText += ` AND ev.type_entretien = $${paramIndex}`
+      params.push(type_entretien)
       paramIndex++
     }
     

@@ -10,14 +10,10 @@ export async function GET(request: NextRequest) {
     
     let queryText = `
       SELECT v.*, 
-             av.employe_id, 
              e.nom as employe_nom, 
-             e.prenom as employe_prenom,
-             av.date_assignation,
-             av.date_fin as assignation_date_fin
+             e.prenom as employe_prenom
       FROM vehicules v
-      LEFT JOIN assignations_vehicules av ON v.id = av.vehicule_id AND av.statut = 'active'
-      LEFT JOIN employes e ON av.employe_id = e.id
+      LEFT JOIN employes e ON v.employe_id = e.id
     `
     let params: any[] = []
     
@@ -55,20 +51,32 @@ export async function POST(request: NextRequest) {
       type_vehicule,
       couleur,
       numero_chassis,
-      date_acquisition,
+      date_mise_service,
       statut,
-      commentaires
+      notes,
+      employe_id,
+      immatriculation,
+      carburant,
+      puissance_cv,
+      assurance_numero,
+      assurance_expiration,
+      visite_technique_expiration,
+      cout_acquisition
     } = body
 
     const result = await query(
       `INSERT INTO vehicules (
         matricule, marque, modele, annee, kilometrage, type_vehicule, 
-        couleur, numero_chassis, date_acquisition, statut, commentaires
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        couleur, numero_chassis, date_mise_service, statut, notes, employe_id,
+        immatriculation, carburant, puissance_cv, assurance_numero,
+        assurance_expiration, visite_technique_expiration, cout_acquisition
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *`,
       [
         matricule, marque, modele, annee, kilometrage, type_vehicule,
-        couleur, numero_chassis, date_acquisition, statut || 'disponible', commentaires
+        couleur, numero_chassis, date_mise_service, statut || 'actif', notes, employe_id,
+        immatriculation, carburant, puissance_cv, assurance_numero,
+        assurance_expiration, visite_technique_expiration, cout_acquisition
       ]
     )
 
@@ -98,21 +106,34 @@ export async function PUT(request: NextRequest) {
       type_vehicule,
       couleur,
       numero_chassis,
-      date_acquisition,
+      date_mise_service,
       statut,
-      commentaires
+      notes,
+      employe_id,
+      immatriculation,
+      carburant,
+      puissance_cv,
+      assurance_numero,
+      assurance_expiration,
+      visite_technique_expiration,
+      cout_acquisition
     } = body
 
     const result = await query(
       `UPDATE vehicules SET
         matricule = $1, marque = $2, modele = $3, annee = $4, kilometrage = $5,
-        type_vehicule = $6, couleur = $7, numero_chassis = $8, date_acquisition = $9,
-        statut = $10, commentaires = $11, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $12
+        type_vehicule = $6, couleur = $7, numero_chassis = $8, date_mise_service = $9,
+        statut = $10, notes = $11, employe_id = $12, immatriculation = $13,
+        carburant = $14, puissance_cv = $15, assurance_numero = $16,
+        assurance_expiration = $17, visite_technique_expiration = $18,
+        cout_acquisition = $19, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $20
       RETURNING *`,
       [
         matricule, marque, modele, annee, kilometrage, type_vehicule,
-        couleur, numero_chassis, date_acquisition, statut, commentaires, id
+        couleur, numero_chassis, date_mise_service, statut, notes, employe_id,
+        immatriculation, carburant, puissance_cv, assurance_numero,
+        assurance_expiration, visite_technique_expiration, cout_acquisition, id
       ]
     )
 

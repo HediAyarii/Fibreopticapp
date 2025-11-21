@@ -124,6 +124,10 @@ BEGIN
   UNION ALL
   SELECT 'technicien-accounts'::VARCHAR(50), 'Comptes Techniciens'::VARCHAR(100)
   UNION ALL
+  SELECT 'vehicules'::VARCHAR(50), 'Véhicules'::VARCHAR(100)
+  UNION ALL
+  SELECT 'reclamations-techniques'::VARCHAR(50), 'Réclamations Techniques'::VARCHAR(100)
+  UNION ALL
   SELECT 'compte-admin'::VARCHAR(50), 'Compte Admin'::VARCHAR(100);
 END;
 $$ LANGUAGE plpgsql;

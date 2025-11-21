@@ -25,7 +25,6 @@ export function AssignationVehiculeForm({
     vehicule_id: assignation?.vehicule_id || '',
     employe_id: assignation?.employe_id || '',
     date_assignation: assignation?.date_assignation || new Date().toISOString().split('T')[0],
-    kilometrage_debut: assignation?.kilometrage_debut || 0,
     statut: assignation?.statut || 'active',
     commentaires: assignation?.commentaires || ''
   })
@@ -92,18 +91,6 @@ export function AssignationVehiculeForm({
               value={formData.date_assignation}
               onChange={(e) => handleChange('date_assignation', e.target.value)}
               required
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="kilometrage_debut">Kilométrage Début</Label>
-            <Input
-              id="kilometrage_debut"
-              type="number"
-              min="0"
-              value={formData.kilometrage_debut}
-              onChange={(e) => handleChange('kilometrage_debut', parseInt(e.target.value))}
-              placeholder="Kilométrage au moment de l'assignation"
             />
           </div>
         </div>

@@ -7075,14 +7075,14 @@ La page va se recharger automatiquement...`)
                                          variant="outline"
                                          size="sm"
                                          onClick={() => {
-                                           if (confirm(`Terminer l'assignation du véhicule ${assignation.matricule} ?`)) {
+                                           if (confirm(`Arrêter l'assignation du véhicule ${assignation.matricule} ?`)) {
                                              deleteAssignationVehicule(assignation.id)
                                            }
                                          }}
                                          className="text-orange-400 hover:text-orange-300"
                                        >
                                          <CheckCircle className="w-4 h-4 mr-1" />
-                                         Terminer
+                                         Arrêter l'assignation
                                        </Button>
                                      </div>
                                    </td>
