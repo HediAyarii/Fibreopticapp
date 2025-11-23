@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar, RefreshCw, TrendingUp, Package, Users, DollarSign } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Calendar, RefreshCw, TrendingUp, Package, Users, DollarSign, Eye } from "lucide-react"
 import { useAutoSync } from "@/hooks/useAutoSync"
 
 interface EmployeeMaterialValue {
@@ -29,6 +30,10 @@ export function EmployeeMaterialValueTable() {
   const [endDate, setEndDate] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState('all')
   const [employees, setEmployees] = useState<any[]>([])
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState<any>(null)
+  const [employeeMaterials, setEmployeeMaterials] = useState<any[]>([])
+  const [loadingDetails, setLoadingDetails] = useState(false)
 
   // Hook personnalisé pour la synchronisation automatique avec filtres
   const fetchEmployeeValuesWithFilters = useCallback(async () => {
@@ -114,6 +119,30 @@ export function EmployeeMaterialValueTable() {
     setEndDate('')
     setSelectedEmployee('all')
     // Le hook se mettra automatiquement à jour grâce aux dependencies
+  }
+
+  const showEmployeeDetails = async (employee: any) => {
+    setSelectedEmployeeDetails(employee)
+    setShowDetailsModal(true)
+    setLoadingDetails(true)
+    
+    try {
+      const params = new URLSearchParams()
+      params.append('employeId', employee.employe_id.toString())
+      if (startDate) params.append('startDate', startDate)
+      if (endDate) params.append('endDate', endDate)
+
+      const response = await fetch(`/api/employee-material-details?${params.toString()}`)
+      if (!response.ok) throw new Error('Erreur lors du chargement des détails')
+      
+      const data = await response.json()
+      setEmployeeMaterials(data.materials || [])
+    } catch (error) {
+      console.error('Erreur chargement détails:', error)
+      alert('Erreur lors du chargement des détails')
+    } finally {
+      setLoadingDetails(false)
+    }
   }
 
   return (
@@ -308,12 +337,13 @@ export function EmployeeMaterialValueTable() {
                 <th className="text-center p-3 font-medium text-muted-foreground">Quantité</th>
                 <th className="text-right p-3 font-medium text-muted-foreground">Valeur Totale</th>
                 <th className="text-center p-3 font-medium text-muted-foreground">Période</th>
+                <th className="text-center p-3 font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="text-center p-8">
+                  <td colSpan={7} className="text-center p-8">
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
                       Chargement...
@@ -322,7 +352,7 @@ export function EmployeeMaterialValueTable() {
                 </tr>
               ) : employeeValues.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center p-8 text-muted-foreground">
+                  <td colSpan={7} className="text-center p-8 text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
                       <Calendar className="w-8 h-8 text-muted-foreground" />
                       <div>
@@ -371,12 +401,131 @@ export function EmployeeMaterialValueTable() {
                         <div>Fin: {formatDate(employee.derniere_affectation)}</div>
                       </div>
                     </td>
+                    <td className="p-3 text-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => showEmployeeDetails(employee)}
+                        className="glass-card border border-white/20"
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        Détails
+                      </Button>
+                    </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Modal des détails */}
+        <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
+          <DialogContent className="w-[95vw] sm:max-w-[1100px] lg:max-w-[1300px] h-[85vh] max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>
+                Matériels affectés - {selectedEmployeeDetails && formatEmployeeName(selectedEmployeeDetails)}
+              </DialogTitle>
+              <DialogDescription>
+                Liste détaillée des matériels affectés avec les dates d'affectation
+              </DialogDescription>
+            </DialogHeader>
+
+            {loadingDetails ? (
+              <div className="flex items-center justify-center p-8">
+                <RefreshCw className="w-6 h-6 animate-spin" />
+                <span className="ml-2">Chargement des détails...</span>
+              </div>
+            ) : (
+              <div className="overflow-auto flex-1">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-white/10">
+                      <th className="text-left p-3 font-medium text-muted-foreground">Matériel</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">Type</th>
+                      <th className="text-center p-3 font-medium text-muted-foreground">Dépôt</th>
+                      <th className="text-center p-3 font-medium text-muted-foreground">Quantité</th>
+                      <th className="text-right p-3 font-medium text-muted-foreground">Prix Unitaire</th>
+                      <th className="text-right p-3 font-medium text-muted-foreground">Valeur</th>
+                      <th className="text-center p-3 font-medium text-muted-foreground">Date Affectation</th>
+                      <th className="text-center p-3 font-medium text-muted-foreground">Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employeeMaterials.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center p-8 text-muted-foreground">
+                          Aucun matériel trouvé
+                        </td>
+                      </tr>
+                    ) : (
+                      employeeMaterials.map((material: any, index: number) => (
+                        <tr key={index} className="border-b border-white/5 hover:bg-white/5">
+                          <td className="p-3">
+                            <div className="font-medium">{material.nom_equipement}</div>
+                            {material.marque && (
+                              <div className="text-xs text-muted-foreground">{material.marque} {material.modele}</div>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <Badge variant="outline">{material.type_materiel}</Badge>
+                          </td>
+                          <td className="p-3 text-center">
+                            <Badge variant={material.depot === 'ERT' ? 'default' : 'secondary'}>
+                              {material.depot}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className="font-medium">{material.quantite_assignee}</span>
+                          </td>
+                          <td className="p-3 text-right">
+                            {formatCurrency(material.prix_unitaire || 0)}
+                          </td>
+                          <td className="p-3 text-right">
+                            <span className="font-bold text-primary">
+                              {formatCurrency((material.prix_unitaire || 0) * (material.quantite_assignee || 0))}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="text-sm">
+                              {formatDate(material.date_affectation)}
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <Badge 
+                              variant={
+                                material.type_affectation === 'permanent' ? 'default' :
+                                material.type_affectation === 'temporaire' ? 'secondary' :
+                                'outline'
+                              }
+                            >
+                              {material.type_affectation}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  <tfoot className="border-t-2 border-white/20">
+                    <tr>
+                      <td colSpan={5} className="p-3 text-right font-bold">Total:</td>
+                      <td className="p-3 text-right">
+                        <span className="text-lg font-bold text-primary">
+                          {formatCurrency(
+                            employeeMaterials.reduce((sum, m) => 
+                              sum + ((m.prix_unitaire || 0) * (m.quantite_assignee || 0)), 0
+                            )
+                          )}
+                        </span>
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   )

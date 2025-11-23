@@ -311,7 +311,6 @@ export default function EmployeeTracker() {
   const [showPenaltyModal, setShowPenaltyModal] = useState(false)
   const [showClaimModal, setShowClaimModal] = useState(false)
   const [showAffectationModal, setShowAffectationModal] = useState(false)
-  const [showMultiAffectationModal, setShowMultiAffectationModal] = useState(false)
   const [editingItem, setEditingItem] = useState<any>(null)
   
   // Employee details and assignment modals
@@ -2055,6 +2054,49 @@ La page va se recharger automatiquement...`)
   // CRUD Functions for Affectations
   const saveAffectation = async (affectationData: any) => {
     try {
+      // Check if this is a multiple assignment
+      if (affectationData.multiple && affectationData.affectations) {
+        let successCount = 0
+        let errorCount = 0
+        const errors: string[] = []
+
+        for (const singleAffectation of affectationData.affectations) {
+          try {
+            const response = await fetch("/api/affectations-materiel", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(singleAffectation)
+            })
+
+            if (!response.ok) {
+              const error = await response.json()
+              throw new Error(error.error || "Erreur")
+            }
+            successCount++
+          } catch (error) {
+            errorCount++
+            errors.push(error instanceof Error ? error.message : "Erreur inconnue")
+          }
+        }
+
+        // Déclencher la synchronisation automatique
+        window.dispatchEvent(new CustomEvent('material-assignment-updated'))
+        window.dispatchEvent(new CustomEvent('revenue-updated'))
+        
+        await loadAllCRUDData()
+        setShowAffectationModal(false)
+        
+        if (errorCount === 0) {
+          alert(`✅ ${successCount} affectation(s) créée(s) avec succès`)
+        } else {
+          alert(`⚠️ ${successCount} affectation(s) créée(s), ${errorCount} erreur(s):\n${errors.join('\n')}`)
+        }
+        return
+      }
+
+      // Single affectation
       const url = editingItem ? "/api/affectations-materiel" : "/api/affectations-materiel"
       const method = editingItem ? "PUT" : "POST"
       
@@ -2299,7 +2341,7 @@ La page va se recharger automatiquement...`)
       }
 
       await loadAllCRUDData()
-      setShowMultiAffectationModal(false)
+      setShowAffectationModal(false)
       alert("Affectations multiples créées avec succès")
     } catch (error) {
       console.error("Erreur sauvegarde affectations multiples:", error)
@@ -6097,15 +6139,15 @@ La page va se recharger automatiquement...`)
                   </CardDescription>
                          </div>
                        </div>
-                      <Button
+                       <Button
                          variant="outline"
                          onClick={() => setShowAffectationModal(true)}
                          className="glass-card border border-white/20"
                        >
                          <Plus className="w-4 h-4 mr-2" />
-                        Nouvelle Affectation
-                      </Button>
-                      </div>
+                         Nouvelle Affectation
+                       </Button>
+                     </div>
                    </CardHeader>
                    <CardContent>
                     {/* AffectationTest component removed */}
@@ -7917,8 +7959,6 @@ La page va se recharger automatiquement...`)
            </DialogHeader>
            <AffectationForm 
              affectation={editingItem} 
-             employees={employees}
-             materials={materials}
              onSave={saveAffectation} 
              onCancel={() => {
                setShowAffectationModal(false)
