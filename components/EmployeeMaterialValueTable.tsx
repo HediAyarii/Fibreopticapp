@@ -437,7 +437,7 @@ export function EmployeeMaterialValueTable() {
                 <span className="ml-2">Chargement des détails...</span>
               </div>
             ) : (
-              <div className="overflow-y-auto overflow-x-auto flex-1 px-6 pb-6 min-h-0">
+              <div className="modal-scroll-content flex-1 px-6 pb-6 min-h-0">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-white/10">

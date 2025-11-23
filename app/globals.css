@@ -252,3 +252,40 @@
 .sidebar-scrollable::-webkit-scrollbar-thumb:active {
   background: rgba(255, 255, 255, 0.4);
 }
+
+/* Dialog overflow fixes for production */
+[data-slot="dialog-content"] {
+  overflow: visible !important;
+}
+
+[data-slot="dialog-content"] > div[class*="overflow"] {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(14, 165, 233, 0.3) transparent;
+}
+
+/* Ensure modal content can scroll */
+.modal-scroll-content {
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(14, 165, 233, 0.3) transparent;
+}
+
+.modal-scroll-content::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.modal-scroll-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-scroll-content::-webkit-scrollbar-thumb {
+  background: rgba(14, 165, 233, 0.3);
+  border-radius: 3px;
+}
+
+.modal-scroll-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(14, 165, 233, 0.5);
+}
