@@ -26,6 +26,7 @@ async function deployVehiculesProduction() {
         matricule VARCHAR(50) UNIQUE NOT NULL,
         marque VARCHAR(100) NOT NULL,
         modele VARCHAR(100) NOT NULL,
+        type_vehicule VARCHAR(50) DEFAULT 'utilitaire',
         annee INTEGER,
         couleur VARCHAR(50),
         numero_chassis VARCHAR(100),
