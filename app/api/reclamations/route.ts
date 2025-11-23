@@ -472,6 +472,26 @@ export async function PUT(request: NextRequest) {
       userAgent: getUserAgent(request)
     })
 
+    // Envoyer notification SSE au technicien si la réclamation lui est assignée et qu'il y a eu des changements importants
+    const updatedReclamation = result.rows[0]
+    if (updatedReclamation.employe_id && (oldData.statut !== updatedReclamation.statut || oldData.commentaires_internes !== updatedReclamation.commentaires_internes)) {
+      try {
+        const { sendToTechnicien } = await import('@/app/api/sse/technicien/route')
+        sendToTechnicien(updatedReclamation.employe_id, 'reclamation_updated', {
+          id: updatedReclamation.id,
+          numero_reclamation: updatedReclamation.numero_reclamation,
+          statut: updatedReclamation.statut,
+          commentaires_internes: updatedReclamation.commentaires_internes,
+          message: updatedReclamation.statut === 'resolue' 
+            ? 'Votre réclamation a été résolue'
+            : 'Votre réclamation a été mise à jour par l\'administration'
+        })
+        console.log('✅ Notification SSE envoyée au technicien', updatedReclamation.employe_id)
+      } catch (sseError) {
+        console.log('⚠️ SSE non disponible:', sseError)
+      }
+    }
+
     const response = NextResponse.json({
       success: true,
       reclamation: result.rows[0]

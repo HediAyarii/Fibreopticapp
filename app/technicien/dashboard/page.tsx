@@ -171,6 +171,12 @@ export default function TechnicienDashboard() {
   const [uploadedPhotos, setUploadedPhotos] = useState<File[]>([])
   const [isResolving, setIsResolving] = useState(false)
   
+  // États pour signaler un problème
+  const [showSignalModal, setShowSignalModal] = useState(false)
+  const [selectedIntervention, setSelectedIntervention] = useState<Intervention | null>(null)
+  const [isSignaling, setIsSignaling] = useState(false)
+  const [reclamationsKey, setReclamationsKey] = useState(0) // Pour forcer le re-render
+  
   // États pour les données personnelles
   const [personalData, setPersonalData] = useState({
     telephone: '',
@@ -237,6 +243,21 @@ export default function TechnicienDashboard() {
       window.removeEventListener('openResolveModal', handleOpenResolveModal as EventListener)
     }
   }, [])
+
+  // Écouter les événements personnalisés pour mise à jour instantanée
+  useEffect(() => {
+    const handleReclamationCreated = () => {
+      console.log('🔔 Nouvelle réclamation créée - Rechargement des données...')
+      loadData() // Recharger pour mettre à jour les compteurs
+      setReclamationsKey(prev => prev + 1) // Forcer le re-render du composant TechnicienReclamations
+    }
+
+    window.addEventListener('reclamationCreated', handleReclamationCreated)
+    
+    return () => {
+      window.removeEventListener('reclamationCreated', handleReclamationCreated)
+    }
+  }, [user])
 
   const checkAuth = async () => {
     try {
@@ -453,6 +474,54 @@ export default function TechnicienDashboard() {
     }
   }
 
+  // Signaler un problème sur une intervention
+  const handleSignalProblem = async (description: string) => {
+    if (!user || !selectedIntervention) return
+
+    setIsSignaling(true)
+    try {
+      const response = await fetchWithAuth('/api/reclamations/signal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          intervention_num: selectedIntervention.num_inter,
+          intervention_id: selectedIntervention.id,
+          technicien_id: user.id,
+          description_probleme: description,
+          type_reclamation: 'technique',
+          priorite: 'moyenne'
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        // Afficher notification de succès
+        alert(`✅ Réclamation #${data.numero_reclamation} créée avec succès! Vous serez notifié une fois qu'elle sera traitée.`)
+        
+        console.log('🔔 Déclenchement événement reclamationCreated')
+        // Déclencher un événement pour mise à jour instantanée
+        window.dispatchEvent(new Event('reclamationCreated'))
+        
+        // Recharger les données immédiatement pour mettre à jour le compteur
+        await loadData()
+        
+        // Fermer le modal
+        setShowSignalModal(false)
+        setSelectedIntervention(null)
+      } else {
+        alert(`❌ Erreur: ${data.error || 'Impossible de créer la réclamation'}`)
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors du signalement:', error)
+      alert('❌ Erreur lors du signalement du problème')
+    } finally {
+      setIsSignaling(false)
+    }
+  }
+
   // Charger les données du véhicule assigné
   const loadVehiculeData = async () => {
     if (!user) return
@@ -637,15 +706,89 @@ export default function TechnicienDashboard() {
     }
   }
 
-  // Hook pour les mises à jour en temps réel (désactivé pour éviter les erreurs de build)
-  // const { isConnected } = useEmployeeUpdates({
-  //   onEmployeeUpdate: handleEmployeeUpdate,
-  //   onPersonalDataUpdate: handlePersonalDataUpdate,
-  //   enabled: !!user
-  // })
+  // Hook pour les mises à jour en temps réel via polling optimisé
+  useEffect(() => {
+    if (!user) return
 
-  // Solution alternative : statut de connexion simulé
-  const [isConnected, setIsConnected] = useState(true)
+    console.log('🔄 Activation du polling intelligent pour le technicien', user.id)
+    setIsConnected(true)
+
+    // Polling toutes les 10 secondes UNIQUEMENT pour les interventions et pénalités
+    // Les réclamations sont gérées par le composant TechnicienReclamations
+    const pollingInterval = setInterval(async () => {
+      if (!document.hidden && activeTab !== 'reclamations') { // Seulement si la page est visible ET qu'on n'est pas sur l'onglet réclamations
+        console.log('🔄 Polling: Vérification des mises à jour...')
+        try {
+          // Charger seulement interventions, pénalités et revenue - PAS les réclamations
+          if (!user) return
+          
+          const dateParams = activeTab === 'overview' && dateDebut && dateFin
+            ? `&date_debut=${dateDebut}&date_fin=${dateFin}`
+            : ''
+          
+          const revenueDateParams = activeTab === 'overview' && dateDebut && dateFin
+            ? `&date_from=${dateDebut}&date_to=${dateFin}`
+            : ''
+          
+          const [interventionsResponse, penalitesResponse, revenueResponse] = await Promise.all([
+            fetchWithAuth(`/api/interventions?employe_id=${user.id}${dateParams}`),
+            fetchWithAuth(`/api/penalites?employe_id=${user.id}${dateParams}`),
+            fetchWithAuth(`/api/revenue-calculation?employe_id=${user.id}${revenueDateParams}`)
+          ])
+
+          if (interventionsResponse.ok) {
+            const interventionsData = await interventionsResponse.json()
+            if (interventionsData.interventions) {
+              setInterventions(interventionsData.interventions)
+              const totalInterventions = interventionsData.interventions.length
+              const interventionsCloturees = interventionsData.interventions.filter(
+                (inter: Intervention) => inter.statut?.toUpperCase() === 'CLOTURE TERMINEE'
+              ).length
+              setStats(prev => ({
+                ...prev,
+                totalInterventions,
+                interventionsMois: interventionsCloturees
+              }))
+            }
+          }
+
+          if (penalitesResponse.ok) {
+            const penalitesData = await penalitesResponse.json()
+            if (penalitesData.penalites) {
+              setPenalites(penalitesData.penalites)
+              setStats(prev => ({
+                ...prev,
+                penalites: penalitesData.penalites.length
+              }))
+            }
+          }
+
+          if (revenueResponse.ok) {
+            const revenueData = await revenueResponse.json()
+            if (revenueData.success && revenueData.revenue_data && revenueData.revenue_data.length > 0) {
+              const technicienRevenue = revenueData.revenue_data.find((rev: any) => rev.employe_id === user.id) || revenueData.revenue_data[0]
+              setRecetteGeneree({
+                total_recette_technicien: parseFloat(technicienRevenue.total_recette_technicien || 0),
+                nombre_interventions: parseInt(technicienRevenue.nombre_interventions || 0)
+              })
+            }
+          }
+
+          console.log('✅ Polling: Données mises à jour')
+        } catch (error) {
+          console.error('Erreur polling:', error)
+        }
+      }
+    }, 10000) // 10 secondes
+
+    return () => {
+      console.log('🔌 Arrêt du polling')
+      clearInterval(pollingInterval)
+      setIsConnected(false)
+    }
+  }, [user, activeTab, dateDebut, dateFin])
+
+  const [isConnected, setIsConnected] = useState(false)
 
   // États pour les documents administratifs
   const [documents, setDocuments] = useState<any[]>([])
@@ -1071,22 +1214,22 @@ export default function TechnicienDashboard() {
       </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4 lg:py-6">
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Filtres de date */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Calendar className="w-5 h-5 mr-2" />
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center text-base sm:text-lg">
+                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                   Filtres de Date
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <div className="flex-1">
-                    <Label htmlFor="dateDebut" className="text-sm font-medium text-gray-700 mb-2 block">
-                      Date de début
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-1">
+                    <Label htmlFor="dateDebut" className="text-xs sm:text-sm font-medium text-gray-700 mb-1 block">
+                      Date début
                     </Label>
                     <Input
                       id="dateDebut"
@@ -1094,14 +1237,13 @@ export default function TechnicienDashboard() {
                       value={dateDebut}
                       onChange={(e) => {
                         setDateDebut(e.target.value)
-                        // Le useEffect se chargera de recharger les données automatiquement
                       }}
-                      className="w-full"
+                      className="w-full text-sm"
                     />
                   </div>
-                  <div className="flex-1">
-                    <Label htmlFor="dateFin" className="text-sm font-medium text-gray-700 mb-2 block">
-                      Date de fin
+                  <div className="sm:col-span-1">
+                    <Label htmlFor="dateFin" className="text-xs sm:text-sm font-medium text-gray-700 mb-1 block">
+                      Date fin
                     </Label>
                     <Input
                       id="dateFin"
@@ -1109,23 +1251,22 @@ export default function TechnicienDashboard() {
                       value={dateFin}
                       onChange={(e) => {
                         setDateFin(e.target.value)
-                        // Le useEffect se chargera de recharger les données automatiquement
                       }}
-                      className="w-full"
+                      className="w-full text-sm"
                     />
                   </div>
-                  <div className="flex items-end">
+                  <div className="sm:col-span-1 flex items-end">
                     <Button
                       variant="outline"
                       onClick={() => {
                         const dates = getDefaultDates()
                         setDateDebut(dates.start)
                         setDateFin(dates.end)
-                        // Le useEffect se chargera de recharger les données automatiquement
                       }}
-                      className="w-full sm:w-auto"
+                      className="w-full text-sm"
+                      size="sm"
                     >
-                      <RefreshCw className="w-4 h-4 mr-2" />
+                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                       Réinitialiser
                     </Button>
                   </div>
@@ -1134,64 +1275,66 @@ export default function TechnicienDashboard() {
             </Card>
 
             {/* Statistiques */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <Card>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex flex-col space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
+                      </div>
+                      <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats.totalInterventions}</p>
                     </div>
-                    <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Total Interventions du Mois</p>
-                      <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.totalInterventions}</p>
-                    </div>
+                    <p className="text-xs font-medium text-gray-600">Total Interventions du Mois</p>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center">
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex flex-col space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
+                      </div>
+                      <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats.interventionsMois}</p>
                     </div>
-                    <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Total Intervention Clôturé Terminé</p>
-                      <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.interventionsMois}</p>
-                    </div>
+                    <p className="text-xs font-medium text-gray-600">Intervention Clôturé Terminé</p>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center">
-                    <div className="p-2 bg-yellow-100 rounded-lg">
-                      <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600" />
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex flex-col space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="p-2 bg-yellow-100 rounded-lg">
+                        <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600" />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg sm:text-2xl font-bold text-gray-900">
+                          {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          {recetteGeneree.nombre_interventions} inter.
+                        </p>
+                      </div>
                     </div>
-                    <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Recette Générée du Mois Sélectionné</p>
-                      <p className="text-lg sm:text-2xl font-bold text-gray-900">
-                        {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {recetteGeneree.nombre_interventions} intervention{recetteGeneree.nombre_interventions > 1 ? 's' : ''}
-                      </p>
-                    </div>
+                    <p className="text-xs font-medium text-gray-600">Recette du Mois</p>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center">
-                    <div className="p-2 bg-red-100 rounded-lg">
-                      <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-red-600" />
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex flex-col space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600" />
+                      </div>
+                      <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats.penalites}</p>
                     </div>
-                    <div className="ml-3 sm:ml-4">
-                      <p className="text-xs sm:text-sm font-medium text-gray-600">Pénalités du Mois Sélectionné</p>
-                      <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.penalites}</p>
-                    </div>
+                    <p className="text-xs font-medium text-gray-600">Pénalités du Mois</p>
                   </div>
                 </CardContent>
               </Card>
@@ -1208,11 +1351,12 @@ export default function TechnicienDashboard() {
 
             {/* Mes Réclamations */}
             <TechnicienReclamations
+              key={reclamationsKey}
               nomTechnicien={user?.nom || ''}
               prenomTechnicien={user?.prenom || ''}
               technicienId={user?.id}
-              dateDebut={dateDebut}
-              dateFin={dateFin}
+              dateDebut={undefined}
+              dateFin={undefined}
             />
 
             {/* Interventions récentes */}
@@ -1309,6 +1453,18 @@ export default function TechnicienDashboard() {
                                 {intervention.statut}
                               </Badge>
                             </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedIntervention(intervention)
+                                setShowSignalModal(true)
+                              }}
+                              className="flex items-center gap-1 text-orange-600 border-orange-300 hover:bg-orange-50 w-full sm:w-auto"
+                            >
+                              <AlertTriangle className="w-4 h-4" />
+                              Signaler un problème
+                            </Button>
                           </div>
                           <p className="text-sm sm:text-base text-gray-600">{intervention.client}</p>
                           <div className="flex flex-wrap gap-2">
@@ -1654,6 +1810,19 @@ export default function TechnicienDashboard() {
           onPhotoUpload={handlePhotoUpload}
           onRemovePhoto={removePhoto}
           isResolving={isResolving}
+        />
+      )}
+
+      {/* Modal de signalement de problème */}
+      {showSignalModal && selectedIntervention && (
+        <SignalProblemModal
+          intervention={selectedIntervention}
+          onClose={() => {
+            setShowSignalModal(false)
+            setSelectedIntervention(null)
+          }}
+          onSignal={handleSignalProblem}
+          isSignaling={isSignaling}
         />
       )}
     </div>
@@ -2236,6 +2405,118 @@ function ReclamationResolveModal({
                   <>
                     <Check className="w-4 h-4 mr-2" />
                     Marquer comme résolu
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// Modal pour signaler un problème sur une intervention
+function SignalProblemModal({
+  intervention,
+  onClose,
+  onSignal,
+  isSignaling
+}: {
+  intervention: Intervention | null
+  onClose: () => void
+  onSignal: (description: string) => void
+  isSignaling: boolean
+}) {
+  const [description, setDescription] = useState('')
+
+  if (!intervention) return null
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!description.trim()) {
+      alert('Veuillez décrire le problème')
+      return
+    }
+    onSignal(description)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-orange-600" />
+              Signaler un problème
+            </span>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <XIcon className="w-4 h-4" />
+            </Button>
+          </CardTitle>
+          <CardDescription>
+            Intervention {intervention.num_inter} - {intervention.client}
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Informations de l'intervention */}
+            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <h4 className="font-medium mb-2 text-blue-900">Intervention</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-blue-800">
+                <div>
+                  <span className="font-medium">Numéro:</span> {intervention.num_inter}
+                </div>
+                <div>
+                  <span className="font-medium">Client:</span> {intervention.client}
+                </div>
+                <div>
+                  <span className="font-medium">Type:</span> {intervention.type_intervention}
+                </div>
+                <div>
+                  <span className="font-medium">Date RDV:</span> {intervention.date_rdv}
+                </div>
+              </div>
+            </div>
+
+            {/* Description du problème */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Description du problème <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Décrivez le problème rencontré (article manquant, difficulté technique, problème client, etc.)..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                rows={5}
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Une réclamation technique sera créée et vous recevrez une notification une fois qu'elle sera traitée par l'administration.
+              </p>
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="flex justify-end gap-3 pt-4">
+              <Button type="button" variant="outline" onClick={onClose} disabled={isSignaling}>
+                Annuler
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={isSignaling || !description.trim()}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                {isSignaling ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Envoi en cours...
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-4 h-4 mr-2" />
+                    Envoyer le signalement
                   </>
                 )}
               </Button>

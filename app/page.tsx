@@ -6518,16 +6518,38 @@ La page va se recharger automatiquement...`)
 
                  <Card className="glass-card border border-white/20 hover-lift">
                    <CardHeader>
-                     <div className="flex items-center gap-3">
-                       <div className="p-2 bg-primary/10 rounded-lg">
-                         <FileText className="w-5 h-5 text-primary" />
+                     <div className="flex items-center justify-between gap-3">
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-primary/10 rounded-lg">
+                           <FileText className="w-5 h-5 text-primary" />
+                         </div>
+                         <div>
+                           <CardTitle className="text-xl font-bold">Liste des Réclamations</CardTitle>
+                      <CardDescription>
+                      {filteredClaims.length} réclamation{filteredClaims.length > 1 ? 's' : ''} {claimSearchTerm || claimEmployeeFilter !== 'all' || claimDateFilter !== 'all' ? `filtrée${filteredClaims.length > 1 ? 's' : ''} sur ${claims.length}` : 'dans la base de données'}
+                      </CardDescription>
+                         </div>
                        </div>
-                       <div>
-                         <CardTitle className="text-xl font-bold">Liste des Réclamations</CardTitle>
-                    <CardDescription>
-                    {filteredClaims.length} réclamation{filteredClaims.length > 1 ? 's' : ''} {claimSearchTerm || claimEmployeeFilter !== 'all' || claimDateFilter !== 'all' ? `filtrée${filteredClaims.length > 1 ? 's' : ''} sur ${claims.length}` : 'dans la base de données'}
-                    </CardDescription>
-                       </div>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={async () => {
+                           try {
+                             const response = await fetch("/api/reclamations")
+                             if (response.ok) {
+                               const data = await response.json()
+                               setClaims(data.reclamations || [])
+                               console.log('✅ Réclamations rechargées avec succès')
+                             }
+                           } catch (error) {
+                             console.error('❌ Erreur lors du rechargement des réclamations:', error)
+                           }
+                         }}
+                         className="flex items-center gap-2"
+                       >
+                         <RefreshCw className="w-4 h-4" />
+                         Actualiser
+                       </Button>
                      </div>
                   </CardHeader>
                 <CardContent>

@@ -90,14 +90,29 @@ export default function TechnicienReclamations({
       if (dateDebut) params.append('date_debut', dateDebut);
       if (dateFin) params.append('date_fin', dateFin);
 
+      console.log('🔍 TechnicienReclamations: Chargement avec params:', {
+        nomTechnicien,
+        prenomTechnicien,
+        technicienId,
+        dateDebut,
+        dateFin,
+        url: `/api/reclamations-techniques?${params}`
+      });
+
       const response = await fetch(`/api/reclamations-techniques?${params}`);
       const data = await response.json();
+
+      console.log('📊 TechnicienReclamations: Réponse API:', {
+        success: data.success,
+        count: data.reclamations?.length || 0,
+        reclamations: data.reclamations
+      });
 
       if (data.success) {
         setReclamations(data.reclamations || []);
       }
     } catch (error) {
-      console.error('Erreur lors du chargement des réclamations:', error);
+      console.error('❌ Erreur lors du chargement des réclamations:', error);
     } finally {
       setLoading(false);
     }
@@ -107,6 +122,20 @@ export default function TechnicienReclamations({
   useEffect(() => {
     fetchReclamations();
   }, [fetchReclamations]);
+
+  // Écouter les événements personnalisés pour mise à jour instantanée
+  useEffect(() => {
+    const handleReclamationCreated = () => {
+      console.log('🔔 Nouvelle réclamation détectée - Rechargement...')
+      fetchReclamations()
+    }
+
+    window.addEventListener('reclamationCreated', handleReclamationCreated)
+    
+    return () => {
+      window.removeEventListener('reclamationCreated', handleReclamationCreated)
+    }
+  }, [fetchReclamations])
 
   // Écouter les événements Socket.IO pour les mises à jour
   useEffect(() => {

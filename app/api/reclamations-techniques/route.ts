@@ -216,6 +216,25 @@ export async function PATCH(request: NextRequest) {
 
     const updatedReclamation = result.rows[0];
 
+    // Envoyer notification SSE au technicien si connecté
+    if (updatedReclamation.employe_id) {
+      try {
+        const { sendToTechnicien } = await import('@/app/api/sse/technicien/route')
+        sendToTechnicien(updatedReclamation.employe_id, 'reclamation_updated', {
+          id: updatedReclamation.id,
+          numero_reclamation: updatedReclamation.numero_reclamation,
+          statut: updatedReclamation.statut,
+          reponse_admin: updatedReclamation.reponse_admin,
+          message: statut === 'resolu' 
+            ? 'Votre réclamation a été résolue par l\'administration'
+            : 'Votre réclamation a été mise à jour par l\'administration'
+        })
+        console.log('✅ Notification SSE envoyée au technicien')
+      } catch (sseError) {
+        console.log('⚠️ SSE non disponible:', sseError)
+      }
+    }
+
     // Émettre l'événement Socket.IO pour notification en temps réel
     try {
       socketio.sendReclamationTechniqueUpdated(updatedReclamation);
