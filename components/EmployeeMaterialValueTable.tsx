@@ -421,7 +421,10 @@ export function EmployeeMaterialValueTable() {
 
         {/* Modal des détails */}
         <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
-          <DialogContent className="w-[95vw] sm:max-w-[1100px] lg:max-w-[1300px] max-h-[85vh] p-0 gap-0 flex flex-col">
+          <DialogContent 
+            className="w-[95vw] sm:max-w-[1100px] lg:max-w-[1300px] p-0 gap-0 flex flex-col"
+            style={{ maxHeight: '85vh', height: '85vh' }}
+          >
             <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
               <DialogTitle>
                 Matériels affectés - {selectedEmployeeDetails && formatEmployeeName(selectedEmployeeDetails)}
@@ -437,7 +440,15 @@ export function EmployeeMaterialValueTable() {
                 <span className="ml-2">Chargement des détails...</span>
               </div>
             ) : (
-              <div className="modal-scroll-content flex-1 px-6 pb-6 min-h-0">
+              <div 
+                className="flex-1 px-6 pb-6"
+                style={{ 
+                  overflowY: 'auto', 
+                  overflowX: 'auto',
+                  minHeight: 0,
+                  WebkitOverflowScrolling: 'touch'
+                }}
+              >
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-white/10">
