@@ -1,27 +1,15 @@
-// Service Worker pour les notifications push
-const CACHE_NAME = 'finalfibre-v1'
-const urlsToCache = [
-  '/',
-  '/logintech',
-  '/technicien/dashboard',
-  '/manifest.json'
-]
+// Service Worker pour les notifications push - Version 2
+const CACHE_NAME = 'finalfibre-v2'
 
 // Installation du Service Worker
 self.addEventListener('install', (event) => {
-  console.log('🔧 Service Worker: Installation')
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('📦 Service Worker: Cache ouvert')
-        return cache.addAll(urlsToCache)
-      })
-  )
+  console.log('🔧 Service Worker: Installation v2')
+  self.skipWaiting()
 })
 
 // Activation du Service Worker
 self.addEventListener('activate', (event) => {
-  console.log('✅ Service Worker: Activation')
+  console.log('✅ Service Worker: Activation v2')
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -32,21 +20,52 @@ self.addEventListener('activate', (event) => {
           }
         })
       )
-    })
+    }).then(() => self.clients.claim())
   )
 })
 
 // Gestion des requêtes réseau
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url)
+
+  // 1) Pas les POST/PUT/DELETE
+  if (event.request.method !== 'GET') {
+    return
+  }
+
+  // 2) Ne JAMAIS intercepter les navigations de pages (évite le bug Safari avec redirections)
+  if (event.request.mode === 'navigate') {
+    return
+  }
+
+  // 3) Ne pas toucher aux API ni à Next.js ni à la racine
+  if (url.pathname.startsWith('/api/') || 
+      url.pathname === '/' || 
+      url.pathname.startsWith('/_next/')) {
+    return
+  }
+
+  // 4) Cache-first pour le reste (images, CSS, fonts, etc.)
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Retourner la réponse du cache si disponible
-        if (response) {
-          return response
+    caches.match(event.request).then((response) => {
+      if (response) {
+        // Protection Safari: si la réponse est une redirection, fetch au lieu du cache
+        if (response.redirected) {
+          return fetch(event.request)
         }
-        return fetch(event.request)
+        return response
+      }
+      return fetch(event.request).then((fetchResponse) => {
+        // Mettre en cache uniquement les réponses OK
+        if (fetchResponse && fetchResponse.status === 200) {
+          const responseToCache = fetchResponse.clone()
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache)
+          })
+        }
+        return fetchResponse
       })
+    })
   )
 })
 
@@ -64,13 +83,11 @@ self.addEventListener('push', (event) => {
     actions: [
       {
         action: 'open',
-        title: 'Ouvrir',
-        icon: '/placeholder-logo.png'
+        title: 'Ouvrir'
       },
       {
         action: 'close',
-        title: 'Fermer',
-        icon: '/placeholder-logo.png'
+        title: 'Fermer'
       }
     ]
   }
@@ -91,12 +108,9 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const notificationPromise = self.registration.showNotification(
-    notificationData.title,
-    notificationData
+  event.waitUntil(
+    self.registration.showNotification(notificationData.title, notificationData)
   )
-
-  event.waitUntil(notificationPromise)
 })
 
 // Gestion des clics sur les notifications
@@ -117,7 +131,7 @@ self.addEventListener('notificationclick', (event) => {
       .then((clientList) => {
         // Chercher une fenêtre ouverte
         for (const client of clientList) {
-          if (client.url.includes('finalfibre') && 'focus' in client) {
+          if (client.url.includes('networkcom.paris') && 'focus' in client) {
             return client.focus()
           }
         }
@@ -128,51 +142,6 @@ self.addEventListener('notificationclick', (event) => {
         }
       })
   )
-})
-
-// Gestion des erreurs
-self.addEventListener('error', (event) => {
-  console.error('❌ Service Worker: Erreur', event.error)
-})
-
-// Gestion des notifications push
-self.addEventListener('push', (event) => {
-  console.log('🔔 Service Worker: Notification push reçue', event.data)
-  
-  const options = {
-    body: event.data ? event.data.text() : 'Nouvelle notification',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    tag: 'finalfibre-notification',
-    requireInteraction: true,
-    actions: [
-      {
-        action: 'open',
-        title: 'Ouvrir'
-      },
-      {
-        action: 'close',
-        title: 'Fermer'
-      }
-    ]
-  }
-  
-  event.waitUntil(
-    self.registration.showNotification('FinalFibre', options)
-  )
-})
-
-// Gestion des clics sur les notifications
-self.addEventListener('notificationclick', (event) => {
-  console.log('🖱️ Service Worker: Clic sur notification', event.action)
-  
-  event.notification.close()
-  
-  if (event.action === 'open') {
-    event.waitUntil(
-      clients.openWindow('/logintech')
-    )
-  }
 })
 
 // Gestion des messages depuis l'application
