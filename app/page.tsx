@@ -7493,7 +7493,9 @@ La page va se recharger automatiquement...`)
                                    <Badge variant="outline">{entretien.categorie_entretien}</Badge>
                                  </td>
                                  <td className="p-4">
-                                   <span className="font-semibold">{entretien.cout_entretien?.toFixed(2)} €</span>
+                                   <span className="font-semibold">
+                                     {entretien.cout_entretien ? parseFloat(entretien.cout_entretien).toFixed(2) : '0.00'} €
+                                   </span>
                                  </td>
                                  <td className="p-4">{entretien.kilometrage_entretien?.toLocaleString() || '-'} km</td>
                                  <td className="p-4">
