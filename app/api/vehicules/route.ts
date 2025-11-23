@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       statut,
       notes,
       carburant,
-      puissance_fiscale,
+      puissance_cv,
       assurance_expiration,
       visite_technique_expiration
     } = body
@@ -60,14 +60,14 @@ export async function POST(request: NextRequest) {
       `INSERT INTO vehicules (
         matricule, marque, modele, annee, kilometrage, type_vehicule, 
         couleur, numero_chassis, statut, notes,
-        carburant, puissance_fiscale,
+        carburant, puissance_cv,
         assurance_expiration, visite_technique_expiration
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *`,
       [
         matricule, marque, modele, annee, kilometrage, type_vehicule,
         couleur, numero_chassis, statut || 'disponible', notes,
-        carburant, puissance_fiscale,
+        carburant, puissance_cv,
         assurance_expiration, visite_technique_expiration
       ]
     )
@@ -101,7 +101,7 @@ export async function PUT(request: NextRequest) {
       statut,
       notes,
       carburant,
-      puissance_fiscale,
+      puissance_cv,
       assurance_expiration,
       visite_technique_expiration
     } = body
@@ -124,7 +124,7 @@ export async function PUT(request: NextRequest) {
         matricule = $1, marque = $2, modele = $3, annee = $4, kilometrage = $5,
         type_vehicule = $6, couleur = $7, numero_chassis = $8,
         statut = $9, notes = $10,
-        carburant = $11, puissance_fiscale = $12,
+        carburant = $11, puissance_cv = $12,
         assurance_expiration = $13, visite_technique_expiration = $14,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $15
@@ -132,7 +132,7 @@ export async function PUT(request: NextRequest) {
       [
         matricule, marque, modele, annee, kilometrage, type_vehicule,
         couleur, numero_chassis, statut, notes,
-        carburant, puissance_fiscale,
+        carburant, puissance_cv,
         assurance_expiration, visite_technique_expiration, id
       ]
     )

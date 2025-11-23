@@ -46,7 +46,7 @@ import { DocumentsAdministratifs } from '@/components/DocumentsAdministratifs'
 import { NewDocumentModal } from '@/components/NewDocumentModal'
 import { InterventionCategorieTable } from '@/components/InterventionCategorieTable'
 import TechnicienReclamations from '@/components/TechnicienReclamations'
-import { TechVehiculeKilometrage } from '@/components/TechVehiculeKilometrage'
+import { MonVehicule } from '@/components/MonVehicule'
 // import { useEmployeeUpdates } from '@/hooks/useEmployeeUpdates' // Désactivé pour éviter les erreurs de build
 
 interface User {
@@ -120,6 +120,11 @@ export default function TechnicienDashboard() {
     total_recette_technicien: 0,
     nombre_interventions: 0
   })
+  
+  // États pour le véhicule
+  const [vehiculeData, setVehiculeData] = useState<any>(null)
+  const [assignationVehicule, setAssignationVehicule] = useState<any>(null)
+  
   // Fonction helper pour obtenir les dates du mois précédent
   const getDefaultDates = () => {
     const today = new Date()
@@ -198,6 +203,7 @@ export default function TechnicienDashboard() {
       loadData()
       loadPersonalData()
       loadDocuments()
+      loadVehiculeData() // Charger les données du véhicule
     }
   }, [user, dateDebut, dateFin, activeTab])
 
@@ -444,6 +450,66 @@ export default function TechnicienDashboard() {
       console.error('❌ Erreur lors de la résolution:', error)
     } finally {
       setIsResolving(false)
+    }
+  }
+
+  // Charger les données du véhicule assigné
+  const loadVehiculeData = async () => {
+    if (!user) return
+
+    try {
+      const response = await fetchWithAuth(`/api/tech/vehicule-kilometrage?employe_id=${user.id}`)
+      const data = await response.json()
+
+      if (data.success && data.assignation) {
+        // Mapper vers le format attendu par MonVehicule
+        setVehiculeData({
+          id: data.assignation.vehicule_id,
+          matricule: data.assignation.matricule,
+          marque: data.assignation.marque,
+          modele: data.assignation.modele,
+          annee: data.assignation.annee || new Date().getFullYear(),
+          km_actuel: data.assignation.kilometrage_actuel_vehicule || 0,
+          prochaine_echeance_km: data.assignation.prochaine_echeance_km || null
+        })
+        
+        setAssignationVehicule({
+          id: data.assignation.id,
+          vehicule_id: data.assignation.vehicule_id,
+          date_assignation: data.assignation.date_assignation,
+          statut_km: data.assignation.statut_km || 'initial_attente',
+          km_debut: data.assignation.kilometrage_debut,
+          km_actuel: data.assignation.kilometrage_actuel_vehicule,
+          date_derniere_maj: data.assignation.date_derniere_maj
+        })
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement du véhicule:', error)
+    }
+  }
+
+  // Soumettre la mise à jour de kilométrage avec photo
+  const handleSubmitKm = async (formData: FormData) => {
+    try {
+      const response = await fetchWithAuth('/api/vehicules-km-updates', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        console.log('✅ Mise à jour KM soumise avec succès')
+        // Recharger les données du véhicule
+        await loadVehiculeData()
+        return Promise.resolve()
+      } else {
+        console.error('❌ Erreur:', data.error)
+        return Promise.reject(new Error(data.error))
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors de la soumission:', error)
+      return Promise.reject(error)
     }
   }
 
@@ -1386,7 +1452,12 @@ export default function TechnicienDashboard() {
 
         {activeTab === 'vehicule' && (
           <div className="space-y-4 sm:space-y-6">
-            <TechVehiculeKilometrage employeId={user.id} />
+            <MonVehicule 
+              vehicule={vehiculeData}
+              assignation={assignationVehicule}
+              technicienId={user?.id || 0}
+              onSubmitKm={handleSubmitKm}
+            />
           </div>
         )}
 

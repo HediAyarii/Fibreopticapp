@@ -49,6 +49,9 @@ import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesF
 import { VehiculeForm } from "@/components/VehiculeForm"
 import { AssignationVehiculeForm } from "@/components/AssignationVehiculeForm"
 import { EntretienVehiculeForm } from "@/components/EntretienVehiculeForm"
+import { ValidationKmList } from "@/components/ValidationKmList"
+import { MonVehicule } from "@/components/MonVehicule"
+import { TestKmAlerts } from "@/components/TestKmAlerts"
 import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
@@ -120,6 +123,7 @@ import {
   Car,
   Wrench,
   UserCheck,
+  Clock,
 } from "lucide-react"
 
 // User authentication data
@@ -274,6 +278,7 @@ export default function EmployeeTracker() {
   const [vehicules, setVehicules] = useState<any[]>([])
   const [assignationsVehicules, setAssignationsVehicules] = useState<any[]>([])
   const [entretiensVehicules, setEntretiensVehicules] = useState<any[]>([])
+  const [kmUpdates, setKmUpdates] = useState<any[]>([])
   const [loadingVehicules, setLoadingVehicules] = useState(false)
   const [showVehiculeModal, setShowVehiculeModal] = useState(false)
   const [showAssignationVehiculeModal, setShowAssignationVehiculeModal] = useState(false)
@@ -281,6 +286,7 @@ export default function EmployeeTracker() {
   const [editingVehicule, setEditingVehicule] = useState<any>(null)
   const [editingAssignationVehicule, setEditingAssignationVehicule] = useState<any>(null)
   const [editingEntretienVehicule, setEditingEntretienVehicule] = useState<any>(null)
+  const [vehiculesSubTab, setVehiculesSubTab] = useState<'flotte' | 'assignations' | 'validations' | 'entretiens'>('flotte')
 
   // Filtres pour réclamations
   const [claimSearchTerm, setClaimSearchTerm] = useState('')
@@ -673,11 +679,13 @@ export default function EmployeeTracker() {
           Promise.all([
             loadVehiculesFromDatabase(),
             loadAssignationsVehiculesFromDatabase(),
-            loadEntretiensVehiculesFromDatabase()
-          ]).then(([vehiculesData, assignationsData, entretiensData]) => {
+            loadEntretiensVehiculesFromDatabase(),
+            loadKmUpdatesFromDatabase()
+          ]).then(([vehiculesData, assignationsData, entretiensData, kmUpdatesData]) => {
             setVehicules(vehiculesData)
             setAssignationsVehicules(assignationsData)
             setEntretiensVehicules(entretiensData)
+            setKmUpdates(kmUpdatesData)
           }).finally(() => setLoadingVehicules(false))
         }
         break
@@ -2434,6 +2442,18 @@ La page va se recharger automatiquement...`)
     }
   }
 
+  const loadKmUpdatesFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/vehicules-km-updates?statut=en_attente")
+      if (!response.ok) throw new Error("Erreur lors du chargement des MAJ KM")
+      const data = await response.json()
+      return data.updates || []
+    } catch (error) {
+      console.error("Erreur chargement MAJ KM:", error)
+      return []
+    }
+  }
+
   const saveVehicule = async (vehiculeData: any) => {
     try {
       const url = "/api/vehicules"
@@ -2561,9 +2581,9 @@ La page va se recharger automatiquement...`)
         return
       }
 
-      // Demander le kilométrage de fin
-      const kmFin = prompt(`Kilométrage actuel du véhicule ${assignation.matricule} ?`, assignation.kilometrage_debut?.toString() || '0')
-      if (kmFin === null) return // Annulation
+      // Utiliser automatiquement le dernier kilométrage validé par le technicien
+      // ou le kilométrage de début si aucune mise à jour n'a été faite
+      const kmFin = assignation.km_actuel || assignation.kilometrage_debut || 0
       
       const response = await fetch('/api/assignations-vehicules', {
         method: "PUT",
@@ -2575,7 +2595,7 @@ La page va se recharger automatiquement...`)
           date_assignation: assignation.date_assignation,
           date_fin: new Date().toISOString().split('T')[0], // Date du jour
           kilometrage_debut: assignation.kilometrage_debut,
-          kilometrage_fin: parseInt(kmFin) || 0,
+          kilometrage_fin: kmFin, // KM automatique depuis dernière validation technicien
           statut: 'terminee',
           commentaires: assignation.commentaires
         })
@@ -2592,10 +2612,73 @@ La page va se recharger automatiquement...`)
       ])
       setVehicules(vehiculesData)
       setAssignationsVehicules(assignationsData)
-      alert("Assignation terminée avec succès")
+      alert(`Assignation terminée avec succès. KM final: ${kmFin.toLocaleString()} km`)
     } catch (error) {
       console.error("Erreur lors de la fin de l'assignation:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la fin de l'assignation")
+    }
+  }
+
+  const validateKmUpdate = async (updateId: number) => {
+    try {
+      const response = await fetch('/api/vehicules-km-updates', {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: updateId,
+          action: 'valider',
+          admin_id: user?.id
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la validation")
+      }
+
+      const [vehiculesData, assignationsData, kmUpdatesData] = await Promise.all([
+        loadVehiculesFromDatabase(),
+        loadAssignationsVehiculesFromDatabase(),
+        loadKmUpdatesFromDatabase()
+      ])
+      setVehicules(vehiculesData)
+      setAssignationsVehicules(assignationsData)
+      setKmUpdates(kmUpdatesData)
+      alert("Kilométrage validé avec succès")
+    } catch (error) {
+      console.error("Erreur validation KM:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la validation")
+    }
+  }
+
+  const rejectKmUpdate = async (updateId: number, commentaire: string) => {
+    try {
+      const response = await fetch('/api/vehicules-km-updates', {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: updateId,
+          action: 'rejeter',
+          admin_id: user?.id,
+          commentaire_rejet: commentaire
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors du rejet")
+      }
+
+      const [assignationsData, kmUpdatesData] = await Promise.all([
+        loadAssignationsVehiculesFromDatabase(),
+        loadKmUpdatesFromDatabase()
+      ])
+      setAssignationsVehicules(assignationsData)
+      setKmUpdates(kmUpdatesData)
+      alert("Mise à jour rejetée")
+    } catch (error) {
+      console.error("Erreur rejet KM:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors du rejet")
     }
   }
 
@@ -6873,9 +6956,51 @@ La page va se recharger automatiquement...`)
                   </div>
               </div>
               
+              {/* Sous-onglets */}
+              <div className="flex gap-2 border-b border-white/10">
+                <Button
+                  variant={vehiculesSubTab === 'flotte' ? 'default' : 'ghost'}
+                  onClick={() => setVehiculesSubTab('flotte')}
+                  className="rounded-b-none"
+                >
+                  <Car className="w-4 h-4 mr-2" />
+                  Flotte
+                </Button>
+                <Button
+                  variant={vehiculesSubTab === 'assignations' ? 'default' : 'ghost'}
+                  onClick={() => setVehiculesSubTab('assignations')}
+                  className="rounded-b-none"
+                >
+                  <UserCheck className="w-4 h-4 mr-2" />
+                  Assignations
+                </Button>
+                <Button
+                  variant={vehiculesSubTab === 'validations' ? 'default' : 'ghost'}
+                  onClick={() => setVehiculesSubTab('validations')}
+                  className="rounded-b-none relative"
+                >
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Validations
+                  {kmUpdates.length > 0 && (
+                    <Badge className="ml-2 bg-red-500 h-5 w-5 p-0 flex items-center justify-center rounded-full">
+                      {kmUpdates.length}
+                    </Badge>
+                  )}
+                </Button>
+                <Button
+                  variant={vehiculesSubTab === 'entretiens' ? 'default' : 'ghost'}
+                  onClick={() => setVehiculesSubTab('entretiens')}
+                  className="rounded-b-none"
+                >
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Entretiens
+                </Button>
+              </div>
+              
                {/* Vehicules Management Section */}
                     <div className="space-y-6">
                  {/* Section 1: Liste des Véhicules */}
+                 {vehiculesSubTab === 'flotte' && (
                  <Card className="glass-card border border-white/20 hover-lift">
                    <CardHeader>
                             <div className="flex items-center justify-between">
@@ -6993,8 +7118,10 @@ La page va se recharger automatiquement...`)
                      )}
                    </CardContent>
                  </Card>
+                 )}
 
                  {/* Section 2: Assignations de Véhicules */}
+                 {vehiculesSubTab === 'assignations' && (<>
                  <Card className="glass-card border border-white/20 hover-lift">
                    <CardHeader>
                             <div className="flex items-center justify-between">
@@ -7009,10 +7136,18 @@ La page va se recharger automatiquement...`)
                            </CardDescription>
                             </div>
                               </div>
-                       <Button onClick={() => { setEditingAssignationVehicule(null); setShowAssignationVehiculeModal(true); }}>
-                         <Plus className="w-4 h-4 mr-2" />
-                         Nouvelle Assignation
-                       </Button>
+                       <div className="flex gap-2">
+                         {assignationsVehicules.filter(a => a.statut === 'active').length > 0 && (
+                           <TestKmAlerts 
+                             assignationId={assignationsVehicules.filter(a => a.statut === 'active')[0]?.id || 0}
+                             vehiculeId={assignationsVehicules.filter(a => a.statut === 'active')[0]?.vehicule_id || 0}
+                           />
+                         )}
+                         <Button onClick={() => { setEditingAssignationVehicule(null); setShowAssignationVehiculeModal(true); }}>
+                           <Plus className="w-4 h-4 mr-2" />
+                           Nouvelle Assignation
+                         </Button>
+                       </div>
                             </div>
                    </CardHeader>
                    <CardContent>
@@ -7031,7 +7166,10 @@ La page va se recharger automatiquement...`)
                                <th className="text-left p-4 font-semibold">Technicien</th>
                                <th className="text-left p-4 font-semibold">Date Début</th>
                                <th className="text-left p-4 font-semibold">KM Début</th>
+                               <th className="text-left p-4 font-semibold">KM Actuel</th>
+                               <th className="text-left p-4 font-semibold">Dernière MAJ KM</th>
                                <th className="text-left p-4 font-semibold">Durée</th>
+                               <th className="text-left p-4 font-semibold">Statut KM</th>
                                <th className="text-left p-4 font-semibold">Actions</th>
                              </tr>
                            </thead>
@@ -7064,7 +7202,69 @@ La page va se recharger automatiquement...`)
                                      }
                                    </td>
                                    <td className="p-4">
+                                     <div className="font-semibold text-primary">
+                                       {assignation.km_actuel !== null && assignation.km_actuel !== undefined
+                                         ? `${assignation.km_actuel.toLocaleString()} km`
+                                         : assignation.kilometrage_debut !== null && assignation.kilometrage_debut !== undefined
+                                         ? `${assignation.kilometrage_debut.toLocaleString()} km`
+                                         : '0 km'
+                                       }
+                                     </div>
+                                   </td>
+                                   <td className="p-4">
+                                     {assignation.date_derniere_maj ? (
+                                       <div className="text-sm">
+                                         <div className="font-semibold text-green-400">
+                                           {new Date(assignation.date_derniere_maj).toLocaleDateString('fr-FR')}
+                                         </div>
+                                         <div className="text-xs text-muted-foreground">
+                                           {new Date(assignation.date_derniere_maj).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                         </div>
+                                       </div>
+                                     ) : (
+                                       <span className="text-muted-foreground text-sm">Jamais</span>
+                                     )}
+                                   </td>
+                                   <td className="p-4">
                                      <Badge variant="outline">{dureeJours} jour{dureeJours > 1 ? 's' : ''}</Badge>
+                                   </td>
+                                   <td className="p-4">
+                                     {assignation.statut_km === 'initial_attente' && (
+                                       <Badge className="bg-orange-500/20 text-orange-400">
+                                         <Clock className="w-3 h-3 mr-1" />
+                                         Initial requis
+                                       </Badge>
+                                     )}
+                                     {assignation.statut_km === 'en_attente_validation' && (
+                                       <Badge className="bg-yellow-500/20 text-yellow-400">
+                                         <Clock className="w-3 h-3 mr-1" />
+                                         En validation
+                                       </Badge>
+                                     )}
+                                     {assignation.statut_km === 'a_jour' && (
+                                       <Badge className="bg-green-500/20 text-green-400">
+                                         <CheckCircle className="w-3 h-3 mr-1" />
+                                         À jour
+                                       </Badge>
+                                     )}
+                                     {assignation.statut_km === 'retard_j0' && (
+                                       <Badge className="bg-red-500/20 text-red-400">
+                                         <AlertTriangle className="w-3 h-3 mr-1" />
+                                         Jour J
+                                       </Badge>
+                                     )}
+                                     {assignation.statut_km?.startsWith('retard_j') && assignation.statut_km !== 'retard_j0' && (
+                                       <Badge className="bg-orange-500/20 text-orange-400">
+                                         <AlertTriangle className="w-3 h-3 mr-1" />
+                                         {assignation.statut_km.replace('retard_', '').toUpperCase()}
+                                       </Badge>
+                                     )}
+                                     {assignation.statut_km === 'bloque' && (
+                                       <Badge className="bg-red-500/20 text-red-400 animate-pulse">
+                                         <AlertTriangle className="w-3 h-3 mr-1" />
+                                         BLOQUÉ
+                                       </Badge>
+                                     )}
                                    </td>
                                    <td className="p-4">
                                      <div className="flex gap-2">
@@ -7102,7 +7302,7 @@ La page va se recharger automatiquement...`)
                      )}
                    </CardContent>
                  </Card>
-
+                 
                  {/* Section 2b: Historique des Assignations */}
                  <Card className="glass-card border border-white/20 hover-lift">
                    <CardHeader>
@@ -7183,8 +7383,37 @@ La page va se recharger automatiquement...`)
                      )}
                    </CardContent>
                  </Card>
+                 </>)}
+
+                 {/* Section Validations KM */}
+                 {vehiculesSubTab === 'validations' && (
+                   <Card className="glass-card border border-white/20 hover-lift">
+                     <CardHeader>
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-green-500/10 rounded-lg">
+                           <CheckCircle className="w-5 h-5 text-green-500" />
+                         </div>
+                         <div>
+                           <CardTitle className="text-xl font-bold">Validations en Attente</CardTitle>
+                           <CardDescription>
+                             {kmUpdates.length} mise(s) à jour de kilométrage à valider
+                           </CardDescription>
+                         </div>
+                       </div>
+                     </CardHeader>
+                     <CardContent>
+                       <ValidationKmList
+                         updates={kmUpdates}
+                         onValidate={validateKmUpdate}
+                         onReject={rejectKmUpdate}
+                         loading={loadingVehicules}
+                       />
+                     </CardContent>
+                   </Card>
+                 )}
 
                  {/* Section 3: Entretiens de Véhicules */}
+                 {vehiculesSubTab === 'entretiens' && (
                  <Card className="glass-card border border-white/20 hover-lift">
                    <CardHeader>
                             <div className="flex items-center justify-between">
@@ -7282,6 +7511,7 @@ La page va se recharger automatiquement...`)
                      )}
                    </CardContent>
                  </Card>
+                 )}
                </div>
               </div>
           )}
