@@ -176,8 +176,11 @@ export function AffectationForm({ affectation, onSave, onCancel }: AffectationFo
   })
 
   return (
-    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-      <DialogHeader>
+    <DialogContent 
+      className="max-w-4xl p-0 gap-0 flex flex-col"
+      style={{ maxHeight: '90vh', height: '90vh' }}
+    >
+      <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
         <DialogTitle>
           {affectation ? 'Modifier l\'Affectation' : 'Nouvelle Affectation'}
         </DialogTitle>
@@ -186,7 +189,8 @@ export function AffectationForm({ affectation, onSave, onCancel }: AffectationFo
         </DialogDescription>
       </DialogHeader>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+        <div className="flex-1 overflow-y-auto px-6 space-y-4">
         <div>
           <Label>Filtrer par Dépôt</Label>
           <Select value={selectedDepot} onValueChange={setSelectedDepot}>
@@ -269,7 +273,7 @@ export function AffectationForm({ affectation, onSave, onCancel }: AffectationFo
 
           {selectedMaterials.length > 0 && (
             <div className="mt-4">
-              <div className="space-y-2 border rounded-md p-2 max-h-48 overflow-y-auto">
+              <div className="space-y-2 border rounded-md p-2 max-h-60 overflow-y-auto">
                 {selectedMaterials.map((material) => (
                   <div key={material.materiel_id} className="flex items-center gap-2 p-2 bg-accent/50 rounded-md">
                     <div className="flex-1">
@@ -339,8 +343,9 @@ export function AffectationForm({ affectation, onSave, onCancel }: AffectationFo
             rows={2}
           />
         </div>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 shrink-0 border-t">
           <Button type="button" variant="outline" onClick={onCancel}>
             Annuler
           </Button>
