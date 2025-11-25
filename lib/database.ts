@@ -122,13 +122,28 @@ export function getPoolStats(): any {
   }
 }
 
+// Variable pour éviter les fermetures multiples
+let isClosing = false
+
 // Fonction pour fermer le pool (utile pour les tests)
 export async function closePool(): Promise<void> {
+  // Éviter les fermetures multiples
+  if (isClosing) {
+    return
+  }
+  
   if (pool && !pool.ended) {
-    await pool.end()
-    pool = null
-    global.__postgresPool = undefined
-    console.log('🔌 Pool de connexions PostgreSQL fermé')
+    isClosing = true
+    try {
+      await pool.end()
+      pool = null
+      global.__postgresPool = undefined
+      console.log('🔌 Pool de connexions PostgreSQL fermé')
+    } catch (error) {
+      console.error('⚠️  Erreur lors de la fermeture du pool:', error)
+    } finally {
+      isClosing = false
+    }
   }
 }
 
@@ -208,31 +223,39 @@ export async function monitorConnections(): Promise<any> {
 }
 
 // Handlers de nettoyage automatique
+let cleanupInProgress = false
+
 function setupCleanupHandlers() {
+  // Fonction de nettoyage commune
+  const performCleanup = async (signal: string) => {
+    if (cleanupInProgress) {
+      return
+    }
+    cleanupInProgress = true
+    console.log(`🔄 ${signal} - Nettoyage des connexions...`)
+    await closePool()
+  }
+
   // Nettoyage lors de l'arrêt du processus
   process.on('SIGINT', async () => {
-    console.log('🔄 Arrêt du serveur - Nettoyage des connexions...')
-    await closePool()
+    await performCleanup('SIGINT')
     process.exit(0)
   })
 
   process.on('SIGTERM', async () => {
-    console.log('🔄 Arrêt du serveur - Nettoyage des connexions...')
-    await closePool()
+    await performCleanup('SIGTERM')
     process.exit(0)
   })
 
-  // Nettoyage lors des erreurs non gérées
-  process.on('uncaughtException', async (error) => {
+  // Nettoyage lors des erreurs non gérées (mais ne pas fermer le pool à chaque erreur)
+  process.on('uncaughtException', (error) => {
     console.error('❌ Erreur non gérée:', error)
-    await closePool()
-    process.exit(1)
+    // Ne pas fermer le pool pour chaque erreur, seulement logger
   })
 
-  process.on('unhandledRejection', async (reason, promise) => {
+  process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Promesse rejetée non gérée:', reason)
-    await closePool()
-    process.exit(1)
+    // Ne pas fermer le pool pour chaque promesse rejetée, seulement logger
   })
 
   // Nettoyage périodique des connexions orphelines (en développement)
