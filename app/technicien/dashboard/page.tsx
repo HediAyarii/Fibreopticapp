@@ -1868,52 +1868,52 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
 
   return (
     <Card className="border-l-4 border-l-orange-500">
-      <CardContent className="p-4">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+      <CardContent className="p-3 sm:p-4">
+            <div className="flex flex-col gap-3">
               <div className="flex-1">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                  <h3 className="font-semibold text-lg">{reclamation.numero_reclamation}</h3>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge className={getPriorityColor(reclamation.priorite)}>
+                <div className="flex flex-col gap-2 mb-2">
+                  <h3 className="font-semibold text-base sm:text-lg break-words">{reclamation.numero_reclamation}</h3>
+                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                    <Badge className={`${getPriorityColor(reclamation.priorite)} text-xs`}>
                       {reclamation.priorite}
                     </Badge>
-                    <Badge className={getStatusColor(reclamation.statut)}>
+                    <Badge className={`${getStatusColor(reclamation.statut)} text-xs`}>
                       {reclamation.statut === 'en_cours' ? 'En cours' : 
                        reclamation.statut === 'résolu' || reclamation.statut === 'resolu' ? 'Résolu' :
                        reclamation.statut}
                     </Badge>
                     {/* Indicateur de message admin */}
                     {reclamation.commentaires_internes && (
-                      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 text-xs">
                         📝 Message admin
                       </Badge>
                     )}
                   </div>
                 </div>
             
-            <p className="text-gray-600 mb-2 font-medium">{reclamation.nom_client || reclamation.client}</p>
+            <p className="text-sm sm:text-base text-gray-600 mb-2 font-medium break-words">{reclamation.nom_client || reclamation.client}</p>
             
             {/* Informations de contact du client */}
             {(reclamation.telephone_client || reclamation.email_client || reclamation.adresse_client) && (
-              <div className="mb-3 p-3 bg-gray-50 rounded border">
+              <div className="mb-3 p-2 sm:p-3 bg-gray-50 rounded border">
                 <span className="text-xs font-medium text-gray-500 uppercase block mb-2">Informations de contact:</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
                   {reclamation.telephone_client && (
                     <div>
                       <span className="font-medium text-gray-600">Téléphone:</span>
-                      <p className="text-gray-800">{reclamation.telephone_client}</p>
+                      <p className="text-gray-800 break-all">{reclamation.telephone_client}</p>
                     </div>
                   )}
                   {reclamation.email_client && (
                     <div>
                       <span className="font-medium text-gray-600">Email:</span>
-                      <p className="text-gray-800">{reclamation.email_client}</p>
+                      <p className="text-gray-800 break-all text-xs">{reclamation.email_client}</p>
                     </div>
                   )}
                   {reclamation.adresse_client && (
-                    <div className="sm:col-span-2">
+                    <div>
                       <span className="font-medium text-gray-600">Adresse:</span>
-                      <p className="text-gray-800">{reclamation.adresse_client}</p>
+                      <p className="text-gray-800 break-words">{reclamation.adresse_client}</p>
                     </div>
                   )}
                 </div>
@@ -1922,16 +1922,16 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
             
             {/* Alerte pour réclamations rejetées */}
             {reclamation.statut === 'ouverte' && reclamation.commentaires_internes && (
-              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-start">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+              <div className="mb-3 p-2 sm:p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <svg className="h-4 w-4 sm:h-5 sm:w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                     </svg>
                   </div>
-                  <div className="ml-3">
-                    <h4 className="text-sm font-medium text-red-800">Réclamation rejetée</h4>
-                    <p className="text-sm text-red-700 mt-1">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-xs sm:text-sm font-medium text-red-800">Réclamation rejetée</h4>
+                    <p className="text-xs sm:text-sm text-red-700 mt-1 break-words">
                       Cette réclamation a été rejetée par l'administration. Veuillez consulter les détails pour plus d'informations.
                     </p>
                   </div>
@@ -1944,16 +1944,16 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
               const deadline = calculateDeadline(reclamation)
               if (deadline.isOverdue) {
                 return (
-                  <div className="mb-3 p-3 bg-red-100 border border-red-300 rounded-lg">
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <div className="mb-3 p-2 sm:p-3 bg-red-100 border border-red-300 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-shrink-0 mt-0.5">
+                        <svg className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
                       </div>
-                      <div className="ml-3">
-                        <h4 className="text-sm font-medium text-red-800">⚠️ RÉCLAMATION EN RETARD</h4>
-                        <p className="text-sm text-red-700 mt-1">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs sm:text-sm font-medium text-red-800">⚠️ RÉCLAMATION EN RETARD</h4>
+                        <p className="text-xs sm:text-sm text-red-700 mt-1 break-words">
                           Cette réclamation est en retard de {Math.abs(deadline.daysRemaining)} jours. 
                           Elle sera automatiquement fermée si non traitée rapidement.
                         </p>
@@ -1966,18 +1966,22 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
             })()}
             
             {/* Informations de base */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-500 mb-3">
-              <div>
-                <span className="font-medium">Type:</span> {reclamation.type_reclamation}
+            <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm text-gray-500 mb-3">
+              <div className="flex justify-between">
+                <span className="font-medium">Type:</span> 
+                <span className="text-right break-words">{reclamation.type_reclamation}</span>
               </div>
-              <div>
-                <span className="font-medium">Créée le:</span> {reclamation.date_creation || reclamation.date_reclamation}
+              <div className="flex justify-between">
+                <span className="font-medium">Créée le:</span> 
+                <span className="text-right">{reclamation.date_creation || reclamation.date_reclamation}</span>
               </div>
-              <div>
-                <span className="font-medium">Priorité:</span> {reclamation.priorite}
+              <div className="flex justify-between">
+                <span className="font-medium">Priorité:</span> 
+                <span className="text-right">{reclamation.priorite}</span>
               </div>
-              <div>
-                <span className="font-medium">Statut:</span> {reclamation.statut}
+              <div className="flex justify-between">
+                <span className="font-medium">Statut:</span> 
+                <span className="text-right">{reclamation.statut}</span>
               </div>
             </div>
 
@@ -1985,10 +1989,10 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
             {reclamation.statut !== 'resolue' && reclamation.statut !== 'résolu' && reclamation.statut !== 'fermee' && reclamation.statut !== 'fermée' && (() => {
               const deadline = calculateDeadline(reclamation)
               return (
-                <div className="mb-3 p-3 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700">Échéance de traitement</span>
-                    <span className={`text-xs px-2 py-1 rounded ${
+                <div className="mb-3 p-2 sm:p-3 rounded-lg border">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                    <span className="text-xs sm:text-sm font-medium text-gray-700">Échéance de traitement</span>
+                    <span className={`text-xs px-2 py-1 rounded w-fit ${
                       deadline.isOverdue ? 'bg-red-100 text-red-800' :
                       deadline.isUrgent ? 'bg-orange-100 text-orange-800' :
                       'bg-green-100 text-green-800'
@@ -1997,14 +2001,14 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
                        deadline.isUrgent ? 'URGENT' : 'EN COURS'}
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                    <div>
+                  <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
+                    <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Date d'échéance:</span>
-                      <p className="text-gray-800 font-mono">{deadline.deadlineDate}</p>
+                      <p className="text-gray-800 font-mono text-right">{deadline.deadlineDate}</p>
                     </div>
-                    <div>
+                    <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Jours restants:</span>
-                      <p className={`font-bold ${
+                      <p className={`font-bold text-right ${
                         deadline.isOverdue ? 'text-red-600' :
                         deadline.isUrgent ? 'text-orange-600' :
                         'text-green-600'
@@ -2015,7 +2019,7 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
                       </p>
                     </div>
                   </div>
-                  <div className="mt-2 text-xs text-gray-500">
+                  <div className="mt-2 text-xs text-gray-500 break-words">
                     Délai de traitement: {deadline.deadlineDays} jours ({reclamation.type_reclamation === 'client' ? 'Réclamation client' : 'Réclamation technique'})
                   </div>
                 </div>
