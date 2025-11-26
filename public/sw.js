@@ -96,18 +96,45 @@ self.addEventListener('push', (event) => {
   if (event.data) {
     try {
       const data = event.data.json()
+      console.log('📦 Service Worker: Données reçues', data)
+      
+      // Utiliser les données reçues pour construire la notification
       notificationData = {
-        ...notificationData,
         title: data.title || notificationData.title,
         body: data.body || notificationData.body,
         icon: data.icon || notificationData.icon,
-        data: data.data || {}
+        badge: data.badge || notificationData.badge,
+        tag: data.tag || notificationData.tag,
+        requireInteraction: data.requireInteraction !== undefined ? data.requireInteraction : true,
+        data: data.data || {},
+        actions: notificationData.actions
       }
     } catch (error) {
       console.error('❌ Service Worker: Erreur parsing notification data', error)
+      
+      try {
+        // Au cas où le backend envoie une string JSON
+        const raw = event.data.text()
+        const parsed = JSON.parse(raw)
+
+        notificationData = {
+          ...notificationData,
+          title: parsed.title || notificationData.title,
+          body: parsed.body || notificationData.body,
+          icon: parsed.icon || notificationData.icon,
+          badge: parsed.badge || notificationData.badge,
+          tag: parsed.tag || notificationData.tag,
+          data: parsed.data || {},
+        }
+      } catch (e2) {
+        console.error('❌ Impossible de parser même comme string JSON:', e2)
+        // Fallback lisible
+        notificationData.body = 'Vous avez une nouvelle notification.'
+      }
     }
   }
 
+  // Afficher UNE SEULE notification
   event.waitUntil(
     self.registration.showNotification(notificationData.title, notificationData)
   )
