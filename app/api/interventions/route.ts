@@ -293,14 +293,20 @@ export async function GET(request: NextRequest) {
     
     // Filtre par date RDV - Début
     if (dateRdvStart) {
-      whereClauses.push(`date_rdv IS NOT NULL AND date_rdv != '' AND date_rdv != 'nan' AND date_rdv ~ '^[0-9]' AND date_rdv::date >= $${paramIndex}::date`)
+      whereClauses.push(`date_rdv IS NOT NULL AND date_rdv != '' AND date_rdv != 'nan' AND (
+        (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_rdv::date >= $${paramIndex}::date)
+        OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') >= $${paramIndex}::date)
+      )`)
       params.push(dateRdvStart)
       paramIndex++
     }
     
     // Filtre par date RDV - Fin
     if (dateRdvEnd) {
-      whereClauses.push(`date_rdv IS NOT NULL AND date_rdv != '' AND date_rdv != 'nan' AND date_rdv ~ '^[0-9]' AND date_rdv::date <= $${paramIndex}::date`)
+      whereClauses.push(`date_rdv IS NOT NULL AND date_rdv != '' AND date_rdv != 'nan' AND (
+        (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_rdv::date <= $${paramIndex}::date)
+        OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(date_rdv, 'DD/MM/YYYY') <= $${paramIndex}::date)
+      )`)
       params.push(dateRdvEnd)
       paramIndex++
     }
@@ -391,4 +397,4 @@ export async function PUT(request: NextRequest) {
     console.error("Erreur PUT interventions:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
-}
+}// Force rebuild

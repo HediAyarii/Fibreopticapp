@@ -54,34 +54,54 @@ export async function POST(request: NextRequest) {
     const {
       vehicule_id,
       categorie_entretien,
+      type_entretien,
       date_entretien,
       cout_entretien,
+      cout,
       kilometrage_entretien,
+      prestataire,
       garage,
       facture_numero,
       description,
       prochain_entretien_km,
-      prochain_entretien_date
+      prochaine_echeance_km,
+      prochain_entretien_date,
+      prochaine_echeance_date,
+      statut
     } = body
 
     const result = await query(
       `INSERT INTO entretiens_vehicules (
-        vehicule_id, categorie_entretien, date_entretien, cout_entretien,
-        kilometrage_entretien, garage, facture_numero, description,
-        prochain_entretien_km, prochain_entretien_date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        vehicule_id, categorie_entretien, type_entretien, date_entretien, 
+        cout_entretien, cout, kilometrage_entretien, prestataire, garage,
+        facture_numero, description, prochain_entretien_km, prochaine_echeance_km,
+        prochain_entretien_date, prochaine_echeance_date, statut
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
-        vehicule_id, categorie_entretien, date_entretien, cout_entretien,
-        kilometrage_entretien, garage, facture_numero, description,
-        prochain_entretien_km, prochain_entretien_date
+        vehicule_id, 
+        categorie_entretien || null, 
+        type_entretien || 'Autre',
+        date_entretien, 
+        cout_entretien || cout || null,
+        cout || cout_entretien || null,
+        kilometrage_entretien || null, 
+        prestataire || garage || null,
+        garage || prestataire || null,
+        facture_numero || null, 
+        description || null,
+        prochain_entretien_km || prochaine_echeance_km || null,
+        prochaine_echeance_km || prochain_entretien_km || null,
+        (prochain_entretien_date && prochain_entretien_date !== '') ? prochain_entretien_date : (prochaine_echeance_date && prochaine_echeance_date !== '') ? prochaine_echeance_date : null,
+        (prochaine_echeance_date && prochaine_echeance_date !== '') ? prochaine_echeance_date : (prochain_entretien_date && prochain_entretien_date !== '') ? prochain_entretien_date : null,
+        statut || 'effectue'
       ]
     )
 
     // Mettre à jour le kilométrage du véhicule si nécessaire
     if (kilometrage_entretien) {
       await query(
-        'UPDATE vehicules SET kilometrage = $1 WHERE id = $2 AND kilometrage < $1',
+        'UPDATE vehicules SET kilometrage = $1 WHERE id = $2 AND (kilometrage IS NULL OR kilometrage < $1)',
         [kilometrage_entretien, vehicule_id]
       )
     }
@@ -106,28 +126,61 @@ export async function PUT(request: NextRequest) {
       id,
       vehicule_id,
       categorie_entretien,
+      type_entretien,
       date_entretien,
       cout_entretien,
+      cout,
       kilometrage_entretien,
+      prestataire,
       garage,
       facture_numero,
       description,
       prochain_entretien_km,
-      prochain_entretien_date
+      prochaine_echeance_km,
+      prochain_entretien_date,
+      prochaine_echeance_date,
+      statut
     } = body
 
     const result = await query(
       `UPDATE entretiens_vehicules SET
-        vehicule_id = $1, categorie_entretien = $2, date_entretien = $3, cout_entretien = $4,
-        kilometrage_entretien = $5, garage = $6, facture_numero = $7, description = $8,
-        prochain_entretien_km = $9, prochain_entretien_date = $10,
+        vehicule_id = $1, 
+        categorie_entretien = $2, 
+        type_entretien = $3,
+        date_entretien = $4, 
+        cout_entretien = $5,
+        cout = $6,
+        kilometrage_entretien = $7, 
+        prestataire = $8,
+        garage = $9,
+        facture_numero = $10, 
+        description = $11,
+        prochain_entretien_km = $12,
+        prochaine_echeance_km = $13,
+        prochain_entretien_date = $14,
+        prochaine_echeance_date = $15,
+        statut = $16,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $11
+      WHERE id = $17
       RETURNING *`,
       [
-        vehicule_id, categorie_entretien, date_entretien, cout_entretien,
-        kilometrage_entretien, garage, facture_numero, description,
-        prochain_entretien_km, prochain_entretien_date, id
+        vehicule_id, 
+        categorie_entretien || null,
+        type_entretien || 'Autre',
+        date_entretien, 
+        cout_entretien || cout || null,
+        cout || cout_entretien || null,
+        kilometrage_entretien || null, 
+        prestataire || garage || null,
+        garage || prestataire || null,
+        facture_numero || null, 
+        description || null,
+        prochain_entretien_km || prochaine_echeance_km || null,
+        prochaine_echeance_km || prochain_entretien_km || null,
+        (prochain_entretien_date && prochain_entretien_date !== '') ? prochain_entretien_date : (prochaine_echeance_date && prochaine_echeance_date !== '') ? prochaine_echeance_date : null,
+        (prochaine_echeance_date && prochaine_echeance_date !== '') ? prochaine_echeance_date : (prochain_entretien_date && prochain_entretien_date !== '') ? prochain_entretien_date : null,
+        statut || 'effectue',
+        id
       ]
     )
 

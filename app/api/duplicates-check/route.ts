@@ -5,61 +5,124 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    // Comparer TOUS les champs SAUF num_inter car une même intervention peut avoir plusieurs statuts
-    // (échec puis clôture) sur des dates différentes - c'est normal et pas un doublon
-    const fieldsToCompare = `
-      date_rdv, region, plaque, societe, nom_technicien, prenom_technicien, debut, duree, 
-      type_intervention, sav24, sav_rouge, client, commande_id, statut, 
-      cloture_hotline, cloture_tech, debut_intervention, non_clos_pda, creneau_plus_2h, 
-      articles, garantie, motif_echec, echec_niveau_1, echec_niveau_2, panne_reseau, 
-      commentaires_technicien, commentaires_cloture, num_abonne, nom_abonne, numero, 
-      rue, mobile, domicile, bureau, voip, code_postal, ville, id_osiris, tap_fttla, 
-      noeud, numero_efacture, montant_efacture, sav_apres_sav, drapeau, type_logement, 
-      codes_secondaires, motif_delai_wig, dernier_rdv, occurences_abo_90_jours, 
-      gestionnaire_infra, idra, cause_sav, action_sav, longueur_cable, infos_racco_pavillon, 
-      type_pbo, nom_sro, be1, ref_pbo, type_operation, type_habitation, ref_ephem, 
-      activite, statut_wig, raison_sociale, type_offre_ref, type_offre_lib, type_pon, 
-      marque, marque_gp, grille, commentaire_modif_echec, id_immeuble, ndi_contrat, sct, 
-      affectation_bpi_vertical_1, affectation_bpi_horizontale, ref_prise, statut_box_4g, 
-      presta_precedent_succes, tech_precedent_succes, liste_prestations_realisees, 
-      prise_existante, nb_echange_materiel, commentaire_inter, inter_prioritaire, gem, 
-      transfo_cable, a_securiser, vip, decharge_check_voisinage, inter_cloturee_par, 
-      decharge_blocage_jy_suis, deblocage_blocage_jy_suis_par, check_voisinage, 
-      numero_ig_pr, note_gem, parcours_type, parcours_lib, reco_racc, date_racc, 
-      dernier_gem, motif_decharge, lignes_dechargees, commentaire_decharge, date_import, 
-      ref_maestro, ref_cmd, categorie_rdv, date_1er_rdv, presence_amiante, fil_nu, 
-      flag_bot, flag_appel_hors_presence_client, sav_regroupe, sav_rattachement, idur, 
-      adresse_pm
+    console.log('🔍 Recherche des doublons basée sur plusieurs champs clés...')
+    
+    // Fonction pour normaliser les dates (convertir dd/MM/yyyy vers yyyy-MM-dd)
+    const normalizeDateField = (fieldName: string) => `
+      CASE 
+        WHEN ${fieldName} ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_CHAR(TO_DATE(${fieldName}, 'DD/MM/YYYY'), 'YYYY-MM-DD')
+        WHEN ${fieldName} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN ${fieldName}
+        ELSE ${fieldName}
+      END
     `
     
-    // Requête pour trouver les doublons en comparant TOUS les champs
+    // Étape 1: Trouver les doublons basés sur num_inter nettoyé (sans _DUP_)
     const duplicatesQuery = `
+      WITH normalized_data AS (
+        SELECT
+          id,
+          num_inter,
+          -- Nettoyer le num_inter en enlevant les suffixes _DUP_
+          REGEXP_REPLACE(num_inter, '_DUP_[0-9]+$', '') as clean_num_inter,
+          ${normalizeDateField('date_rdv')} as normalized_date_rdv,
+          statut,
+          COALESCE(articles, '') as normalized_articles,
+          type_intervention,
+          nom_technicien,
+          prenom_technicien,
+          inter_cloturee_par,
+          created_at,
+          -- Indicateur si l'intervention a des articles valides
+          CASE 
+            WHEN articles IS NOT NULL 
+              AND articles != '' 
+              AND articles != 'nan' 
+            THEN 1 
+            ELSE 0 
+          END as has_articles
+        FROM interventions
+        WHERE num_inter IS NOT NULL 
+          AND num_inter != '' 
+          AND num_inter != 'nan'
+      )
       SELECT
-        ${fieldsToCompare},
-        COUNT(*) as count
-      FROM interventions
-      GROUP BY ${fieldsToCompare}
+        clean_num_inter,
+        normalized_date_rdv,
+        statut,
+        type_intervention,
+        nom_technicien,
+        prenom_technicien,
+        inter_cloturee_par,
+        COUNT(*) as count,
+        -- Si au moins une est CLOTURE TERMINEE, garder celle avec articles, sinon la plus ancienne
+        ARRAY_AGG(
+          id ORDER BY 
+            CASE WHEN statut = 'CLOTURE TERMINEE' THEN has_articles ELSE 0 END DESC,
+            created_at ASC
+        ) as all_ids,
+        ARRAY_AGG(
+          json_build_object(
+            'id', id,
+            'num_inter', num_inter,
+            'created_at', created_at,
+            'statut', statut,
+            'has_articles', has_articles,
+            'articles', normalized_articles
+          ) ORDER BY 
+            CASE WHEN statut = 'CLOTURE TERMINEE' THEN has_articles ELSE 0 END DESC,
+            created_at ASC
+        ) as records
+      FROM normalized_data
+      GROUP BY 
+        clean_num_inter,
+        normalized_date_rdv,
+        statut,
+        type_intervention,
+        nom_technicien,
+        prenom_technicien,
+        inter_cloturee_par
       HAVING COUNT(*) > 1
       ORDER BY count DESC
     `
     
     const duplicates = await query(duplicatesQuery)
+    console.log(`📊 ${duplicates.rows.length} groupes de doublons trouvés (même num_inter)`)
     
-    // Supprimer les doublons en comparant TOUS les champs
+    // Afficher les détails des doublons trouvés
+    duplicates.rows.forEach(dup => {
+      console.log(`📋 Doublon: clean_num_inter=${dup.clean_num_inter}, statut=${dup.statut}, count=${dup.count}`)
+      console.log(`   Records:`, dup.records)
+    })
+    
+    // Supprimer les doublons
     let deletedCount = 0
+    const deletedDetails: any[] = []
     
     try {
-      const deleteQuery = `
-        DELETE FROM interventions
-        WHERE id NOT IN (
-          SELECT MIN(id)
-          FROM interventions
-          GROUP BY ${fieldsToCompare}
-        )
-      `
-      
-      const result = await query(deleteQuery)
-      deletedCount = result.rowCount || 0
+      for (const duplicate of duplicates.rows) {
+        const idsToDelete = duplicate.all_ids.slice(1) // Garder le premier (selon l'ordre de priorité)
+        
+        if (idsToDelete.length > 0) {
+          const deleteResult = await query(
+            'DELETE FROM interventions WHERE id = ANY($1) RETURNING id, num_inter',
+            [idsToDelete]
+          )
+          
+          deletedCount += deleteResult.rowCount || 0
+          deletedDetails.push({
+            kept_id: duplicate.all_ids[0],
+            deleted_ids: idsToDelete,
+            clean_num_inter: duplicate.clean_num_inter,
+            date_rdv: duplicate.normalized_date_rdv,
+            statut: duplicate.statut,
+            type_intervention: duplicate.type_intervention,
+            count: duplicate.count,
+            records_info: duplicate.records
+          })
+          
+          console.log(`✅ Doublon supprimé pour num_inter ${duplicate.clean_num_inter}: gardé ID ${duplicate.all_ids[0]} (${duplicate.records[0].num_inter}), supprimé ${idsToDelete.join(', ')}`)
+        }
+      }
 
     } catch (error) {
       console.error("Erreur lors de la suppression des doublons:", error)
@@ -67,8 +130,8 @@ export async function GET(request: NextRequest) {
     }
     
     return NextResponse.json({
-      duplicates: duplicates.rows,
-      totalDuplicates: duplicates.rows.length,
+      duplicates: deletedDetails,
+      totalDuplicateGroups: duplicates.rows.length,
       deletedCount: deletedCount,
       message: `${deletedCount} doublons supprimés, ${duplicates.rows.length} groupes de doublons traités`
     })

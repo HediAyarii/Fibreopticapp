@@ -118,12 +118,18 @@ export async function GET(request: NextRequest) {
     }
 
     if (dateFrom) {
-      conditions.push(`i.date_rdv::date >= $${params.length + 1}::date`)
+      conditions.push(`(
+        (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= $${params.length + 1}::date)
+        OR (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= $${params.length + 1}::date)
+      )`)
       params.push(dateFrom)
     }
 
     if (dateTo) {
-      conditions.push(`i.date_rdv::date <= $${params.length + 1}::date`)
+      conditions.push(`(
+        (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date <= $${params.length + 1}::date)
+        OR (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= $${params.length + 1}::date)
+      )`)
       params.push(dateTo)
     }
 

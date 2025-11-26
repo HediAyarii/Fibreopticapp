@@ -90,8 +90,10 @@ export async function GET(request: NextRequest) {
               AND i2.date_rdv != '' 
               AND i2.date_rdv != 'nan'
               AND i2.date_rdv ~ '^[0-9]'
-              AND i2.date_rdv::date >= $1::date 
-              AND i2.date_rdv::date <= $2::date
+              AND (
+                (i2.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i2.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i2.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
+                (i2.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i2.date_rdv::date >= $1::date AND i2.date_rdv::date <= $2::date)
+              )
             ) THEN 'AXECOM'
             ELSE NULL
           END as axecom_label,
@@ -107,8 +109,10 @@ export async function GET(request: NextRequest) {
               AND i3.date_rdv != '' 
               AND i3.date_rdv != 'nan'
               AND i3.date_rdv ~ '^[0-9]'
-              AND i3.date_rdv::date >= $1::date 
-              AND i3.date_rdv::date <= $2::date
+              AND (
+                (i3.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i3.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i3.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
+                (i3.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i3.date_rdv::date >= $1::date AND i3.date_rdv::date <= $2::date)
+              )
             ) THEN 'ERT'
             ELSE NULL
           END as ert_label
@@ -122,8 +126,10 @@ export async function GET(request: NextRequest) {
           AND i.date_rdv != '' 
           AND i.date_rdv != 'nan'
           AND i.date_rdv ~ '^[0-9]'
-          AND i.date_rdv::date >= $1::date 
-          AND i.date_rdv::date <= $2::date
+          AND (
+            (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
+            (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= $1::date AND i.date_rdv::date <= $2::date)
+          )
         GROUP BY i.nom_technicien, i.prenom_technicien
       ),
       interventions_data AS (
@@ -208,8 +214,10 @@ export async function GET(request: NextRequest) {
           AND i.date_rdv != '' 
           AND i.date_rdv != 'nan'
           AND i.date_rdv ~ '^[0-9]'
-          AND i.date_rdv::date >= $1::date 
-          AND i.date_rdv::date <= $2::date
+          AND (
+            (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
+            (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= $1::date AND i.date_rdv::date <= $2::date)
+          )
         GROUP BY i.nom_technicien, i.prenom_technicien
       ),
       carburant_data AS (
@@ -229,19 +237,18 @@ export async function GET(request: NextRequest) {
           AND cc.ca_ttc ~ '^[0-9]'
           ${selectedEmployee ? `AND e.nom = '${selectedEmployee.nom}' AND e.prenom = '${selectedEmployee.prenom}'` : ''}
           AND (
-            -- Essayer différents formats de date
+            -- Format dd.MM.yyyy
             (cc.date_livraison ~ '^[0-9]{2}\.[0-9]{2}\.[0-9]{4}$' AND 
              TO_DATE(cc.date_livraison, 'DD.MM.YYYY') >= $1::date AND 
              TO_DATE(cc.date_livraison, 'DD.MM.YYYY') <= $2::date) OR
+            -- Format yyyy-MM-dd
             (cc.date_livraison ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND 
              cc.date_livraison::date >= $1::date AND 
              cc.date_livraison::date <= $2::date) OR
+            -- Format dd/MM/yyyy
             (cc.date_livraison ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND 
              TO_DATE(cc.date_livraison, 'DD/MM/YYYY') >= $1::date AND 
-             TO_DATE(cc.date_livraison, 'DD/MM/YYYY') <= $2::date) OR
-            -- Recherche par pattern pour mai 2024/2025
-            (cc.date_livraison LIKE '%05.2024%' OR cc.date_livraison LIKE '%05/2024%' OR cc.date_livraison LIKE '%2024-05%' OR
-             cc.date_livraison LIKE '%05.2025%' OR cc.date_livraison LIKE '%05/2025%' OR cc.date_livraison LIKE '%2025-05%')
+             TO_DATE(cc.date_livraison, 'DD/MM/YYYY') <= $2::date)
           )
         GROUP BY e.nom, e.prenom
       ),
@@ -258,9 +265,9 @@ export async function GET(request: NextRequest) {
         INNER JOIN affectations_materiel am ON e.id = am.employe_id
         INNER JOIN materiel m ON am.materiel_id = m.id
         WHERE am.statut = 'active'
-          AND am.date_affectation >= $1::date 
-          AND am.date_affectation <= $2::date
           ${selectedEmployee ? `AND e.nom = '${selectedEmployee.nom}' AND e.prenom = '${selectedEmployee.prenom}'` : ''}
+          AND am.date_affectation::date >= $1::date 
+          AND am.date_affectation::date <= $2::date
         GROUP BY e.nom, e.prenom
       )
       SELECT 
