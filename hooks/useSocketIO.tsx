@@ -59,18 +59,8 @@ export function useSocketIO({ employeeId, onNotification }: UseSocketIOProps) {
   }
 
   // Fonction pour afficher une notification du navigateur
-  const showBrowserNotification = async (notification: NotificationData) => {
+  const showBrowserNotification = (notification: NotificationData) => {
     if (!permissionGranted || !('Notification' in window)) return
-
-    // Vérifier si un Service Worker est actif (pour éviter les notifications en double)
-    if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.getRegistration()
-      if (registration && registration.active) {
-        // Service Worker actif, il gère déjà les notifications push
-        console.log('⏭️ Service Worker actif, skip notification navigateur')
-        return
-      }
-    }
 
     const browserNotification = new Notification(notification.title, {
       body: notification.message,

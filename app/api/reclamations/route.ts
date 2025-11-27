@@ -3,6 +3,17 @@ import { query } from "@/lib/database"
 import { addNoCacheHeaders } from "@/lib/cache-headers"
 import { sendReclamationNotification } from "@/lib/socketio"
 import { logHistorique, getClientIP, getUserAgent } from "@/lib/historique"
+import webpush from 'web-push'
+
+// Configuration VAPID (clés fournies par l'utilisateur)
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || 'BLZZNzGYoo6KLhGm_qVQDIjPWcLZVYeWwPILUwBwaBKL7lEKUQ24f7CWR2GmFhaEiKU_jDDTLv9fo52Ym8xqmak'
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || 'DqE1Bk4uzykAXsmSKIAw46-Gy7z78K7t5CDNVQdlp24'
+
+webpush.setVapidDetails(
+  'mailto:admin@finalfibre.com',
+  vapidPublicKey,
+  vapidPrivateKey
+)
 
 export const dynamic = 'force-dynamic'
 
@@ -288,6 +299,48 @@ export async function POST(request: NextRequest) {
         
         const socketNotificationSent = sendReclamationNotification(cleanedData.employe_id, reclamationData)
         console.log(`📨 Notification Socket.IO réclamation: ${socketNotificationSent ? 'OUI' : 'NON'}`)
+        
+        // 2. Notification Push (pour l'écran de verrouillage mobile)
+        try {
+          const pushSubscriptions = await query(
+            'SELECT endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE employee_id = $1',
+            [cleanedData.employe_id]
+          )
+          
+          if (pushSubscriptions.rows.length > 0) {
+            const payload = JSON.stringify({
+              title: '🚨 Nouvelle Réclamation',
+              body: `${numeroReclamation} - ${type_reclamation} - ${nom_client}`,
+              icon: '/placeholder-logo.png',
+              badge: '/placeholder-logo.png',
+              tag: 'reclamation-notification',
+              requireInteraction: true
+            })
+            
+            // Envoyer à toutes les souscriptions de l'employé
+            for (const sub of pushSubscriptions.rows) {
+              try {
+                const pushSubscription = {
+                  endpoint: sub.endpoint,
+                  keys: {
+                    p256dh: sub.p256dh_key,
+                    auth: sub.auth_key
+                  }
+                }
+                
+                await webpush.sendNotification(pushSubscription, payload)
+                console.log(`📱 Notification push réclamation envoyée à ${sub.endpoint}`)
+              } catch (pushError) {
+                console.error(`❌ Erreur push notification réclamation:`, pushError)
+              }
+            }
+          } else {
+            console.log(`⚠️ Aucune souscription push trouvée pour l'employé ${cleanedData.employe_id}`)
+          }
+        } catch (pushError) {
+          console.error('❌ Erreur envoi notifications push réclamation:', pushError)
+        }
+        
       } catch (notificationError) {
         console.error('❌ Erreur envoi notification réclamation:', notificationError)
       }
