@@ -60,16 +60,22 @@ export async function GET(request: NextRequest) {
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     const sqlQuery = `
-      SELECT * FROM reclamations_techniques
+      SELECT 
+        rt.*,
+        i.articles,
+        i.statut as intervention_statut,
+        i.date_rdv as intervention_date_rdv
+      FROM reclamations_techniques rt
+      LEFT JOIN interventions i ON rt.num_inter = i.num_inter
       ${whereClause}
       ORDER BY 
-        CASE statut
+        CASE rt.statut
           WHEN 'en_attente' THEN 1
           WHEN 'en_cours' THEN 2
           WHEN 'resolu' THEN 3
           WHEN 'rejete' THEN 4
         END,
-        date_creation DESC
+        rt.date_creation DESC
     `;
 
     const result = await query(sqlQuery, params);

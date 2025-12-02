@@ -4,13 +4,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { MessageSquare, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { MessageSquare, CheckCircle, XCircle, Clock, AlertCircle, Eye, Plus, Package } from 'lucide-react';
 import { useSocket } from '@/contexts/SocketContext';
 
 interface Reclamation {
@@ -24,6 +26,17 @@ interface Reclamation {
   date_creation: string;
   date_resolution: string | null;
   date_intervention: string | null;
+}
+
+interface InterventionDetails {
+  id: number;
+  num_inter: string;
+  articles: string;
+  client: string;
+  date_rdv: string;
+  statut: string;
+  grille: string;
+  type_intervention: string;
 }
 
 interface TechnicienReclamationsProps {
@@ -74,6 +87,15 @@ export default function TechnicienReclamations({
   const [loading, setLoading] = useState(true);
   const [selectedReclamation, setSelectedReclamation] = useState<Reclamation | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  
+  // États pour l'intervention
+  const [interventionDetails, setInterventionDetails] = useState<InterventionDetails | null>(null);
+  const [showInterventionDialog, setShowInterventionDialog] = useState(false);
+  const [loadingIntervention, setLoadingIntervention] = useState(false);
+  
+  // États pour ajouter des articles
+  const [showAddArticlesDialog, setShowAddArticlesDialog] = useState(false);
+  const [newArticles, setNewArticles] = useState('');
 
   const fetchReclamations = useCallback(async () => {
     try {
@@ -176,6 +198,68 @@ export default function TechnicienReclamations({
     };
   }, [socket, fetchReclamations]);
 
+  // Charger les détails de l'intervention
+  const fetchInterventionDetails = async (interventionId: number, numInter: string) => {
+    setLoadingIntervention(true);
+    try {
+      // Enlever le # du num_inter pour la recherche
+      const cleanNumInter = numInter.replace('#', '');
+      const response = await fetch(`/api/interventions?numInter=${encodeURIComponent(cleanNumInter)}`);
+      const data = await response.json();
+      
+      if (data.success && data.interventions.length > 0) {
+        setInterventionDetails(data.interventions[0]);
+        setShowInterventionDialog(true);
+      } else {
+        alert('Intervention non trouvée');
+      }
+    } catch (error) {
+      console.error('Erreur chargement intervention:', error);
+      alert('Erreur lors du chargement de l\'intervention');
+    } finally {
+      setLoadingIntervention(false);
+    }
+  };
+
+  // Ajouter des articles à l'intervention
+  const handleAddArticles = async () => {
+    if (!interventionDetails || !newArticles.trim()) {
+      alert('Veuillez saisir des articles');
+      return;
+    }
+
+    try {
+      const currentArticles = interventionDetails.articles || '';
+      const updatedArticles = currentArticles 
+        ? `${currentArticles},${newArticles.trim()}`
+        : newArticles.trim();
+
+      const response = await fetch('/api/interventions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: interventionDetails.id,
+          articles: updatedArticles
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        alert('✅ Articles ajoutés avec succès');
+        setNewArticles('');
+        setShowAddArticlesDialog(false);
+        // Recharger les détails
+        await fetchInterventionDetails(interventionDetails.id, interventionDetails.num_inter);
+      } else {
+        alert('❌ Erreur: ' + (data.error || 'Impossible d\'ajouter les articles'));
+      }
+    } catch (error) {
+      console.error('Erreur ajout articles:', error);
+      alert('❌ Erreur lors de l\'ajout des articles');
+    }
+  };
+
   const handleOpenDialog = (reclamation: Reclamation) => {
     setSelectedReclamation(reclamation);
     setDialogOpen(true);
@@ -275,7 +359,7 @@ export default function TechnicienReclamations({
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="font-semibold">#{reclamation.num_inter}</span>
+                        <span className="font-semibold">{reclamation.num_inter}</span>
                         <Badge className={STATUT_COLORS[reclamation.statut]}>
                           <span className="flex items-center gap-1">
                             {STATUT_ICONS[reclamation.statut]}
@@ -413,6 +497,156 @@ export default function TechnicienReclamations({
           )}
           <div className="flex justify-end">
             <Button onClick={() => setDialogOpen(false)}>Fermer</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Détails Intervention */}
+      <Dialog open={showInterventionDialog} onOpenChange={setShowInterventionDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5" />
+              Détails de l'Intervention
+            </DialogTitle>
+          </DialogHeader>
+          {loadingIntervention ? (
+            <div className="py-8 text-center">
+              <p className="text-gray-500">Chargement...</p>
+            </div>
+          ) : interventionDetails ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-600">N° Intervention</label>
+                  <p className="font-semibold">{interventionDetails.num_inter}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Client</label>
+                  <p>{interventionDetails.client}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Date RDV</label>
+                  <p>
+                    {interventionDetails.date_rdv 
+                      ? new Date(interventionDetails.date_rdv).toLocaleDateString('fr-FR')
+                      : 'Non spécifiée'}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Statut</label>
+                  <p>{interventionDetails.statut}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Grille</label>
+                  <p>{interventionDetails.grille || 'N/A'}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Type</label>
+                  <p>{interventionDetails.type_intervention || 'N/A'}</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-600 mb-2 block">Articles</label>
+                {interventionDetails.articles ? (
+                  <div className="space-y-2">
+                    {interventionDetails.articles.split(',').map((article, index) => {
+                      const trimmed = article.trim();
+                      // Format: "article_code x quantity" or just "article_code"
+                      const match = trimmed.match(/^(.+?)\s*x\s*(\d+)$/);
+                      if (match) {
+                        return (
+                          <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                            <Package className="w-4 h-4 text-gray-500" />
+                            <span className="font-medium">{match[1]}</span>
+                            <span className="text-gray-500">×</span>
+                            <span className="text-gray-700">{match[2]}</span>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                          <Package className="w-4 h-4 text-gray-500" />
+                          <span>{trimmed}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-sm italic">Aucun article</p>
+                )}
+              </div>
+
+              <div className="flex justify-between pt-4 border-t">
+                <Button
+                  onClick={() => {
+                    setShowInterventionDialog(false);
+                    setShowAddArticlesDialog(true);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Ajouter des Articles
+                </Button>
+                <Button variant="outline" onClick={() => setShowInterventionDialog(false)}>
+                  Fermer
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 text-center text-red-500">
+              <p>Impossible de charger les détails de l'intervention</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Ajouter Articles */}
+      <Dialog open={showAddArticlesDialog} onOpenChange={setShowAddArticlesDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Ajouter des Articles
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="newArticles">
+                Articles (séparés par des virgules)
+              </Label>
+              <Input
+                id="newArticles"
+                placeholder="Ex: PTO x 2, Cable 100m x 1"
+                value={newArticles}
+                onChange={(e) => setNewArticles(e.target.value)}
+                className="mt-2"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Format: article x quantité (ex: PTO x 2)
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowAddArticlesDialog(false);
+                  setNewArticles('');
+                }}
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={handleAddArticles}
+                disabled={!newArticles.trim()}
+                className="flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Ajouter
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

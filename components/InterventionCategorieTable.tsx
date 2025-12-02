@@ -573,7 +573,7 @@ export function InterventionCategorieTable({
 
       {/* Dialog pour afficher les interventions d'une catégorie */}
       <Dialog open={selectedCategorie !== null} onOpenChange={() => setSelectedCategorie(null)}>
-        <DialogContent className="!max-w-[95vw] !w-[95vw] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="!max-w-[95vw] !w-[95vw] max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {selectedCategorie && getCategorieIcon(selectedCategorie)}
@@ -593,7 +593,7 @@ export function InterventionCategorieTable({
               Aucune intervention trouvée pour cette catégorie
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 overflow-y-auto max-h-[calc(90vh-200px)] pr-2">
               {interventionsDetail.map((inter) => (
                 <div 
                   key={inter.id} 

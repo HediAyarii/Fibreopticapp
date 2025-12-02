@@ -34,7 +34,8 @@ import {
   Check,
   X as XIcon,
   Plus,
-  Car
+  Car,
+  KeyRound
 } from "lucide-react"
 import { useRouter } from 'next/navigation'
 import { fetchWithAuth } from '@/lib/authManager'
@@ -185,6 +186,14 @@ export default function TechnicienDashboard() {
   })
   const [isEditingPersonalData, setIsEditingPersonalData] = useState(false)
   const [isSavingPersonalData, setIsSavingPersonalData] = useState(false)
+  
+  // États pour le changement de mot de passe
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
   
   const itemsPerPage = 10
   const router = useRouter()
@@ -658,6 +667,58 @@ export default function TechnicienDashboard() {
     // Ici on pourrait mettre à jour les données si nécessaire
   }
 
+  // Fonction pour changer le mot de passe
+  const handleChangePassword = async () => {
+    setPasswordError('')
+
+    if (!oldPassword || !newPassword || !confirmNewPassword) {
+      setPasswordError('Tous les champs sont requis')
+      return
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError('Le nouveau mot de passe doit contenir au moins 6 caractères')
+      return
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('Les nouveaux mots de passe ne correspondent pas')
+      return
+    }
+
+    setChangingPassword(true)
+
+    try {
+      const response = await fetchWithAuth('/api/technicien/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          oldPassword,
+          newPassword
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        alert('Mot de passe changé avec succès')
+        setShowChangePasswordModal(false)
+        setOldPassword('')
+        setNewPassword('')
+        setConfirmNewPassword('')
+      } else {
+        setPasswordError(data.error || 'Erreur lors du changement de mot de passe')
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors du changement de mot de passe:', error)
+      setPasswordError('Erreur de connexion au serveur')
+    } finally {
+      setChangingPassword(false)
+    }
+  }
+
   // Fonctions pour les documents administratifs
   const loadDocuments = async () => {
     if (!user) return
@@ -905,59 +966,42 @@ export default function TechnicienDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex justify-between items-center gap-4">
-            {/* Logo et titre - Mobile */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
+            {/* Logo et titre */}
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
-                <Wrench className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-md">
+                <Wrench className="w-6 h-6 text-white" />
               </div>
-              <div className="hidden sm:block">
-                <h1 className="text-xl font-bold text-gray-900">Dashboard Technicien</h1>
-                <p className="text-sm text-gray-500">FinalFibre</p>
-              </div>
-              <div className="sm:hidden">
-                <h1 className="text-lg font-bold text-gray-900">FinalFibre</h1>
+              <div>
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900">FinalFibre</h1>
+                <p className="text-xs sm:text-sm text-gray-500">Espace Technicien</p>
               </div>
             </div>
             
             {/* Actions - Desktop */}
-            <div className="hidden lg:flex items-center gap-6">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">
+            <div className="hidden lg:flex items-center gap-4">
+              <div className="text-right mr-2">
+                <p className="text-sm font-semibold text-gray-900">
                   {user.prenom} {user.nom}
                 </p>
-                <p className="text-xs text-gray-500">{user.matricule}</p>
-                {lastUpdate && (
-                  <p className="text-xs text-gray-400">
-                    Mis à jour: {lastUpdate.toLocaleTimeString()}
-                  </p>
-                )}
-                {/* Indicateur de connexion SSE */}
-                <div className="flex items-center space-x-1 mt-1">
-                  <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                  <span className="text-xs text-gray-400">
-                    {isConnected ? 'Temps réel' : 'Hors ligne'}
-                  </span>
+                <div className="flex items-center justify-end gap-2 mt-1">
+                  <p className="text-xs text-gray-500">{user.matricule}</p>
+                  <div className="flex items-center gap-1">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                {isUpdating && (
-                  <div className="flex items-center space-x-1 text-xs text-blue-600">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    <span>Mise à jour...</span>
-                  </div>
-                )}
+              <div className="flex items-center gap-2">
                 <NotificationCenter employeeId={user.id} />
-                <MobilePushNotificationManager employeeId={user.id} />
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleLogout}
-                  className="flex items-center space-x-2"
+                  className="flex items-center gap-2"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Déconnexion</span>
@@ -966,14 +1010,8 @@ export default function TechnicienDashboard() {
             </div>
 
             {/* Actions - Mobile */}
-            <div className="flex items-center space-x-2 lg:hidden">
-              {isUpdating && (
-                <div className="flex items-center space-x-1 text-xs text-blue-600">
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                </div>
-              )}
+            <div className="flex items-center gap-2 lg:hidden">
               <NotificationCenter employeeId={user.id} />
-              <MobilePushNotificationManager employeeId={user.id} />
               <Button
                 variant="outline"
                 size="sm"
@@ -987,24 +1025,31 @@ export default function TechnicienDashboard() {
 
           {/* Menu mobile déroulant */}
           {isMobileMenuOpen && (
-            <div className="lg:hidden border-t bg-white">
-              <div className="px-4 py-3 space-y-3">
-                <div className="text-sm">
-                  <p className="font-medium text-gray-900">
-                    {user.prenom} {user.nom}
-                  </p>
-                  <p className="text-gray-500">{user.matricule}</p>
-                  {lastUpdate && (
-                    <p className="text-xs text-gray-400">
-                      Mis à jour: {lastUpdate.toLocaleTimeString()}
+            <div className="lg:hidden border-t bg-white shadow-lg">
+              <div className="px-4 py-4 space-y-4">
+                <div className="flex items-center gap-3 pb-3 border-b">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center">
+                    <User className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      {user.prenom} {user.nom}
                     </p>
-                  )}
+                    <p className="text-xs text-gray-500">{user.matricule}</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>État de connexion</span>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>{isConnected ? 'Connecté' : 'Hors ligne'}</span>
+                  </div>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleLogout}
-                  className="w-full flex items-center justify-center space-x-2"
+                  className="w-full flex items-center justify-center gap-2 border-red-200 text-red-600 hover:bg-red-50"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Déconnexion</span>
@@ -1016,11 +1061,11 @@ export default function TechnicienDashboard() {
       </header>
 
       {/* Navigation Tabs */}
-      <div className="bg-white border-b mt-2">
+      <div className="bg-white border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center justify-between">
-            <nav className="flex space-x-8">
+            <nav className="flex space-x-6">
               <button
                 onClick={() => handleTabChange('overview')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
@@ -1214,19 +1259,19 @@ export default function TechnicienDashboard() {
       </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4 lg:py-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Filtres de date */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center text-base sm:text-lg">
-                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                  Filtres de Date
+            <Card className="shadow-sm">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center text-lg font-semibold">
+                  <Calendar className="w-5 h-5 mr-2 text-blue-600" />
+                  Période d'analyse
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="sm:col-span-1">
                     <Label htmlFor="dateDebut" className="text-xs sm:text-sm font-medium text-gray-700 mb-1 block">
                       Date début
@@ -1275,67 +1320,65 @@ export default function TechnicienDashboard() {
             </Card>
 
             {/* Statistiques */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <Card>
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex flex-col space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
-                      </div>
-                      <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats.totalInterventions}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-blue-500">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-md">
+                      <Calendar className="w-5 h-5 text-white" />
                     </div>
-                    <p className="text-xs font-medium text-gray-600">Total Interventions du Mois</p>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{stats.totalInterventions}</p>
+                    </div>
                   </div>
+                  <p className="text-sm font-medium text-gray-600">Total Interventions</p>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex flex-col space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
-                      </div>
-                      <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats.interventionsMois}</p>
+              <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-green-500">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-md">
+                      <CheckCircle className="w-5 h-5 text-white" />
                     </div>
-                    <p className="text-xs font-medium text-gray-600">Intervention Clôturé Terminé</p>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{stats.interventionsMois}</p>
+                    </div>
                   </div>
+                  <p className="text-sm font-medium text-gray-600">Clôturées</p>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex flex-col space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="p-2 bg-yellow-100 rounded-lg">
-                        <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600" />
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg sm:text-2xl font-bold text-gray-900">
-                          {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
-                        </p>
-                        <p className="text-[10px] text-gray-500">
-                          {recetteGeneree.nombre_interventions} inter.
-                        </p>
-                      </div>
+              <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-emerald-500">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-3 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl shadow-md">
+                      <DollarSign className="w-5 h-5 text-white" />
                     </div>
-                    <p className="text-xs font-medium text-gray-600">Recette du Mois</p>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-gray-900">
+                        {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {recetteGeneree.nombre_interventions} interventions
+                      </p>
+                    </div>
                   </div>
+                  <p className="text-sm font-medium text-gray-600">Recette du Mois</p>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex flex-col space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="p-2 bg-red-100 rounded-lg">
-                        <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600" />
-                      </div>
-                      <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats.penalites}</p>
+              <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-red-500">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-3 bg-gradient-to-br from-red-500 to-red-600 rounded-xl shadow-md">
+                      <AlertCircle className="w-5 h-5 text-white" />
                     </div>
-                    <p className="text-xs font-medium text-gray-600">Pénalités du Mois</p>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{stats.penalites}</p>
+                    </div>
                   </div>
+                  <p className="text-sm font-medium text-gray-600">Pénalités</p>
                 </CardContent>
               </Card>
             </div>
@@ -1626,20 +1669,32 @@ export default function TechnicienDashboard() {
                     <User className="w-5 h-5 mr-2" />
                     Données Personnelles
                   </div>
-                  {!isEditingPersonalData && (
+                  <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setIsEditingPersonalData(true)}
-                      className="flex items-center space-x-2"
+                      onClick={() => setShowChangePasswordModal(true)}
+                      className="flex items-center space-x-2 text-blue-600"
                     >
-                      <Settings className="w-4 h-4" />
-                      <span>Modifier</span>
+                      <KeyRound className="w-4 h-4" />
+                      <span className="hidden sm:inline">Changer mot de passe</span>
+                      <span className="sm:hidden">Mot de passe</span>
                     </Button>
-                  )}
+                    {!isEditingPersonalData && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsEditingPersonalData(true)}
+                        className="flex items-center space-x-2"
+                      >
+                        <Settings className="w-4 h-4" />
+                        <span>Modifier</span>
+                      </Button>
+                    )}
+                  </div>
                 </CardTitle>
                 <CardDescription>
-                  Gérez vos informations personnelles (téléphone, RIB)
+                  Gérez vos informations personnelles (téléphone, RIB) et votre mot de passe
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1824,6 +1879,111 @@ export default function TechnicienDashboard() {
           onSignal={handleSignalProblem}
           isSignaling={isSignaling}
         />
+      )}
+
+      {/* Modal de changement de mot de passe */}
+      {showChangePasswordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-blue-600" />
+                Changer le mot de passe
+              </h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowChangePasswordModal(false)
+                  setOldPassword('')
+                  setNewPassword('')
+                  setConfirmNewPassword('')
+                  setPasswordError('')
+                }}
+              >
+                <XIcon className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {passwordError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="w-4 h-4" />
+                <AlertDescription>{passwordError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="oldPassword">Ancien mot de passe</Label>
+                <Input
+                  id="oldPassword"
+                  type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  placeholder="Entrez votre ancien mot de passe"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="newPassword">Nouveau mot de passe</Label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Minimum 6 caractères"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="confirmNewPassword">Confirmer le nouveau mot de passe</Label>
+                <Input
+                  id="confirmNewPassword"
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="Retaper le nouveau mot de passe"
+                  className="mt-1"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowChangePasswordModal(false)
+                    setOldPassword('')
+                    setNewPassword('')
+                    setConfirmNewPassword('')
+                    setPasswordError('')
+                  }}
+                  disabled={changingPassword}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  onClick={handleChangePassword}
+                  disabled={changingPassword || !oldPassword || !newPassword || !confirmNewPassword}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {changingPassword ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Changement...
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound className="w-4 h-4 mr-2" />
+                      Changer
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

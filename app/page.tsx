@@ -5995,7 +5995,8 @@ La page va se recharger automatiquement...`)
                               </td>
                               <td className="p-4">
                                 <div className="flex gap-2">
-                                  <Button
+                                  {isAdmin && (
+                                    <Button
                                        variant="outline"
                                     size="sm"
                                     onClick={() => {
@@ -6005,8 +6006,10 @@ La page va se recharger automatiquement...`)
                                        className="glass-card border border-white/20"
                                   >
                                        <Edit className="w-4 h-4" />
-                                  </Button>
-                                  <Button
+                                    </Button>
+                                  )}
+                                  {isAdmin && (
+                                    <Button
                                        variant="outline"
                                     size="sm"
                                     onClick={() => {
@@ -6021,7 +6024,8 @@ La page va se recharger automatiquement...`)
                                        title="Transférer vers un autre dépôt"
                                      >
                                        <RefreshCw className="w-4 h-4" />
-                                  </Button>
+                                    </Button>
+                                  )}
                                   <Button
                                        variant="outline"
                                     size="sm"
@@ -6033,14 +6037,16 @@ La page va se recharger automatiquement...`)
                                      >
                                        <UserPlus className="w-4 h-4" />
                                   </Button>
-                                  <Button
+                                  {isAdmin && (
+                                    <Button
                                        variant="outline"
                                     size="sm"
                                        onClick={() => handleDelete('material', material.id)}
                                        className="glass-card border border-white/20 text-red-400 hover:text-red-300"
                                      >
                                        <Trash2 className="w-4 h-4" />
-                                  </Button>
+                                    </Button>
+                                  )}
                               </div>
                             </td>
                           </tr>
@@ -6139,14 +6145,16 @@ La page va se recharger automatiquement...`)
                   </CardDescription>
                          </div>
                        </div>
-                       <Button
-                         variant="outline"
-                         onClick={() => setShowAffectationModal(true)}
-                         className="glass-card border border-white/20"
-                       >
-                         <Plus className="w-4 h-4 mr-2" />
-                         Nouvelle Affectation
-                       </Button>
+                       {isAdmin && (
+                         <Button
+                           variant="outline"
+                           onClick={() => setShowAffectationModal(true)}
+                           className="glass-card border border-white/20"
+                         >
+                           <Plus className="w-4 h-4 mr-2" />
+                           Nouvelle Affectation
+                         </Button>
+                       )}
                      </div>
                    </CardHeader>
                    <CardContent>

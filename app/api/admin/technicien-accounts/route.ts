@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, is_active, is_locked, password, reset_login_attempts } = await request.json()
+    const { id, is_active, is_locked, password, reset_login_attempts, reset_password } = await request.json()
 
     if (!id) {
       return NextResponse.json({ error: 'ID manquant' }, { status: 400 })
@@ -136,7 +136,14 @@ export async function PUT(request: NextRequest) {
       paramIndex++
     }
 
-    if (password) {
+    // Réinitialisation du mot de passe par l'admin
+    if (reset_password && password) {
+      const passwordHash = await bcrypt.hash(password, 10)
+      updateFields.push(`password_hash = $${paramIndex}`)
+      params.push(passwordHash)
+      paramIndex++
+      console.log('🔑 Admin réinitialise le mot de passe pour le compte ID:', id)
+    } else if (password) {
       const passwordHash = await bcrypt.hash(password, 10)
       updateFields.push(`password_hash = $${paramIndex}`)
       params.push(passwordHash)

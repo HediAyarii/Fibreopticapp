@@ -20,9 +20,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, AlertCircle, CheckCircle, XCircle, Clock, DollarSign } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { MessageSquare, AlertCircle, CheckCircle, XCircle, Clock, DollarSign, Plus, Package, Trash2, RefreshCw, Edit } from 'lucide-react';
 import { useSocket } from '@/contexts/SocketContext';
 import ConfirmationsMontants from './ConfirmationsMontants';
+import { ArticlesEditModal } from './PenaltyAndArticlesForms';
 
 interface Reclamation {
   id: number;
@@ -40,6 +42,17 @@ interface Reclamation {
   date_intervention: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface InterventionDetails {
+  id: number;
+  num_inter: string;
+  articles: string | null;
+  client: string;
+  date_rdv: string | null;
+  statut: string;
+  grille: string | null;
+  type_intervention: string | null;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -92,6 +105,21 @@ export default function ReclamationsTechniques() {
   const [dateFin, setDateFin] = useState('');
   const [dateDebutTemp, setDateDebutTemp] = useState("");
   const [dateFinTemp, setDateFinTemp] = useState("");
+
+  // États pour l'ajout d'articles (nouvelle modal simplifiée)
+  const [showArticlesModal, setShowArticlesModal] = useState(false);
+  const [editingIntervention, setEditingIntervention] = useState<any>(null);
+  const [articlesText, setArticlesText] = useState('');
+  const [savingArticles, setSavingArticles] = useState(false);
+  
+  // Anciens états pour l'ajout d'articles (conservés pour compatibilité)
+  const [interventionDetails, setInterventionDetails] = useState<InterventionDetails | null>(null);
+  const [interventionsMap, setInterventionsMap] = useState<Record<string, InterventionDetails>>({});
+  const [showAddArticlesDialog, setShowAddArticlesDialog] = useState(false);
+  const [articles, setArticles] = useState<{code: string, quantity: number}[]>([]);
+  const [newArticleCode, setNewArticleCode] = useState('');
+  const [newArticleQuantity, setNewArticleQuantity] = useState(1);
+  const [loadingIntervention, setLoadingIntervention] = useState(false);
 
   const { socket, isConnected } = useSocket();
 
@@ -198,10 +226,217 @@ export default function ReclamationsTechniques() {
     setDateFin('');
   };
 
+  // Charger les détails de l'intervention
+  const fetchInterventionDetails = async (interventionId: number | null, numInter: string) => {
+    setLoadingIntervention(true);
+    try {
+      // Nettoyer: retirer # et espaces
+      const cleanNumInter = numInter.replace(/^#/, '').trim();
+      console.log('Recherche intervention:', cleanNumInter);
+      
+      const response = await fetch(`/api/interventions?num_inter=${encodeURIComponent(cleanNumInter)}`);
+      const data = await response.json();
+      
+      console.log('Résultat API:', data);
+      
+      if (data.success && data.interventions.length > 0) {
+        const details = data.interventions[0];
+        setInterventionDetails(details);
+        // Stocker dans la map pour affichage dans la liste
+        setInterventionsMap(prev => ({
+          ...prev,
+          [numInter]: details
+        }));
+        return details;
+      } else {
+        console.error('Intervention non trouvée:', cleanNumInter);
+        // Créer un objet fictif pour permettre l'ajout d'articles quand même
+        const fictiveIntervention: InterventionDetails = {
+          id: 0,
+          num_inter: cleanNumInter,
+          articles: null,
+          client: 'N/A',
+          date_rdv: null,
+          statut: 'N/A',
+          grille: null,
+          type_intervention: null
+        };
+        setInterventionDetails(fictiveIntervention);
+        alert(`⚠️ Intervention ${cleanNumInter} non trouvée dans la base.\nVous pouvez quand même ajouter des articles, mais l'intervention n'existe pas encore dans le système.`);
+        return fictiveIntervention;
+      }
+    } catch (error) {
+      console.error('Erreur chargement intervention:', error);
+      alert('Erreur lors du chargement de l\'intervention');
+      return null;
+    } finally {
+      setLoadingIntervention(false);
+    }
+  };
+
+  // Ajouter des articles à l'intervention
+  const handleAddArticles = async () => {
+    if (!interventionDetails || articles.length === 0) {
+      alert('Veuillez ajouter au moins un article');
+      return;
+    }
+
+    try {
+      setSavingArticles(true);
+      
+      // Si l'intervention n'existe pas (id = 0), on ne peut pas sauvegarder
+      if (interventionDetails.id === 0) {
+        alert('⚠️ Impossible de sauvegarder les articles.\nL\'intervention n\'existe pas dans la base de données.\nVeuillez d\'abord importer cette intervention.');
+        setSavingArticles(false);
+        return;
+      }
+      
+      const currentArticles = interventionDetails.articles || '';
+      const newArticlesStr = articles.map(a => `${a.code} x${a.quantity}`).join(',');
+      const updatedArticles = currentArticles 
+        ? `${currentArticles},${newArticlesStr}`
+        : newArticlesStr;
+
+      const response = await fetch('/api/interventions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: interventionDetails.id,
+          articles: updatedArticles,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setInterventionDetails({ ...interventionDetails, articles: updatedArticles });
+        setArticles([]);
+        setNewArticleCode('');
+        setNewArticleQuantity(1);
+        setShowAddArticlesDialog(false);
+        alert('Articles ajoutés avec succès');
+        // Rafraîchir les réclamations pour mettre à jour l'affichage
+        fetchReclamations();
+      } else {
+        alert('Erreur lors de l\'ajout des articles');
+      }
+    } catch (error) {
+      console.error('Erreur ajout articles:', error);
+      alert('Erreur lors de l\'ajout des articles');
+    } finally {
+      setSavingArticles(false);
+    }
+  };
+
+  const addArticle = () => {
+    if (!newArticleCode.trim()) return;
+    
+    const existingIndex = articles.findIndex(a => a.code.toUpperCase() === newArticleCode.toUpperCase());
+    
+    if (existingIndex >= 0) {
+      const updated = [...articles];
+      updated[existingIndex].quantity += newArticleQuantity;
+      setArticles(updated);
+    } else {
+      setArticles([...articles, {
+        code: newArticleCode.toUpperCase(),
+        quantity: newArticleQuantity
+      }]);
+    }
+    
+    setNewArticleCode('');
+    setNewArticleQuantity(1);
+  };
+
+  const removeArticle = (index: number) => {
+    setArticles(articles.filter((_, i) => i !== index));
+  };
+
+  const updateQuantity = (index: number, quantity: number) => {
+    const updated = [...articles];
+    updated[index].quantity = Math.max(1, quantity);
+    setArticles(updated);
+  };
+
   const handleOpenDialog = (reclamation: Reclamation) => {
     setSelectedReclamation(reclamation);
     setReponseAdmin(reclamation.reponse_admin || '');
     setDialogOpen(true);
+  };
+
+  // Fonction pour ouvrir la modal d'édition des articles
+  const handleOpenArticlesModal = async (reclamation: Reclamation) => {
+    try {
+      // Chercher l'intervention par num_inter
+      const cleanNumInter = reclamation.num_inter.replace(/^#/, '').trim();
+      const response = await fetch(`/api/interventions?num_inter=${encodeURIComponent(cleanNumInter)}`);
+      const data = await response.json();
+      
+      if (data.interventions && data.interventions.length > 0) {
+        const intervention = data.interventions[0];
+        setEditingIntervention(intervention);
+        
+        // Nettoyer les articles pour l'édition
+        const cleanArticles = intervention.articles && intervention.articles.toString().toLowerCase() !== 'nan' 
+          ? intervention.articles 
+          : "";
+        setArticlesText(cleanArticles);
+        setShowArticlesModal(true);
+      } else {
+        alert(`⚠️ Intervention ${cleanNumInter} non trouvée dans la base de données.`);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement de l\'intervention:', error);
+      alert('Erreur lors du chargement de l\'intervention');
+    }
+  };
+
+  // Fonction pour sauvegarder les articles (compatible avec ArticlesEditModal)
+  const handleSaveArticles = async (id: number, articles: string) => {
+    setSavingArticles(true);
+    try {
+      const cleanArticles = articles.trim() === '' || articles.toLowerCase() === 'nan' ? '' : articles.trim();
+      
+      console.log('🔍 Sauvegarde articles:', { id, articles: cleanArticles });
+      
+      const response = await fetch('/api/interventions', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: id,
+          articles: cleanArticles
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Réponse serveur:', data);
+        alert('✅ Articles mis à jour avec succès');
+        setShowArticlesModal(false);
+        setEditingIntervention(null);
+        setArticlesText('');
+        
+        // Rafraîchir les réclamations pour mettre à jour l'affichage
+        await fetchReclamations();
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Erreur serveur:', errorData);
+        alert('❌ Erreur lors de la mise à jour des articles');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde des articles:', error);
+      alert('❌ Erreur lors de la sauvegarde des articles');
+    } finally {
+      setSavingArticles(false);
+    }
+  };
+
+  const handleCancelArticles = () => {
+    setShowArticlesModal(false);
+    setEditingIntervention(null);
+    setArticlesText('');
   };
 
   const handleUpdateStatut = async (nouveauStatut: string) => {
@@ -484,11 +719,13 @@ export default function ReclamationsTechniques() {
               {filteredReclamations.map((reclamation) => (
                 <div
                   key={reclamation.id}
-                  className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => handleOpenDialog(reclamation)}
+                  className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
                 >
                   <div className="flex items-start justify-between">
-                    <div className="flex-1">
+                    <div 
+                      className="flex-1 cursor-pointer"
+                      onClick={() => handleOpenDialog(reclamation)}
+                    >
                       <div className="flex items-center gap-3 mb-2">
                         <span className="font-semibold text-lg">#{reclamation.num_inter}</span>
                         <Badge className={STATUT_COLORS[reclamation.statut]}>
@@ -505,6 +742,19 @@ export default function ReclamationsTechniques() {
                         <span className="font-medium">Technicien:</span>{' '}
                         {reclamation.prenom_technicien} {reclamation.nom_technicien}
                       </p>
+                      {(reclamation as any).articles && (
+                        <div className="mt-2 mb-2">
+                          <p className="text-xs font-medium text-gray-600 mb-1">Articles:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {(reclamation as any).articles.split(',').map((article: string, idx: number) => (
+                              <Badge key={idx} variant="secondary" className="text-xs">
+                                <Package className="w-3 h-3 mr-1" />
+                                {article.trim()}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <p className="text-sm text-gray-700 line-clamp-2">
                         {reclamation.description}
                       </p>
@@ -515,9 +765,23 @@ export default function ReclamationsTechniques() {
                         </div>
                       )}
                     </div>
-                    <div className="text-right text-sm text-gray-500 ml-4">
-                      <p>{new Date(reclamation.date_creation).toLocaleDateString('fr-FR')}</p>
-                      <p>{new Date(reclamation.date_creation).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
+                    <div className="flex flex-col items-end gap-2 ml-4">
+                      <div className="text-right text-sm text-gray-500">
+                        <p>{new Date(reclamation.date_creation).toLocaleDateString('fr-FR')}</p>
+                        <p>{new Date(reclamation.date_creation).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenArticlesModal(reclamation);
+                        }}
+                        className="h-8 px-3 text-xs bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+                      >
+                        <Package className="h-3 w-3 mr-1" />
+                        Articles
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -541,7 +805,7 @@ export default function ReclamationsTechniques() {
                   <p className="text-lg font-semibold">{selectedReclamation.num_inter}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-600">Statut</label>
+                  <label className="text-sm font-medium text-gray-600">Statut Réclamation</label>
                   <div className="mt-1">
                     <Badge className={STATUT_COLORS[selectedReclamation.statut]}>
                       <span className="flex items-center gap-1">
@@ -561,6 +825,24 @@ export default function ReclamationsTechniques() {
                     {selectedReclamation.prenom_technicien} {selectedReclamation.nom_technicien}
                   </p>
                 </div>
+                
+                {/* Informations de l'intervention */}
+                {(selectedReclamation as any).intervention_statut && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-600">Statut Intervention</label>
+                    <p className="font-medium text-blue-700">{(selectedReclamation as any).intervention_statut}</p>
+                  </div>
+                )}
+                
+                {(selectedReclamation as any).intervention_date_rdv && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-600">Date RDV</label>
+                    <p>
+                      {new Date((selectedReclamation as any).intervention_date_rdv).toLocaleDateString('fr-FR')}
+                    </p>
+                  </div>
+                )}
+                
                 <div>
                   <label className="text-sm font-medium text-gray-600">Date Intervention</label>
                   <p>
@@ -640,6 +922,208 @@ export default function ReclamationsTechniques() {
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal d'édition des articles (nouvelle version simplifiée) */}
+      <ArticlesEditModal
+        isOpen={showArticlesModal}
+        onClose={handleCancelArticles}
+        intervention={editingIntervention}
+        onSave={handleSaveArticles}
+      />
+
+      {/* Dialog Ajouter Articles */}
+      <Dialog open={showAddArticlesDialog} onOpenChange={setShowAddArticlesDialog}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Modifier les Articles - {interventionDetails?.num_inter}</DialogTitle>
+            <p className="text-sm text-gray-500">Ajoutez des articles utilisés lors de cette intervention</p>
+          </DialogHeader>
+          {interventionDetails && (
+            <div className="space-y-4">
+              {/* Informations intervention */}
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h4 className="font-medium text-sm text-blue-900 mb-2">📋 Informations de l'intervention</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-700">Client:</span> <span className="text-gray-900">{interventionDetails.client}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Statut:</span> <span className="text-gray-900">{interventionDetails.statut}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Date RDV:</span>{' '}
+                    <span className="text-gray-900">
+                      {interventionDetails.date_rdv 
+                        ? new Date(interventionDetails.date_rdv).toLocaleDateString('fr-FR')
+                        : 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Type:</span> <span className="text-gray-900">{interventionDetails.type_intervention || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Formulaire d'ajout d'article */}
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h4 className="font-medium text-sm text-gray-700 mb-3">➕ Ajouter un article</h4>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Label htmlFor="article-code" className="text-xs">Code Article</Label>
+                    <div className="relative">
+                      <Input
+                        id="article-code"
+                        list="article-codes"
+                        value={newArticleCode}
+                        onChange={(e) => setNewArticleCode(e.target.value.toUpperCase())}
+                        placeholder="Ex: CLEM, PTO, JARRETIERE..."
+                        className="mt-1 uppercase"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addArticle();
+                          }
+                        }}
+                      />
+                      <datalist id="article-codes">
+                        <option value="CLEM" />
+                        <option value="PTO" />
+                        <option value="JARRETIERE" />
+                        <option value="CABLE_100M" />
+                        <option value="CABLE_50M" />
+                        <option value="SPLITTER" />
+                        <option value="BOITIER" />
+                        <option value="RACPAV" />
+                        <option value="SAV" />
+                      </datalist>
+                    </div>
+                  </div>
+                  <div className="w-32">
+                    <Label htmlFor="article-quantity" className="text-xs">Quantité</Label>
+                    <Input
+                      id="article-quantity"
+                      type="number"
+                      min="1"
+                      value={newArticleQuantity}
+                      onChange={(e) => setNewArticleQuantity(parseInt(e.target.value) || 1)}
+                      className="mt-1"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addArticle();
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button 
+                      type="button" 
+                      onClick={addArticle}
+                      disabled={!newArticleCode.trim()}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  💡 Tapez le code de l'article ou sélectionnez-le dans la liste déroulante
+                </p>
+              </div>
+
+              {/* Liste des articles ajoutés */}
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm text-gray-700">📦 Articles à ajouter ({articles.length})</h4>
+                {articles.length === 0 ? (
+                  <div className="p-8 text-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                    <p className="text-sm">Aucun article ajouté</p>
+                    <p className="text-xs mt-1">Utilisez le formulaire ci-dessus pour ajouter des articles</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {articles.map((article, index) => (
+                      <div key={index} className="flex items-center gap-2 p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 transition-colors">
+                        <div className="flex-1 font-mono font-medium text-gray-900">
+                          {article.code}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-gray-600">x</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={article.quantity}
+                            onChange={(e) => updateQuantity(index, parseInt(e.target.value) || 1)}
+                            className="w-20 text-center"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => removeArticle(index)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Articles actuels de l'intervention */}
+              {interventionDetails.articles && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="font-medium text-xs text-gray-600 mb-2">📦 Articles actuels de l'intervention</h4>
+                  <code className="text-xs text-gray-700 break-all">
+                    {interventionDetails.articles}
+                  </code>
+                </div>
+              )}
+
+              {/* Aperçu du format final */}
+              {articles.length > 0 && (
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                  <h4 className="font-medium text-xs text-green-800 mb-1">✅ Articles qui seront ajoutés</h4>
+                  <code className="text-xs text-green-900 break-all">
+                    {articles.map(a => `${a.code} x${a.quantity}`).join(',')}
+                  </code>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowAddArticlesDialog(false);
+                setArticles([]);
+                setNewArticleCode('');
+                setNewArticleQuantity(1);
+              }}
+              disabled={savingArticles}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleAddArticles}
+              disabled={savingArticles || articles.length === 0}
+            >
+              {savingArticles ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Sauvegarde...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Sauvegarder ({articles.length} article{articles.length > 1 ? 's' : ''})
+                </>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

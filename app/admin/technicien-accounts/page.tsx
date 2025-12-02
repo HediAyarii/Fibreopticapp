@@ -16,9 +16,13 @@ import {
   XCircle,
   RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  KeyRound,
+  X as XIcon
 } from "lucide-react"
 import TechnicienAccountForm from '@/components/TechnicienAccountForm'
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 interface TechnicienAccount {
   id: number
@@ -41,6 +45,11 @@ export default function AdminTechnicienAccounts() {
   const [error, setError] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [editingAccount, setEditingAccount] = useState<TechnicienAccount | null>(null)
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false)
+  const [resetPasswordAccountId, setResetPasswordAccountId] = useState<number | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [resettingPassword, setResettingPassword] = useState(false)
 
   useEffect(() => {
     loadAccounts()
@@ -149,6 +158,60 @@ export default function AdminTechnicienAccounts() {
       }
     } catch (error) {
       setError('Erreur de connexion au serveur')
+    }
+  }
+
+  const handleOpenResetPasswordModal = (accountId: number) => {
+    setResetPasswordAccountId(accountId)
+    setNewPassword('')
+    setConfirmPassword('')
+    setShowResetPasswordModal(true)
+  }
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordAccountId) return
+
+    if (!newPassword || newPassword.length < 6) {
+      setError('Le mot de passe doit contenir au moins 6 caractères')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('Les mots de passe ne correspondent pas')
+      return
+    }
+
+    setResettingPassword(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/admin/technicien-accounts', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: resetPasswordAccountId,
+          reset_password: true,
+          password: newPassword
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setShowResetPasswordModal(false)
+        setResetPasswordAccountId(null)
+        setNewPassword('')
+        setConfirmPassword('')
+        alert('Mot de passe réinitialisé avec succès')
+      } else {
+        setError(data.error || 'Erreur lors de la réinitialisation du mot de passe')
+      }
+    } catch (error) {
+      setError('Erreur de connexion au serveur')
+    } finally {
+      setResettingPassword(false)
     }
   }
 
@@ -355,6 +418,16 @@ export default function AdminTechnicienAccounts() {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => handleOpenResetPasswordModal(account.id)}
+                      className="text-blue-600 hover:text-blue-700"
+                      title="Réinitialiser le mot de passe"
+                    >
+                      <KeyRound className="w-4 h-4" />
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => handleDeleteAccount(account.id)}
                       className="text-red-600 hover:text-red-700"
                     >
@@ -374,12 +447,104 @@ export default function AdminTechnicienAccounts() {
           <li>• <strong>Actif/Désactif :</strong> Contrôle si le technicien peut se connecter</li>
           <li>• <strong>Verrouillé/Déverrouillé :</strong> Verrouille le compte après 3 tentatives de connexion échouées</li>
           <li>• <strong>Réinitialiser :</strong> Remet les tentatives à zéro et déverrouille automatiquement le compte</li>
+          <li>• <strong>🔑 Réinitialiser mot de passe :</strong> Permet de définir un nouveau mot de passe pour le technicien</li>
           <li>• <strong>Suppression :</strong> Supprime définitivement le compte (irréversible)</li>
           <li>• Chaque technicien ne peut voir que ses propres données (interventions, réclamations, pénalités, carburant)</li>
           <li>• <span className="text-orange-700">⚠️ Un compte avec 2+ tentatives montre une alerte orange</span></li>
           <li>• <span className="text-red-700">🔒 Un compte verrouillé (3 tentatives) est bloqué jusqu'à réinitialisation</span></li>
         </ul>
       </div>
+
+      {/* Modal de réinitialisation de mot de passe */}
+      {showResetPasswordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-blue-600" />
+                Réinitialiser le mot de passe
+              </h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowResetPasswordModal(false)
+                  setNewPassword('')
+                  setConfirmPassword('')
+                  setError('')
+                }}
+              >
+                <XIcon className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {error && (
+              <Alert variant="destructive" className="mb-4">
+                <XCircle className="w-4 h-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="newPassword">Nouveau mot de passe</Label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Minimum 6 caractères"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Retaper le mot de passe"
+                  className="mt-1"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowResetPasswordModal(false)
+                    setNewPassword('')
+                    setConfirmPassword('')
+                    setError('')
+                  }}
+                  disabled={resettingPassword}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  onClick={handleResetPassword}
+                  disabled={resettingPassword || !newPassword || !confirmPassword}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {resettingPassword ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Réinitialisation...
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound className="w-4 h-4 mr-2" />
+                      Réinitialiser
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

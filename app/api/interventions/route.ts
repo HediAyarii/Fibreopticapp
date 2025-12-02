@@ -238,9 +238,10 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
     const employeId = searchParams.get('employe_id')
     const statut = searchParams.get('statut')
-    const numInter = searchParams.get('numInter')
+    const numInter = searchParams.get('numInter') || searchParams.get('num_inter')
     const dateRdvStart = searchParams.get('dateRdvStart') || searchParams.get('date_debut')
     const dateRdvEnd = searchParams.get('dateRdvEnd') || searchParams.get('date_fin')
     const client = searchParams.get('client')
@@ -254,6 +255,13 @@ export async function GET(request: NextRequest) {
     let whereClauses: string[] = []
     let params: any[] = []
     let paramIndex = 1
+    
+    // Filtre par ID (recherche exacte)
+    if (id) {
+      whereClauses.push(`id = $${paramIndex}`)
+      params.push(parseInt(id))
+      paramIndex++
+    }
     
     // Filtre par employé
     if (employeId) {
@@ -286,8 +294,10 @@ export async function GET(request: NextRequest) {
     
     // Filtre par numéro d'intervention
     if (numInter) {
-      whereClauses.push(`num_inter ILIKE $${paramIndex}`)
-      params.push(`%${numInter}%`)
+      console.log('🔍 Recherche intervention par num_inter:', numInter);
+      // Recherche simple et directe
+      whereClauses.push(`num_inter = $${paramIndex}`)
+      params.push(numInter)
       paramIndex++
     }
     
@@ -348,6 +358,9 @@ export async function GET(request: NextRequest) {
     
     const whereClause = whereClauses.length > 0 ? ' WHERE ' + whereClauses.join(' AND ') : ''
     
+    console.log('📊 SQL Query:', `SELECT COUNT(*) as total FROM interventions${whereClause}`);
+    console.log('📊 Params:', params);
+    
     // Compter le TOTAL réel d'interventions filtrées
     const countResult = await query(
       `SELECT COUNT(*) as total FROM interventions${whereClause}`,
@@ -376,7 +389,10 @@ export async function PUT(request: NextRequest) {
   try {
     const { id, articles } = await request.json()
 
+    console.log('📥 PUT /api/interventions - Données reçues:', { id, articles })
+
     if (!id || articles === undefined) {
+      console.error('❌ Données manquantes:', { id, articles })
       return NextResponse.json({ error: "ID et articles requis" }, { status: 400 })
     }
 
@@ -386,8 +402,15 @@ export async function PUT(request: NextRequest) {
     )
 
     if (result.rows.length === 0) {
+      console.error('❌ Intervention non trouvée avec ID:', id)
       return NextResponse.json({ error: "Intervention non trouvée" }, { status: 404 })
     }
+
+    console.log('✅ Articles mis à jour avec succès:', {
+      id: result.rows[0].id,
+      num_inter: result.rows[0].num_inter,
+      articles: result.rows[0].articles
+    })
 
     return NextResponse.json({
       success: true,

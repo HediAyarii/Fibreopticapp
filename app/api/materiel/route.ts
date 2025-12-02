@@ -334,40 +334,51 @@ export async function DELETE(request: NextRequest) {
 
       const deletedData = materielResult.rows[0]
 
-      // 2. Récupérer toutes les affectations liées à ce matériel
+      // 2. Vérifier s'il y a des affectations liées (pour information uniquement)
       const affectationsResult = await query(
-        'SELECT id, quantite_assignee FROM affectations_materiel WHERE materiel_id = $1',
+        `SELECT COUNT(*) as count FROM affectations_materiel WHERE materiel_id = $1`,
         [id]
       )
 
-      // 3. Supprimer toutes les affectations liées à ce matériel
-      if (affectationsResult.rows.length > 0) {
-        await query('DELETE FROM affectations_materiel WHERE materiel_id = $1', [id])
-        console.log(`Suppression de ${affectationsResult.rows.length} affectation(s) liée(s) au matériel ${id}`)
+      const affectationsCount = parseInt(affectationsResult.rows[0].count)
+
+      // 3. Mettre materiel_id à NULL dans les affectations pour conserver l'historique
+      if (affectationsCount > 0) {
+        await query(
+          `UPDATE affectations_materiel SET materiel_id = NULL WHERE materiel_id = $1`,
+          [id]
+        )
+        console.log(`${affectationsCount} affectation(s) conservée(s) avec materiel_id mis à NULL`)
       }
 
       // 4. Supprimer le matériel
       const result = await query('DELETE FROM materiel WHERE id = $1 RETURNING *', [id])
 
-      // 5. Enregistrer dans l'historique avec l'email de l'utilisateur
+      // 5. Construire la description
+      let description = `${deletedData.nom_equipement} - ${deletedData.type_materiel}`
+      if (affectationsCount > 0) {
+        description += `\n⚠️ ${affectationsCount} affectation(s) conservée(s) (materiel_id mis à NULL)`
+      }
+
+      // 6. Enregistrer dans l'historique
       await logHistorique({
         userName: userData?.email || userData?.name || 'Utilisateur inconnu',
         action: 'DELETE',
         tableName: 'materiel',
         recordId: parseInt(id),
         section: 'Matériel',
-        description: generateDescription('DELETE', 'Matériel', `${deletedData.nom_equipement} - ${deletedData.type_materiel} (${affectationsResult.rows.length} affectation(s) supprimée(s))`),
+        description: generateDescription('DELETE', 'Matériel', description),
         oldValues: deletedData,
         ipAddress: getClientIP(request),
         userAgent: getUserAgent(request)
       })
 
-      // 6. Valider la transaction
+      // 7. Valider la transaction
       await query('COMMIT')
 
       return NextResponse.json({
         success: true,
-        message: `Matériel supprimé avec succès${affectationsResult.rows.length > 0 ? ` (${affectationsResult.rows.length} affectation(s) supprimée(s) automatiquement)` : ''}`
+        message: 'Matériel supprimé avec succès'
       })
     } catch (error) {
       // Annuler la transaction en cas d'erreur
