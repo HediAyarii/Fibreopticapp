@@ -77,19 +77,17 @@ export function useUserPermissions() {
     return false
   }
 
-  const isAdmin = (): boolean => {
-    return user?.role === 'admin' || user?.role_id === 1 || false
-  }
+  const isAdmin = user?.role === 'admin' || user?.role_id === 1 || false
 
   const getAvailableSections = (): string[] => {
     if (!user) return []
     
-    if (isAdmin()) {
+    if (isAdmin) {
       // Admin voit toutes les sections
       return [
         'dashboard', 'employees', 'interventions', 'materials', 'fuel',
         'fuel-consumption', 'penalties', 'statistics', 'costs',
-        'cout-par-salaire', 'claims', 'documents', 'recap-calcul',
+        'cout-par-salarie', 'claims', 'documents', 'recap-calcul',
         'tarifs', 'recette-generer', 'technicien-accounts', 'compte-admin',
         'vehicules', 'reclamations-techniques'
       ]

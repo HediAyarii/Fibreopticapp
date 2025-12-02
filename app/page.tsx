@@ -3495,7 +3495,7 @@ La page va se recharger automatiquement...`)
                     </Button>
                 )}
 
-                {isAdmin() && (
+                {isAdmin && (
                   <Button
                   variant="ghost"
                   className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
@@ -3510,7 +3510,7 @@ La page va se recharger automatiquement...`)
                     </Button>
                 )}
 
-                {isAdmin() && (
+                {isAdmin && (
                   <Button
                   variant="ghost"
                   className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
