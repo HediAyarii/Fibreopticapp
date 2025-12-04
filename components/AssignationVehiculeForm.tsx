@@ -35,6 +35,7 @@ export function AssignationVehiculeForm({
     !v.statut || 
     v.statut === 'disponible' || 
     v.statut === 'actif' || 
+    v.statut === 'en_service' ||
     v.id === assignation?.vehicule_id
   ).length)
 
@@ -71,6 +72,7 @@ export function AssignationVehiculeForm({
                   !v.statut || 
                   v.statut === 'disponible' || 
                   v.statut === 'actif' || 
+                  v.statut === 'en_service' ||
                   v.id === assignation?.vehicule_id
                 ).length === 0 ? (
                   <div className="p-4 text-center text-sm text-muted-foreground">
@@ -81,6 +83,7 @@ export function AssignationVehiculeForm({
                     !v.statut || 
                     v.statut === 'disponible' || 
                     v.statut === 'actif' || 
+                    v.statut === 'en_service' ||
                     v.id === assignation?.vehicule_id
                   ).map((vehicule) => (
                     <SelectItem key={vehicule.id} value={vehicule.id.toString()}>
