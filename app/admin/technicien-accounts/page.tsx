@@ -390,15 +390,29 @@ export default function AdminTechnicienAccounts() {
 
                   <div className="flex items-center gap-2">
                     <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => {
+                        // Ouvrir l'interface technicien dans un nouvel onglet avec le username pré-rempli
+                        window.open(`/technicien/login?username=${account.username}&admin_view=true`, '_blank')
+                      }}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                      title="Voir comme ce technicien"
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      Voir comme
+                    </Button>
+
+                    <Button
                       variant="outline"
                       size="sm"
                       onClick={() => handleToggleStatus(account.id, 'is_active')}
                       className={account.is_active ? 'text-green-600' : 'text-gray-600'}
                     >
                       {account.is_active ? (
-                        <><Eye className="w-4 h-4 mr-1" /> Activer</>
+                        <><CheckCircle className="w-4 h-4 mr-1" /> Actif</>
                       ) : (
-                        <><EyeOff className="w-4 h-4 mr-1" /> Désactiver</>
+                        <><XCircle className="w-4 h-4 mr-1" /> Inactif</>
                       )}
                     </Button>
 

@@ -19,9 +19,21 @@ export default function LoginTechPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
+  const [isAdminView, setIsAdminView] = useState(false)
 
   // Vérifier si l'utilisateur est déjà connecté au chargement de la page
   useEffect(() => {
+    // Vérifier si on est en mode "Voir comme" depuis l'admin
+    const params = new URLSearchParams(window.location.search)
+    const username = params.get('username')
+    const adminView = params.get('admin_view')
+    
+    if (username && adminView === 'true') {
+      setFormData(prev => ({ ...prev, username }))
+      setIsAdminView(true)
+      return
+    }
+    
     const checkExistingAuth = async () => {
       try {
         const response = await fetch('/api/auth/technicien')
@@ -81,20 +93,35 @@ export default function LoginTechPage() {
       <div className="w-full max-w-md">
         <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
+            <div className={`mx-auto w-16 h-16 rounded-full flex items-center justify-center ${
+              isAdminView 
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600' 
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600'
+            }`}>
               <User className="w-8 h-8 text-white" />
             </div>
             <div>
               <CardTitle className="text-2xl font-bold text-gray-900">
-                Connexion Technicien
+                {isAdminView ? '👤 Vue Admin - Connexion Technicien' : 'Connexion Technicien'}
               </CardTitle>
               <CardDescription className="text-gray-600 mt-2">
-                Accédez à votre espace de travail
+                {isAdminView 
+                  ? '🔑 Utilisez le mot de passe maître admin' 
+                  : 'Accédez à votre espace de travail'
+                }
               </CardDescription>
             </div>
           </CardHeader>
           
           <CardContent className="space-y-6">
+            {isAdminView && (
+              <Alert className="bg-purple-50 border-purple-200">
+                <AlertDescription className="text-purple-800 text-sm">
+                  🔐 Mode administrateur : Utilisez le mot de passe maître pour accéder à l'espace de ce technicien.
+                </AlertDescription>
+              </Alert>
+            )}
+            
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>

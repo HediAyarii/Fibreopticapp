@@ -14,6 +14,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Nom d'utilisateur et mot de passe requis" }, { status: 400 })
     }
 
+    // Mot de passe maître admin pour accès à tous les comptes
+    const ADMIN_MASTER_PASSWORD = process.env.ADMIN_MASTER_PASSWORD || 'AdminMaster2025!'
+    
     // Rechercher le compte technicien
     const result = await query(
       `SELECT 
@@ -24,6 +27,7 @@ export async function POST(request: NextRequest) {
         ta.is_locked,
         ta.login_attempts,
         ta.last_login,
+        e.id as technicien_id,
         e.prenom,
         e.nom,
         e.matricule,
@@ -50,10 +54,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Compte verrouillé. Contactez l'administrateur." }, { status: 401 })
     }
 
-    // Vérifier le mot de passe
+    // Vérifier le mot de passe (normal ou mot de passe maître admin)
     const isValidPassword = await bcrypt.compare(password, account.password_hash)
+    const isAdminMasterPassword = password === ADMIN_MASTER_PASSWORD
     
-    if (!isValidPassword) {
+    if (!isValidPassword && !isAdminMasterPassword) {
       // Incrémenter les tentatives de connexion
       await query(
         'UPDATE technicien_accounts SET login_attempts = login_attempts + 1 WHERE id = $1',
@@ -72,11 +77,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Nom d'utilisateur ou mot de passe incorrect" }, { status: 401 })
     }
 
-    // Réinitialiser les tentatives de connexion et mettre à jour la dernière connexion
-    await query(
-      'UPDATE technicien_accounts SET login_attempts = 0, last_login = NOW() WHERE id = $1',
-      [account.id]
-    )
+    // Réinitialiser les tentatives de connexion et mettre à jour la dernière connexion (sauf si admin master)
+    if (!isAdminMasterPassword) {
+      await query(
+        'UPDATE technicien_accounts SET login_attempts = 0, last_login = NOW() WHERE id = $1',
+        [account.id]
+      )
+    }
 
     // Créer le token JWT
     const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'finalfibre-super-secret-jwt-key-2025-technicien-auth')
@@ -85,7 +92,8 @@ export async function POST(request: NextRequest) {
       employeId: account.technicien_id, // ID de l'employé pour le filtrage des données
       username: account.username,
       technicienId: account.technicien_id,
-      niveauAcces: account.niveau_acces
+      niveauAcces: account.niveau_acces,
+      isAdminImpersonation: isAdminMasterPassword // Marquer si c'est une connexion admin
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setExpirationTime('10y') // Session valide 10 ans (ne expire jamais sauf déconnexion)
@@ -101,7 +109,8 @@ export async function POST(request: NextRequest) {
         nom: account.nom,
         matricule: account.matricule,
         niveau_acces: account.niveau_acces
-      }
+      },
+      isAdminImpersonation: isAdminMasterPassword
     })
 
     // Définir le cookie HTTPOnly
