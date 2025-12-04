@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { RefreshCw, CheckCircle, Plus, Edit, Trash2 } from "lucide-react"
 
 // ReclamationForm component
@@ -205,17 +204,7 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
   }, [reclamation?.intervention_id, reclamation?.numero_intervention])
 
   return (
-    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-      <DialogHeader>
-        <DialogTitle>
-          {reclamation ? 'Modifier la Réclamation' : 'Nouvelle Réclamation'}
-        </DialogTitle>
-        <DialogDescription>
-          {reclamation ? 'Modifiez les informations de la réclamation' : 'Créez une nouvelle réclamation'}
-        </DialogDescription>
-      </DialogHeader>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4 max-h-[60vh] overflow-y-auto px-1">
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label htmlFor="numero_reclamation">Numéro de Réclamation</Label>
@@ -449,15 +438,14 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
           />
         </div>
 
-        <DialogFooter>
+        <div className="flex justify-end gap-2 mt-6 pt-4 border-t sticky bottom-0 bg-white">
           <Button type="button" variant="outline" onClick={onCancel}>
             Annuler
           </Button>
           <Button type="submit">
             {reclamation ? 'Modifier' : 'Créer'}
           </Button>
-        </DialogFooter>
+        </div>
       </form>
-    </DialogContent>
   )
 }

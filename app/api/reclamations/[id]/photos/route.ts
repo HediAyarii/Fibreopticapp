@@ -19,8 +19,9 @@ export async function GET(
       SELECT 
         id,
         photo_name,
-        photo_type,
-        photo_size,
+        photo_path,
+        mime_type,
+        file_size,
         uploaded_by,
         uploaded_at
       FROM reclamation_photos 
@@ -31,11 +32,11 @@ export async function GET(
     const photos = result.rows.map(photo => ({
       id: photo.id,
       name: photo.photo_name,
-      type: photo.photo_type,
-      size: photo.photo_size,
+      type: photo.mime_type,
+      size: photo.file_size,
       uploadedBy: photo.uploaded_by,
       uploadedAt: photo.uploaded_at,
-      url: `/api/reclamations/photos/${photo.id}`
+      url: photo.photo_path || `/api/reclamations/photos/${photo.id}`
     }))
 
     return NextResponse.json({

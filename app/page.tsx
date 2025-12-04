@@ -8332,7 +8332,7 @@ La page va se recharger automatiquement...`)
 
        {/* Reclamation Modal */}
        <Dialog open={showClaimModal} onOpenChange={setShowClaimModal}>
-         <DialogContent className="glass-card border border-white/20">
+         <DialogContent className="glass-card border border-white/20 max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
              <DialogTitle>
                {editingItem ? 'Modifier la Réclamation' : 'Nouvelle Réclamation'}
