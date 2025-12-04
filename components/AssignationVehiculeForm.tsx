@@ -29,6 +29,15 @@ export function AssignationVehiculeForm({
     commentaires: assignation?.commentaires || ''
   })
 
+  // Log pour déboguer
+  console.log('Véhicules disponibles:', vehicules.length)
+  console.log('Véhicules filtrés:', vehicules.filter(v => 
+    !v.statut || 
+    v.statut === 'disponible' || 
+    v.statut === 'actif' || 
+    v.id === assignation?.vehicule_id
+  ).length)
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     onSave(formData)
@@ -58,11 +67,27 @@ export function AssignationVehiculeForm({
                 <SelectValue placeholder="Sélectionnez un véhicule" />
               </SelectTrigger>
               <SelectContent>
-                {vehicules.filter(v => v.statut === 'disponible' || v.id === assignation?.vehicule_id).map((vehicule) => (
-                  <SelectItem key={vehicule.id} value={vehicule.id.toString()}>
-                    {vehicule.matricule} - {vehicule.marque} {vehicule.modele}
-                  </SelectItem>
-                ))}
+                {vehicules.filter(v => 
+                  !v.statut || 
+                  v.statut === 'disponible' || 
+                  v.statut === 'actif' || 
+                  v.id === assignation?.vehicule_id
+                ).length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    Aucun véhicule disponible. Total véhicules: {vehicules.length}
+                  </div>
+                ) : (
+                  vehicules.filter(v => 
+                    !v.statut || 
+                    v.statut === 'disponible' || 
+                    v.statut === 'actif' || 
+                    v.id === assignation?.vehicule_id
+                  ).map((vehicule) => (
+                    <SelectItem key={vehicule.id} value={vehicule.id.toString()}>
+                      {vehicule.matricule} - {vehicule.marque} {vehicule.modele}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
