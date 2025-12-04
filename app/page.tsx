@@ -6145,7 +6145,7 @@ La page va se recharger automatiquement...`)
                   </CardDescription>
                          </div>
                        </div>
-                       {isAdmin && (
+                       {hasPermission('materials') && (
                          <Button
                            variant="outline"
                            onClick={() => setShowAffectationModal(true)}
