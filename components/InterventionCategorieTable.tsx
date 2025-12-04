@@ -273,7 +273,7 @@ export function InterventionCategorieTable({
           
           switch (categorie) {
             case 'Pavillon':
-              return articles.includes('RACPAV')
+              return articles.includes('RACPAV') || articles.includes('RACPRO_S')
             case 'Intérieur':
               return articles.includes('RACIH')
             case 'Refrac':
