@@ -27,14 +27,13 @@ export async function GET(request: NextRequest) {
       paramIndex++;
     }
 
+    // Recherche par technicien_id OU par nom/prénom
     if (technicienId) {
       whereClauses.push(`technicien_id = $${paramIndex}`);
       params.push(technicienId);
       paramIndex++;
-    }
-
-    if (nomTechnicien && prenomTechnicien) {
-      whereClauses.push(`nom_technicien = $${paramIndex} AND prenom_technicien = $${paramIndex + 1}`);
+    } else if (nomTechnicien && prenomTechnicien) {
+      whereClauses.push(`UPPER(nom_technicien) = UPPER($${paramIndex}) AND UPPER(prenom_technicien) = UPPER($${paramIndex + 1})`);
       params.push(nomTechnicien, prenomTechnicien);
       paramIndex += 2;
     }
@@ -222,20 +221,25 @@ export async function PATCH(request: NextRequest) {
 
     const updatedReclamation = result.rows[0];
 
+    console.log('📤 Réclamation mise à jour:', {
+      id: updatedReclamation.id,
+      statut: updatedReclamation.statut,
+      technicien_id: updatedReclamation.technicien_id
+    });
+
     // Envoyer notification SSE au technicien si connecté
-    if (updatedReclamation.employe_id) {
+    if (updatedReclamation.technicien_id) {
       try {
         const { sendToTechnicien } = await import('@/app/api/sse/technicien/route')
-        sendToTechnicien(updatedReclamation.employe_id, 'reclamation_updated', {
+        sendToTechnicien(updatedReclamation.technicien_id, 'reclamation_updated', {
           id: updatedReclamation.id,
-          numero_reclamation: updatedReclamation.numero_reclamation,
           statut: updatedReclamation.statut,
           reponse_admin: updatedReclamation.reponse_admin,
           message: statut === 'resolu' 
             ? 'Votre réclamation a été résolue par l\'administration'
             : 'Votre réclamation a été mise à jour par l\'administration'
         })
-        console.log('✅ Notification SSE envoyée au technicien')
+        console.log('✅ Notification SSE envoyée au technicien ID:', updatedReclamation.technicien_id)
       } catch (sseError) {
         console.log('⚠️ SSE non disponible:', sseError)
       }
@@ -244,7 +248,7 @@ export async function PATCH(request: NextRequest) {
     // Émettre l'événement Socket.IO pour notification en temps réel
     try {
       socketio.sendReclamationTechniqueUpdated(updatedReclamation);
-      console.log('✅ Événement Socket.IO émis: reclamation_technique_updated');
+      console.log('✅ Événement Socket.IO émis: reclamation_technique_updated pour réclamation ID:', updatedReclamation.id);
     } catch (socketError) {
       console.error('⚠️ Erreur émission Socket.IO:', socketError);
       // Ne pas bloquer la mise à jour même si Socket.IO échoue

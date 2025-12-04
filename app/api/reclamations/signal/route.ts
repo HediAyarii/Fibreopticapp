@@ -37,44 +37,43 @@ export async function POST(req: NextRequest) {
 
     const intervention = interventionResult.rows[0]
 
-    // Générer un numéro de réclamation unique
-    const timestamp = Date.now()
-    const numeroReclamation = `#${timestamp}`
+    // Récupérer les infos du technicien
+    const technicienResult = await query(
+      `SELECT nom, prenom FROM employes WHERE id = $1`,
+      [technicien_id]
+    )
+    
+    const technicien = technicienResult.rows[0]
 
     // Créer la réclamation technique
     const result = await query(
-      `INSERT INTO reclamations (
-        numero_reclamation,
-        nom_client,
+      `INSERT INTO reclamations_techniques (
+        intervention_id,
+        num_inter,
+        technicien_id,
+        nom_technicien,
+        prenom_technicien,
         type_reclamation,
-        statut,
-        priorite,
-        date_creation,
-        date_reclamation,
-        description_probleme,
-        numero_intervention,
-        intervention_client,
+        description,
         date_intervention,
-        employe_id,
-        created_at,
-        updated_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), $6, $7, $8, $9, $10, NOW(), NOW())
+        statut,
+        date_creation
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'en_attente', NOW())
       RETURNING *`,
       [
-        numeroReclamation,
-        intervention.client,
-        type_reclamation,
-        'ouverte',
-        priorite,
-        description_probleme,
+        intervention_id,
         intervention.num_inter,
-        intervention.client,
-        intervention.date_rdv,
-        technicien_id
+        technicien_id,
+        technicien?.nom || '',
+        technicien?.prenom || '',
+        type_reclamation,
+        description_probleme,
+        intervention.date_rdv
       ]
     )
 
     const reclamation = result.rows[0]
+    const numeroReclamation = `RT-${reclamation.id}`
 
     // Créer une notification pour le technicien
     await query(
@@ -94,6 +93,15 @@ export async function POST(req: NextRequest) {
         'info'
       ]
     )
+
+    // Émettre l'événement Socket.IO pour notification en temps réel
+    try {
+      const socketio = require('../../../lib/socketio')
+      socketio.sendReclamationTechniqueCreated(reclamation)
+      console.log('✅ Événement Socket.IO émis: reclamation_technique_created')
+    } catch (socketError) {
+      console.error('⚠️ Erreur émission Socket.IO:', socketError)
+    }
 
     // Envoyer notification SSE au technicien si connecté
     try {

@@ -67,6 +67,11 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsConnected(false);
     });
 
+    // Écouter TOUS les événements pour debug
+    socketInstance.onAny((eventName, ...args) => {
+      console.log(`🔔 [Socket.IO Event] ${eventName}:`, args);
+    });
+
     setSocket(socketInstance);
 
     // Cleanup

@@ -148,8 +148,11 @@ export default function TechnicienReclamations({
   // Écouter les événements personnalisés pour mise à jour instantanée
   useEffect(() => {
     const handleReclamationCreated = () => {
-      console.log('🔔 Nouvelle réclamation détectée - Rechargement...')
-      fetchReclamations()
+      console.log('🔔 Nouvelle réclamation détectée - Rechargement dans 500ms...')
+      // Petit délai pour s'assurer que la DB est à jour
+      setTimeout(() => {
+        fetchReclamations()
+      }, 500)
     }
 
     window.addEventListener('reclamationCreated', handleReclamationCreated)
@@ -161,18 +164,25 @@ export default function TechnicienReclamations({
 
   // Écouter les événements Socket.IO pour les mises à jour
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      console.log('⚠️ Socket non disponible dans TechnicienReclamations');
+      return;
+    }
+
+    console.log('🎧 TechnicienReclamations: Écoute des événements Socket.IO, socket connecté:', socket.connected);
+
+    // Écouter la création de nouvelles réclamations
+    const handleCreatedReclamation = (newReclamation: Reclamation) => {
+      console.log('✨ [Socket.IO] Nouvelle réclamation créée:', newReclamation);
+      fetchReclamations();
+    };
 
     // Écouter les mises à jour de réclamations
     const handleUpdatedReclamation = (updatedReclamation: Reclamation) => {
-      // Vérifier si cette réclamation concerne ce technicien
-      setReclamations((prev) => {
-        const concernsThisTech = prev.some(r => r.id === updatedReclamation.id);
-        if (!concernsThisTech) return prev;
-        
-        console.log('🔄 Mise à jour réclamation technicien:', updatedReclamation);
-        return prev.map((r) => (r.id === updatedReclamation.id ? updatedReclamation : r));
-      });
+      console.log('🔄 [Socket.IO] Réclamation mise à jour:', updatedReclamation);
+      
+      // Recharger toutes les réclamations pour recalculer les statistiques
+      fetchReclamations();
       
       // Mettre à jour la réclamation sélectionnée si c'est celle-ci
       setSelectedReclamation((current) => 
@@ -182,17 +192,22 @@ export default function TechnicienReclamations({
 
     // Écouter les notifications personnelles
     const handleNotification = (notification: any) => {
+      console.log('📬 [Socket.IO] Notification reçue:', notification);
       if (notification.type === 'reclamation_technique') {
-        console.log('📬 Notification reçue:', notification);
         fetchReclamations();
       }
     };
 
+    socket.on('reclamation_technique_created', handleCreatedReclamation);
     socket.on('reclamation_technique_updated', handleUpdatedReclamation);
     socket.on('notification', handleNotification);
 
+    console.log('✅ TechnicienReclamations: Listeners Socket.IO attachés');
+
     // Cleanup
     return () => {
+      console.log('🧹 TechnicienReclamations: Nettoyage des listeners Socket.IO');
+      socket.off('reclamation_technique_created', handleCreatedReclamation);
       socket.off('reclamation_technique_updated', handleUpdatedReclamation);
       socket.off('notification', handleNotification);
     };

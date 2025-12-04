@@ -457,6 +457,12 @@ export default function ReclamationsTechniques() {
       const data = await response.json();
 
       if (data.success) {
+        // Émettre l'événement Socket.IO pour mise à jour en temps réel
+        if (socket && data.reclamation) {
+          socket.emit('reclamation_technique_updated', data.reclamation)
+          console.log('✅ Événement Socket.IO émis depuis le client admin (statut):', data.reclamation)
+        }
+        
         await fetchReclamations();
         setDialogOpen(false);
         setSelectedReclamation(null);
