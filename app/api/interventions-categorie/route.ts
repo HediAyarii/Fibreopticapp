@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       )
       SELECT 
         CASE 
-          WHEN articles LIKE '%RACPAV%' THEN 'Pavillon'
+          WHEN articles LIKE '%RACPAV%' OR articles LIKE '%RACPRO_S%' THEN 'Pavillon'
           WHEN articles LIKE '%RACIH%' THEN 'Intérieur'
           WHEN articles LIKE '%REFRAC%' THEN 'Refrac'
           WHEN articles LIKE '%DEP_OFFE%' OR articles LIKE '%SAV%' THEN 'SAV'
