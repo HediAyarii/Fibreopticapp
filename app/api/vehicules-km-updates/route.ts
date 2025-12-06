@@ -183,12 +183,25 @@ export async function PUT(request: NextRequest) {
           [kmUpdate.km_declare, kmUpdate.assignation_id]
         )
       } else if (kmUpdate.type_update === 'fin_assignation') {
-        // Mettre à jour l'assignation actuelle avec KM de fin
+        // Mettre à jour l'assignation actuelle avec KM de fin et statut terminé
         await query(
           `UPDATE assignations_vehicules 
-           SET km_fin = $1, km_actuel = $1, statut_km = 'terminee', date_derniere_maj = CURRENT_DATE
+           SET km_fin = $1, 
+               km_actuel = $1, 
+               statut_km = 'terminee', 
+               statut = 'terminee',
+               kilometrage_fin = $1,
+               date_derniere_maj = CURRENT_DATE
            WHERE id = $2`,
           [kmUpdate.km_declare, kmUpdate.assignation_id]
+        )
+        
+        // Mettre le véhicule en disponible
+        await query(
+          `UPDATE vehicules 
+           SET statut = 'disponible'
+           WHERE id = $1`,
+          [kmUpdate.vehicule_id]
         )
         
         // Trouver la prochaine assignation pour ce véhicule et mettre le KM de début
