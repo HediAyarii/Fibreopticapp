@@ -196,12 +196,14 @@ export async function PUT(request: NextRequest) {
           [kmUpdate.km_declare, kmUpdate.assignation_id]
         )
         
-        // Mettre le véhicule en disponible
+        // Mettre le véhicule en disponible avec le nouveau KM
         await query(
           `UPDATE vehicules 
-           SET statut = 'disponible'
-           WHERE id = $1`,
-          [kmUpdate.vehicule_id]
+           SET statut = 'disponible',
+               kilometrage = $1,
+               km_actuel = $1
+           WHERE id = $2`,
+          [kmUpdate.km_declare, kmUpdate.vehicule_id]
         )
         
         // Trouver la prochaine assignation pour ce véhicule et mettre le KM de début
