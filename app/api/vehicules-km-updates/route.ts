@@ -88,7 +88,8 @@ export async function POST(request: NextRequest) {
     const filepath = join(process.cwd(), 'public', 'uploads', 'vehicules', filename)
     
     await writeFile(filepath, buffer)
-    const photoPath = `/uploads/vehicules/${filename}`
+    // Utiliser la route API pour servir les images en production
+    const photoPath = `/api/uploads/vehicules/${filename}`
 
     // Insérer dans la BD
     const result = await query(
