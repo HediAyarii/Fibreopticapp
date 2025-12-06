@@ -22,20 +22,19 @@ export async function GET(request: NextRequest) {
     let params: any[] = []
     let paramIndex = 1
     
-    // Valider que les IDs ne sont pas vides avant de les utiliser
-    if (vehicule_id && vehicule_id.trim() !== '') {
+    if (vehicule_id) {
       queryText += ` AND av.vehicule_id = $${paramIndex}`
-      params.push(parseInt(vehicule_id))
+      params.push(vehicule_id)
       paramIndex++
     }
     
-    if (employe_id && employe_id.trim() !== '') {
+    if (employe_id) {
       queryText += ` AND av.employe_id = $${paramIndex}`
-      params.push(parseInt(employe_id))
+      params.push(employe_id)
       paramIndex++
     }
     
-    if (statut && statut.trim() !== '') {
+    if (statut) {
       queryText += ` AND av.statut = $${paramIndex}`
       params.push(statut)
       paramIndex++
@@ -72,25 +71,10 @@ export async function POST(request: NextRequest) {
       commentaires
     } = body
 
-    // Valider que les champs obligatoires ne sont pas vides
-    if (!vehicule_id || vehicule_id === '' || isNaN(parseInt(vehicule_id))) {
-      return NextResponse.json(
-        { success: false, error: 'Véhicule invalide ou manquant' },
-        { status: 400 }
-      )
-    }
-
-    if (!employe_id || employe_id === '' || isNaN(parseInt(employe_id))) {
-      return NextResponse.json(
-        { success: false, error: 'Employé invalide ou manquant' },
-        { status: 400 }
-      )
-    }
-
     // Vérifier que le véhicule n'est pas déjà assigné
     const checkResult = await query(
       'SELECT id FROM assignations_vehicules WHERE vehicule_id = $1 AND statut = $2',
-      [parseInt(vehicule_id), 'active']
+      [vehicule_id, 'active']
     )
 
     if (checkResult.rows.length > 0) {

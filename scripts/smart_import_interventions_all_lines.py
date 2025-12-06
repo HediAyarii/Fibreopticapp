@@ -51,15 +51,25 @@ def import_interventions_smart(csv_file_path):
         
         # Créer un set des combinaisons existantes
         existing_combinations = set()
-        for row in existing_rows:
-            key = f"{row[0]}|{row[1]}"  # num_inter, date_rdv
+        
+        # Récupérer aussi le statut et début intervention des interventions existantes
+        try:
+            existing_query = "SELECT num_inter, date_rdv, statut, debut_intervention FROM interventions"
+            cursor.execute(existing_query)
+            existing_with_details = cursor.fetchall()
+        except Exception as e:
+            print(f"[ERREUR] Impossible de récupérer les détails: {e}")
+            existing_with_details = []
+        
+        for row in existing_with_details:
+            key = f"{row[0]}|{row[1]}|{row[2]}|{row[3]}"  # num_inter, date_rdv, statut, debut_intervention
             existing_combinations.add(key)
             
             # Ajouter aussi les combinaisons avec suffixe _DUP_X
             if '_DUP_' in str(row[0]):
                 # Extraire le num_inter original
                 original_num = str(row[0]).split('_DUP_')[0]
-                original_key = f"{original_num}|{row[1]}"
+                original_key = f"{original_num}|{row[1]}|{row[2]}|{row[3]}"
                 existing_combinations.add(original_key)
         
         # Préparer les données avec gestion intelligente des doublons
@@ -72,14 +82,16 @@ def import_interventions_smart(csv_file_path):
             try:
                 num_inter = str(row.get('Num Inter', '')).strip()
                 date_rdv = str(row.get('Date de rdv', '')).strip()
+                statut = str(row.get('Statut', '')).strip()
+                debut_intervention = str(row.get('Début intervention', '')).strip()
                 
                 # Ignorer les lignes vides
                 if not num_inter or num_inter == 'nan':
                     empty_rows += 1
                     continue
                 
-                # Créer une clé unique basée sur Num Inter + Date RDV
-                unique_key = f"{num_inter}|{date_rdv}"
+                # Créer une clé unique basée sur Num Inter + Date RDV + Statut + Début intervention
+                unique_key = f"{num_inter}|{date_rdv}|{statut}|{debut_intervention}"
                 
                 # Gérer les doublons en ajoutant un timestamp unique
                 if unique_key in seen_combinations or unique_key in existing_combinations:
