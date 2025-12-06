@@ -151,7 +151,16 @@ export async function PUT(request: NextRequest) {
     }
 
     // Si l'assignation est terminée, remettre le véhicule disponible et mettre à jour le KM
-    if (statut === 'terminee' && kilometrage_fin) {
+    if (statut === 'terminee') {
+      const kmFinal = kilometrage_fin || result.rows[0].kilometrage_fin || result.rows[0].kilometrage_debut
+      
+      console.log('🚗 Arrêt assignation - Mise à jour KM véhicule:', {
+        vehicule_id,
+        kilometrage_fin,
+        km_from_result: result.rows[0].kilometrage_fin,
+        km_final_used: kmFinal
+      })
+      
       await query(
         `UPDATE vehicules 
          SET statut = $1, 
@@ -159,7 +168,7 @@ export async function PUT(request: NextRequest) {
              km_actuel = $2,
              derniere_maj_km = CURRENT_DATE
          WHERE id = $3`,
-        ['disponible', kilometrage_fin, vehicule_id]
+        ['disponible', kmFinal, vehicule_id]
       )
       
       // Mettre le KM de début de la prochaine assignation si elle existe
@@ -173,18 +182,18 @@ export async function PUT(request: NextRequest) {
       )
       
       if (nextAssignation.rows.length > 0) {
+        console.log('🔄 Cascade KM à la prochaine assignation:', {
+          next_assignation_id: nextAssignation.rows[0].id,
+          km_debut: kmFinal
+        })
+        
         await query(
           `UPDATE assignations_vehicules 
            SET km_debut = $1, km_actuel = $1
            WHERE id = $2`,
-          [kilometrage_fin, nextAssignation.rows[0].id]
+          [kmFinal, nextAssignation.rows[0].id]
         )
       }
-    } else if (statut === 'terminee') {
-      await query(
-        'UPDATE vehicules SET statut = $1 WHERE id = $2',
-        ['disponible', vehicule_id]
-      )
     }
 
     return NextResponse.json({
