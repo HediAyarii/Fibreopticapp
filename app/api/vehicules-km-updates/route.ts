@@ -163,10 +163,11 @@ export async function PUT(request: NextRequest) {
         [admin_id, id]
       )
 
-      // Mettre à jour le véhicule
+      // Mettre à jour le véhicule avec le nouveau kilométrage
       await query(
         `UPDATE vehicules 
-         SET km_actuel = $1, 
+         SET kilometrage = $1,
+             km_actuel = $1, 
              derniere_maj_km = CURRENT_DATE,
              prochaine_echeance_km = DATE_TRUNC('month', CURRENT_DATE + INTERVAL '1 month') + INTERVAL '1 month - 1 day'
          WHERE id = $2`,
@@ -182,12 +183,32 @@ export async function PUT(request: NextRequest) {
           [kmUpdate.km_declare, kmUpdate.assignation_id]
         )
       } else if (kmUpdate.type_update === 'fin_assignation') {
+        // Mettre à jour l'assignation actuelle avec KM de fin
         await query(
           `UPDATE assignations_vehicules 
            SET km_fin = $1, km_actuel = $1, statut_km = 'terminee', date_derniere_maj = CURRENT_DATE
            WHERE id = $2`,
           [kmUpdate.km_declare, kmUpdate.assignation_id]
         )
+        
+        // Trouver la prochaine assignation pour ce véhicule et mettre le KM de début
+        const nextAssignation = await query(
+          `SELECT id FROM assignations_vehicules 
+           WHERE vehicule_id = $1 
+           AND date_assignation > (SELECT date_assignation FROM assignations_vehicules WHERE id = $2)
+           ORDER BY date_assignation ASC 
+           LIMIT 1`,
+          [kmUpdate.vehicule_id, kmUpdate.assignation_id]
+        )
+        
+        if (nextAssignation.rows.length > 0) {
+          await query(
+            `UPDATE assignations_vehicules 
+             SET km_debut = $1, km_actuel = $1
+             WHERE id = $2`,
+            [kmUpdate.km_declare, nextAssignation.rows[0].id]
+          )
+        }
       } else {
         await query(
           `UPDATE assignations_vehicules 

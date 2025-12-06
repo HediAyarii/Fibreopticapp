@@ -150,8 +150,37 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Si l'assignation est terminée, remettre le véhicule disponible
-    if (statut === 'terminee') {
+    // Si l'assignation est terminée, remettre le véhicule disponible et mettre à jour le KM
+    if (statut === 'terminee' && kilometrage_fin) {
+      await query(
+        `UPDATE vehicules 
+         SET statut = $1, 
+             kilometrage = $2,
+             km_actuel = $2,
+             derniere_maj_km = CURRENT_DATE
+         WHERE id = $3`,
+        ['disponible', kilometrage_fin, vehicule_id]
+      )
+      
+      // Mettre le KM de début de la prochaine assignation si elle existe
+      const nextAssignation = await query(
+        `SELECT id FROM assignations_vehicules 
+         WHERE vehicule_id = $1 
+         AND date_assignation > $2
+         ORDER BY date_assignation ASC 
+         LIMIT 1`,
+        [vehicule_id, date_assignation]
+      )
+      
+      if (nextAssignation.rows.length > 0) {
+        await query(
+          `UPDATE assignations_vehicules 
+           SET km_debut = $1, km_actuel = $1
+           WHERE id = $2`,
+          [kilometrage_fin, nextAssignation.rows[0].id]
+        )
+      }
+    } else if (statut === 'terminee') {
       await query(
         'UPDATE vehicules SET statut = $1 WHERE id = $2',
         ['disponible', vehicule_id]
