@@ -207,27 +207,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         console.warn('⚠️ Erreur synchronisation taxes (non bloquante):', taxSyncError)
       }
       
-      // 3. Synchroniser automatiquement les techniciens manquants
-      console.log('🔄 Synchronisation automatique des techniciens manquants...')
-      try {
-        const missingSyncResponse = await fetch(`/api/sync/techniciens-manquants?mois=${selectedMonth}&annee=${selectedYear}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
-        
-        if (missingSyncResponse.ok) {
-          const missingSyncData = await missingSyncResponse.json()
-          if (missingSyncData.success && missingSyncData.total_created > 0) {
-            console.log(`✅ ${missingSyncData.total_created} techniciens manquants ajoutés automatiquement`)
-          }
-        }
-      } catch (missingSyncError) {
-        console.warn('⚠️ Erreur synchronisation techniciens manquants (non bloquante):', missingSyncError)
-      }
+      // NOTE: Les techniciens manquants ne sont PAS synchronisés automatiquement
+      // L'admin doit d'abord faire l'import du mois, puis cliquer sur "Corriger Noms"
+      // La synchro des techniciens manquants se fait après la correction des noms
       
-      // 4. Ensuite, charger les données mises à jour
+      // 3. Charger les données mises à jour
       console.log('📊 Chargement des données mises à jour...')
       const response = await fetch(`/api/cout-par-salaire?mois=${selectedMonth}&annee=${selectedYear}`)
       const data = await response.json()
@@ -643,6 +627,24 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         }
         
         alert(message)
+        
+        // Après correction des noms, synchroniser automatiquement les techniciens manquants
+        console.log('🔄 Synchronisation automatique des techniciens manquants après correction des noms...')
+        try {
+          const missingSyncResponse = await fetch(`/api/sync/techniciens-manquants?mois=${selectedMonth}&annee=${selectedYear}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          })
+          
+          if (missingSyncResponse.ok) {
+            const missingResult = await missingSyncResponse.json()
+            if (missingResult.success && missingResult.total_created > 0) {
+              alert(`✅ ${missingResult.total_created} techniciens manquants ont été ajoutés automatiquement.\n\nCes techniciens ont généré des recettes mais n'étaient pas dans l'import.`)
+            }
+          }
+        } catch (missingError) {
+          console.warn('⚠️ Erreur synchronisation techniciens manquants:', missingError)
+        }
         
         // Recharger les données
         await loadData()
@@ -1196,12 +1198,16 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
             )}
           </Button>
 
+          {/* Le bouton Tech. Manquants est désactivé si pas de données d'import
+              La synchro se fait automatiquement après "Corriger Noms" */}
           <Button 
             onClick={syncMissingTechnicians} 
             variant="outline" 
-            disabled={syncingMissing}
-            className="bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-800"
-            title="Ajouter les techniciens qui ont généré de l'argent mais ne sont pas dans l'import"
+            disabled={syncingMissing || couts.length === 0}
+            className="bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-800 disabled:opacity-50"
+            title={couts.length === 0 
+              ? "Importez d'abord les données du mois, puis cliquez sur 'Corriger Noms'" 
+              : "Ajouter les techniciens qui ont généré de l'argent mais ne sont pas dans l'import (fait automatiquement après 'Corriger Noms')"}
           >
             {syncingMissing ? (
               <>
