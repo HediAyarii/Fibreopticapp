@@ -6063,7 +6063,7 @@ La page va se recharger automatiquement...`)
                               </td>
                               <td className="p-4">
                                 <div className="flex gap-2">
-                                  {isAdmin && (
+                                  {(isAdmin || hasPermission('materials')) && (
                                     <Button
                                        variant="outline"
                                     size="sm"
