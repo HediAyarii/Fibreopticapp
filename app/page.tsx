@@ -1978,7 +1978,11 @@ La page va se recharger automatiquement...`)
   const deleteEmployee = async (id: number) => {
     try {
       const response = await fetch(`/api/employes?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ _user: { email: user?.email, name: user?.name } })
       })
 
       if (!response.ok) {
@@ -2031,7 +2035,11 @@ La page va se recharger automatiquement...`)
   const deleteMaterial = async (id: number) => {
     try {
       const response = await fetch(`/api/materiel?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ _user: { email: user?.email, name: user?.name } })
       })
 
       if (!response.ok) {
@@ -2067,7 +2075,7 @@ La page va se recharger automatiquement...`)
               headers: {
                 "Content-Type": "application/json"
               },
-              body: JSON.stringify(singleAffectation)
+              body: JSON.stringify({ ...singleAffectation, _user: { email: user?.email, name: user?.name } })
             })
 
             if (!response.ok) {
@@ -2101,8 +2109,8 @@ La page va se recharger automatiquement...`)
       const method = editingItem ? "PUT" : "POST"
       
       const requestData = editingItem 
-        ? { id: editingItem.id, ...affectationData }
-        : affectationData
+        ? { id: editingItem.id, ...affectationData, _user: { email: user?.email, name: user?.name } }
+        : { ...affectationData, _user: { email: user?.email, name: user?.name } }
 
       const response = await fetch(url, {
         method,
@@ -2134,7 +2142,11 @@ La page va se recharger automatiquement...`)
   const deleteAffectation = async (id: number) => {
     try {
       const response = await fetch(`/api/affectations-materiel?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ _user: { email: user?.email, name: user?.name } })
       })
 
       if (!response.ok) {
@@ -2308,7 +2320,11 @@ La page va se recharger automatiquement...`)
   const handleDeleteTarif = async (id: number) => {
     try {
       const response = await fetch(`/api/company-pricing?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ _user: { email: user?.email, name: user?.name } })
       })
 
       if (!response.ok) {
@@ -2382,7 +2398,11 @@ La page va se recharger automatiquement...`)
   const deletePenalty = async (id: number) => {
     try {
       const response = await fetch(`/api/penalites?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ _user: { email: user?.email, name: user?.name } })
       })
 
       if (!response.ok) {
@@ -2431,7 +2451,11 @@ La page va se recharger automatiquement...`)
   const deleteClaim = async (id: number) => {
     try {
       const response = await fetch(`/api/reclamations?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ _user: { email: user?.email, name: user?.name } })
       })
 
       if (!response.ok) {
@@ -2597,7 +2621,11 @@ La page va se recharger automatiquement...`)
   const deleteVehicule = async (id: number) => {
     try {
       const response = await fetch(`/api/vehicules?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ _user: { email: user?.email, name: user?.name } })
       })
 
       if (!response.ok) {
@@ -2727,7 +2755,11 @@ La page va se recharger automatiquement...`)
   const deleteEntretienVehicule = async (id: number) => {
     try {
       const response = await fetch(`/api/entretiens-vehicules?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ _user: { email: user?.email, name: user?.name } })
       })
 
       if (!response.ok) {
@@ -7954,26 +7986,16 @@ La page va se recharger automatiquement...`)
          </DialogContent>
        </Dialog>
 
-       {/* Affectation Modal */}
+       {/* Affectation Modal - AffectationForm contient son propre DialogContent */}
        <Dialog open={showAffectationModal} onOpenChange={setShowAffectationModal}>
-         <DialogContent className="glass-card border border-white/20">
-           <DialogHeader>
-             <DialogTitle>
-               {editingItem ? 'Modifier l\'Affectation' : 'Nouvelle Affectation'}
-             </DialogTitle>
-             <DialogDescription>
-               {editingItem ? 'Modifiez les détails de l\'affectation' : 'Assignez du matériel à un employé'}
-             </DialogDescription>
-           </DialogHeader>
-           <AffectationForm 
-             affectation={editingItem} 
-             onSave={saveAffectation} 
-             onCancel={() => {
-               setShowAffectationModal(false)
-               setEditingItem(null)
-             }} 
-           />
-         </DialogContent>
+         <AffectationForm 
+           affectation={editingItem} 
+           onSave={saveAffectation} 
+           onCancel={() => {
+             setShowAffectationModal(false)
+             setEditingItem(null)
+           }} 
+         />
        </Dialog>
 
       {/* Employee Modal */}

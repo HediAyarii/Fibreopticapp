@@ -128,6 +128,25 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [syncingNames, setSyncingNames] = useState(false)
   const [nameSyncResult, setNameSyncResult] = useState<any>(null)
 
+  // États pour la synchronisation des techniciens manquants
+  const [syncingMissing, setSyncingMissing] = useState(false)
+  const [missingSyncResult, setMissingSyncResult] = useState<any>(null)
+
+  // Fonction utilitaire pour afficher "-" si valeur est 0 ou null (techniciens manquants)
+  const formatValueOrDash = (value: any): string => {
+    const num = parseFloat(value)
+    if (!value || isNaN(num) || num === 0) return '-'
+    return `${num.toLocaleString('fr-FR')}€`
+  }
+
+  // Fonction pour vérifier si c'est un technicien manquant (sans données d'import)
+  const isMissingTechnician = (cout: CoutParSalaire): boolean => {
+    return (!cout.salaire_net || parseFloat(String(cout.salaire_net)) === 0) &&
+           (!cout.salaire_brut || parseFloat(String(cout.salaire_brut)) === 0) &&
+           (!cout.cout_total || parseFloat(String(cout.cout_total)) === 0) &&
+           (!cout.charge || parseFloat(String(cout.charge)) === 0)
+  }
+
   // Fonction utilitaire pour formater l'impôt
   const formatImpot = (impot: any): string => {
     if (!impot) return '0.00€'
@@ -188,7 +207,27 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         console.warn('⚠️ Erreur synchronisation taxes (non bloquante):', taxSyncError)
       }
       
-      // 2. Ensuite, charger les données mises à jour
+      // 3. Synchroniser automatiquement les techniciens manquants
+      console.log('🔄 Synchronisation automatique des techniciens manquants...')
+      try {
+        const missingSyncResponse = await fetch(`/api/sync/techniciens-manquants?mois=${selectedMonth}&annee=${selectedYear}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (missingSyncResponse.ok) {
+          const missingSyncData = await missingSyncResponse.json()
+          if (missingSyncData.success && missingSyncData.total_created > 0) {
+            console.log(`✅ ${missingSyncData.total_created} techniciens manquants ajoutés automatiquement`)
+          }
+        }
+      } catch (missingSyncError) {
+        console.warn('⚠️ Erreur synchronisation techniciens manquants (non bloquante):', missingSyncError)
+      }
+      
+      // 4. Ensuite, charger les données mises à jour
       console.log('📊 Chargement des données mises à jour...')
       const response = await fetch(`/api/cout-par-salaire?mois=${selectedMonth}&annee=${selectedYear}`)
       const data = await response.json()
@@ -616,6 +655,56 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       alert('❌ Erreur lors de la synchronisation des noms')
     } finally {
       setSyncingNames(false)
+    }
+  }
+
+  // Fonction pour synchroniser les techniciens manquants
+  const syncMissingTechnicians = async () => {
+    setSyncingMissing(true)
+    setMissingSyncResult(null)
+    
+    try {
+      console.log('🔄 Synchronisation des techniciens manquants...')
+      
+      const response = await fetch(`/api/sync/techniciens-manquants?mois=${selectedMonth}&annee=${selectedYear}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        setMissingSyncResult(result)
+        
+        console.log('✅ Synchronisation réussie:', result)
+        
+        let message = `✅ Synchronisation terminée !\n\n`
+        message += `📊 ${result.total_found} techniciens manquants trouvés\n`
+        message += `✅ ${result.total_created} techniciens ajoutés\n`
+        
+        if (result.total_errors > 0) {
+          message += `❌ ${result.total_errors} erreurs\n`
+        }
+        
+        if (result.created && result.created.length > 0) {
+          message += `\n📋 Techniciens ajoutés:\n`
+          result.created.forEach((tech: any) => {
+            message += `  • ${tech.nom} ${tech.prenom} - ${tech.total_genere}€ générés\n`
+          })
+        }
+        
+        alert(message)
+        
+        // Recharger les données
+        await loadData()
+      } else {
+        const error = await response.json()
+        alert(`❌ Erreur synchronisation: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Erreur synchronisation techniciens manquants:', error)
+      alert('❌ Erreur lors de la synchronisation des techniciens manquants')
+    } finally {
+      setSyncingMissing(false)
     }
   }
 
@@ -1106,6 +1195,26 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
               </>
             )}
           </Button>
+
+          <Button 
+            onClick={syncMissingTechnicians} 
+            variant="outline" 
+            disabled={syncingMissing}
+            className="bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-800"
+            title="Ajouter les techniciens qui ont généré de l'argent mais ne sont pas dans l'import"
+          >
+            {syncingMissing ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600 mr-2"></div>
+                Recherche...
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4 mr-2" />
+                Tech. Manquants
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -1371,10 +1480,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                       </td>
                       
                       <td className="p-3 text-right">
-                        <span className={`font-medium ${hasImpot(cout.impot) ? 'text-red-600' : 'text-gray-400'}`}>
-                          {formatImpot(cout.impot)}
+                        <span className={`font-medium ${hasImpot(cout.impot) && !isMissingTechnician(cout) ? 'text-red-600' : 'text-gray-400 italic'}`}>
+                          {isMissingTechnician(cout) ? '-' : formatImpot(cout.impot)}
                         </span>
-                        {hasImpot(cout.impot) && (
+                        {hasImpot(cout.impot) && !isMissingTechnician(cout) && (
                           <div className="text-xs text-red-600 mt-1">✓ Impôt calculé</div>
                         )}
                       </td>
@@ -1473,11 +1582,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           </div>
                         ) : (
                           <span 
-                            className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                            className={`cursor-pointer hover:bg-blue-50 px-2 py-1 rounded ${isMissingTechnician(cout) ? 'text-gray-400 italic' : ''}`}
                             onDoubleClick={() => handleDoubleClick(cout.id, 'salaire_net', cout.salaire_net)}
                             title="Double-clic pour modifier"
                           >
-                            {cout.salaire_net.toLocaleString('fr-FR')}€
+                            {formatValueOrDash(cout.salaire_net)}
                           </span>
                         )}
                       </td>
@@ -1501,11 +1610,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           </div>
                         ) : (
                           <span 
-                            className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                            className={`cursor-pointer hover:bg-blue-50 px-2 py-1 rounded ${isMissingTechnician(cout) ? 'text-gray-400 italic' : ''}`}
                             onDoubleClick={() => handleDoubleClick(cout.id, 'salaire_brut', cout.salaire_brut)}
                             title="Double-clic pour modifier"
                           >
-                            {cout.salaire_brut.toLocaleString('fr-FR')}€
+                            {formatValueOrDash(cout.salaire_brut)}
                           </span>
                         )}
                       </td>
@@ -1529,11 +1638,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           </div>
                         ) : (
                           <span 
-                            className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                            className={`cursor-pointer hover:bg-blue-50 px-2 py-1 rounded ${isMissingTechnician(cout) ? 'text-gray-400 italic' : ''}`}
                             onDoubleClick={() => handleDoubleClick(cout.id, 'cout_total', cout.cout_total)}
                             title="Double-clic pour modifier"
                           >
-                            {cout.cout_total.toLocaleString('fr-FR')}€
+                            {formatValueOrDash(cout.cout_total)}
                           </span>
                         )}
                       </td>
@@ -1557,11 +1666,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           </div>
                         ) : (
                           <span 
-                            className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                            className={`cursor-pointer hover:bg-blue-50 px-2 py-1 rounded ${isMissingTechnician(cout) ? 'text-gray-400 italic' : ''}`}
                             onDoubleClick={() => handleDoubleClick(cout.id, 'charge', cout.charge)}
                             title="Double-clic pour modifier"
                           >
-                            {cout.charge.toLocaleString('fr-FR')}€
+                            {formatValueOrDash(cout.charge)}
                           </span>
                         )}
                       </td>

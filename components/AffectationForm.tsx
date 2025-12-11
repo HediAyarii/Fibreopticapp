@@ -49,18 +49,38 @@ export function AffectationForm({ affectation, onSave, onCancel }: AffectationFo
   const [materielSearch, setMaterielSearch] = useState('')
   const [employeSearch, setEmployeSearch] = useState('')
   const [selectedDepot, setSelectedDepot] = useState('ALL')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params = selectedDepot !== 'ALL' ? `?depot=${encodeURIComponent(selectedDepot)}` : ''
+      const [materielRes, employeRes] = await Promise.all([
+        fetch(`/api/materiel${params}`),
+        fetch('/api/employes')
+      ])
+      
+      if (!materielRes.ok || !employeRes.ok) {
+        throw new Error('Erreur lors du chargement des données')
+      }
+      
+      const materielData = await materielRes.json()
+      const employeData = await employeRes.json()
+      
+      setMaterielOptions(materielData.materiel || [])
+      setEmployeOptions(employeData.employes || [])
+    } catch (err) {
+      console.error('Erreur chargement données:', err)
+      setError('Impossible de charger les données. Cliquez sur "Réessayer".')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const params = selectedDepot !== 'ALL' ? `?depot=${encodeURIComponent(selectedDepot)}` : ''
-    fetch(`/api/materiel${params}`)
-      .then(res => res.json())
-      .then(data => setMaterielOptions(data.materiel || []))
-      .catch(err => console.error('Erreur chargement matériel:', err))
-
-    fetch('/api/employes')
-      .then(res => res.json())
-      .then(data => setEmployeOptions(data.employes || []))
-      .catch(err => console.error('Erreur chargement employés:', err))
+    loadData()
   }, [selectedDepot])
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -188,6 +208,24 @@ export function AffectationForm({ affectation, onSave, onCancel }: AffectationFo
           {affectation ? 'Modifiez les informations de l\'affectation' : 'Sélectionnez un ou plusieurs matériels pour l\'employé'}
         </DialogDescription>
       </DialogHeader>
+
+      {/* Affichage erreur avec bouton réessayer */}
+      {error && (
+        <div className="mx-6 p-3 bg-red-50 border border-red-200 rounded-md flex items-center justify-between">
+          <span className="text-red-600 text-sm">{error}</span>
+          <Button type="button" variant="outline" size="sm" onClick={loadData}>
+            Réessayer
+          </Button>
+        </div>
+      )}
+
+      {/* Indicateur de chargement */}
+      {loading && (
+        <div className="mx-6 p-4 text-center text-muted-foreground">
+          <div className="animate-spin inline-block w-5 h-5 border-2 border-current border-t-transparent rounded-full mr-2"></div>
+          Chargement des données...
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
         <div className="flex-1 overflow-y-auto px-6 space-y-4">
