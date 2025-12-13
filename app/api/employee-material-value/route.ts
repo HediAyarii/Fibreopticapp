@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const employeId = searchParams.get('employeId')
+    const grille = searchParams.get('grille') // ERT ou AXECOM
 
     // Construire la requête avec filtres optionnels
     let whereClause = "WHERE am.statut = 'active'"
@@ -125,8 +126,16 @@ export async function GET(request: NextRequest) {
       ORDER BY valeur_totale DESC, e.nom, e.prenom
     `, queryParams)
     
+    // Filtrer par grille côté serveur
+    let filteredRows = result.rows
+    if (grille === 'ERT') {
+      filteredRows = result.rows.filter((row: any) => row.ert_label === 'ERT')
+    } else if (grille === 'AXECOM') {
+      filteredRows = result.rows.filter((row: any) => row.axecom_label === 'AXECOM')
+    }
+    
     // Convertir les valeurs numériques en nombres
-    const employeeValues = result.rows.map((row: any) => ({
+    const employeeValues = filteredRows.map((row: any) => ({
       ...row,
       nombre_affectations: Number(row.nombre_affectations) || 0,
       quantite_totale: Number(row.quantite_totale) || 0,

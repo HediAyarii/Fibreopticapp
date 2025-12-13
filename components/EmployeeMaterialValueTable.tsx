@@ -29,6 +29,7 @@ export function EmployeeMaterialValueTable() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState('all')
+  const [selectedGrille, setSelectedGrille] = useState<'all' | 'ERT' | 'AXECOM'>('all')
   const [employees, setEmployees] = useState<any[]>([])
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState<any>(null)
@@ -41,17 +42,18 @@ export function EmployeeMaterialValueTable() {
     if (startDate) params.append('startDate', startDate)
     if (endDate) params.append('endDate', endDate)
     if (selectedEmployee !== 'all') params.append('employeId', selectedEmployee)
+    if (selectedGrille !== 'all') params.append('grille', selectedGrille)
 
     const response = await fetch(`/api/employee-material-value?${params.toString()}`)
     if (!response.ok) throw new Error('Erreur lors du chargement des valeurs employés')
     const data = await response.json()
     return data.employeeValues || []
-  }, [startDate, endDate, selectedEmployee])
+  }, [startDate, endDate, selectedEmployee, selectedGrille])
 
   // Utiliser le hook personnalisé avec les filtres
   const { data: employeeValues, loading, triggerSync } = useAutoSync({
     fetchFunction: fetchEmployeeValuesWithFilters,
-    dependencies: [startDate, endDate, selectedEmployee],
+    dependencies: [startDate, endDate, selectedEmployee, selectedGrille],
     syncEvents: ['material-assignment-updated', 'material-updated', 'employee-updated']
   })
 
@@ -118,6 +120,7 @@ export function EmployeeMaterialValueTable() {
     setStartDate('')
     setEndDate('')
     setSelectedEmployee('all')
+    setSelectedGrille('all')
     // Le hook se mettra automatiquement à jour grâce aux dependencies
   }
 
@@ -180,7 +183,7 @@ export function EmployeeMaterialValueTable() {
               Filtrez les employés selon la période d'affectation du matériel
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <Label htmlFor="startDate">Date de début</Label>
               <Input
@@ -231,6 +234,25 @@ export function EmployeeMaterialValueTable() {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label htmlFor="grille">Grille</Label>
+              <Select 
+                value={selectedGrille} 
+                onValueChange={(value: 'all' | 'ERT' | 'AXECOM') => {
+                  setSelectedGrille(value)
+                  // Le hook se mettra automatiquement à jour grâce aux dependencies
+                }}
+              >
+                <SelectTrigger className="glass-card border border-white/20">
+                  <SelectValue placeholder="Toutes les grilles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les grilles</SelectItem>
+                  <SelectItem value="ERT">ERT</SelectItem>
+                  <SelectItem value="AXECOM">AXECOM</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-end gap-2">
               <Button
                 onClick={handleFilterChange}
@@ -250,7 +272,7 @@ export function EmployeeMaterialValueTable() {
           </div>
           
           {/* Indicateur des filtres actifs */}
-          {(startDate || endDate || selectedEmployee !== 'all') && (
+          {(startDate || endDate || selectedEmployee !== 'all' || selectedGrille !== 'all') && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="w-4 h-4 text-blue-600" />
@@ -270,6 +292,11 @@ export function EmployeeMaterialValueTable() {
                 {selectedEmployee !== 'all' && (
                   <Badge variant="secondary" className="bg-blue-100 text-blue-800">
                     Employé: {employees.find((emp: any) => emp.id.toString() === selectedEmployee)?.nom} {employees.find((emp: any) => emp.id.toString() === selectedEmployee)?.prenom}
+                  </Badge>
+                )}
+                {selectedGrille !== 'all' && (
+                  <Badge variant="secondary" className="bg-green-100 text-green-800">
+                    Grille: {selectedGrille}
                   </Badge>
                 )}
               </div>

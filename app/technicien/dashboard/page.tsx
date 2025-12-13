@@ -67,6 +67,8 @@ interface Intervention {
   type_intervention: string
   statut: string
   articles?: string
+  cloture_tech?: string
+  cloture_hotline?: string
 }
 
 interface Reclamation {
@@ -937,11 +939,26 @@ export default function TechnicienDashboard() {
     }
   }
 
-  const filteredInterventions = interventions.filter(intervention =>
-    intervention.num_inter.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    intervention.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    intervention.type_intervention.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredInterventions = interventions
+    .filter(intervention => {
+      const search = searchTerm.toLowerCase()
+      const numInter = (intervention.num_inter || '').toLowerCase()
+      const client = (intervention.client || '').toLowerCase()
+      const typeInter = (intervention.type_intervention || '').toLowerCase()
+      return numInter.includes(search) || client.includes(search) || typeInter.includes(search)
+    })
+    .sort((a, b) => {
+      // Trier par date_rdv décroissante (plus récente en premier)
+      const dateA = a.date_rdv || ''
+      const dateB = b.date_rdv || ''
+      const dateComparison = new Date(dateB).getTime() - new Date(dateA).getTime()
+      
+      // Si même date, trier par num_inter décroissant
+      if (dateComparison === 0) {
+        return (b.num_inter || '').localeCompare(a.num_inter || '')
+      }
+      return dateComparison
+    });
 
   const paginatedInterventions = filteredInterventions.slice(
     (currentPage - 1) * itemsPerPage,
