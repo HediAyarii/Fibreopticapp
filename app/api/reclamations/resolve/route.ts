@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
           RETURNING id
         `, [
           parseInt(reclamationId),
-          `/uploads/reclamations/${filename}`,
+          `/api/uploads/reclamations/${filename}`,
           photo.name,
           photo.type,
           photo.size,

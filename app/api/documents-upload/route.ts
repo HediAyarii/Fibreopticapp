@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       file: {
         name: fileName,
         originalName: file.name,
-        path: `/uploads/documents/${fileName}`,
+        path: `/api/uploads/documents/${fileName}`,
         size: file.size,
         type: file.type,
         extension: fileExtension

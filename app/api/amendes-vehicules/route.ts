@@ -87,7 +87,8 @@ export async function POST(request: NextRequest) {
       const filePath = path.join(uploadDir, pdf_filename)
       
       await writeFile(filePath, buffer)
-      pdf_url = `/uploads/amendes/${pdf_filename}`
+      // Utiliser la route API pour servir les fichiers (fonctionne en production)
+      pdf_url = `/api/uploads/amendes/${pdf_filename}`
     }
 
     const result = await query(
@@ -161,7 +162,8 @@ export async function PUT(request: NextRequest) {
       const filePath = path.join(uploadDir, pdf_filename)
       
       await writeFile(filePath, buffer)
-      pdf_url = `/uploads/amendes/${pdf_filename}`
+      // Utiliser la route API pour servir les fichiers (fonctionne en production)
+      pdf_url = `/api/uploads/amendes/${pdf_filename}`
     }
 
     const result = await query(
