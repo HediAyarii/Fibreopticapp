@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +19,8 @@ import {
   Eye,
   EyeOff,
   KeyRound,
-  X as XIcon
+  X as XIcon,
+  ShieldAlert
 } from "lucide-react"
 import TechnicienAccountForm from '@/components/TechnicienAccountForm'
 import { Input } from "@/components/ui/input"
@@ -40,6 +42,7 @@ interface TechnicienAccount {
 }
 
 export default function AdminTechnicienAccounts() {
+  const router = useRouter()
   const [accounts, setAccounts] = useState<TechnicienAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -50,10 +53,46 @@ export default function AdminTechnicienAccounts() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [resettingPassword, setResettingPassword] = useState(false)
+  const [isAuthorized, setIsAuthorized] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
+
+  // Vérifier l'authentification admin au chargement
+  useEffect(() => {
+    const checkAdminAuth = () => {
+      try {
+        const userStr = localStorage.getItem('currentUser')
+        if (!userStr) {
+          setIsAuthorized(false)
+          setCheckingAuth(false)
+          return
+        }
+
+        const user = JSON.parse(userStr)
+        // Vérifier si l'utilisateur est admin (superadmin ou a les permissions)
+        const isAdmin = user.role === 'superadmin' || user.role === 'admin' || user.is_superuser === true
+        
+        if (!isAdmin) {
+          setIsAuthorized(false)
+          setCheckingAuth(false)
+          return
+        }
+
+        setIsAuthorized(true)
+        setCheckingAuth(false)
+      } catch (error) {
+        setIsAuthorized(false)
+        setCheckingAuth(false)
+      }
+    }
+
+    checkAdminAuth()
+  }, [])
 
   useEffect(() => {
-    loadAccounts()
-  }, [])
+    if (isAuthorized) {
+      loadAccounts()
+    }
+  }, [isAuthorized])
 
   const loadAccounts = async () => {
     try {
@@ -237,6 +276,58 @@ export default function AdminTechnicienAccounts() {
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  // Afficher le loader pendant la vérification d'auth
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-500" />
+          <p className="text-muted-foreground">Vérification des autorisations...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Afficher une erreur si non autorisé
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 p-4 bg-red-100 rounded-full w-fit">
+              <ShieldAlert className="w-12 h-12 text-red-500" />
+            </div>
+            <CardTitle className="text-2xl text-red-600">Accès Refusé</CardTitle>
+            <CardDescription className="text-base">
+              Cette page est réservée aux administrateurs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <p className="text-muted-foreground">
+              Vous devez être connecté en tant qu'administrateur pour accéder à cette section.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <Button 
+                variant="outline"
+                onClick={() => router.push('/')}
+              >
+                Retour à l'accueil
+              </Button>
+              <Button 
+                onClick={() => {
+                  localStorage.removeItem('currentUser')
+                  router.push('/')
+                }}
+              >
+                Se connecter
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   if (loading) {

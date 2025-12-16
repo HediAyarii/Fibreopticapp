@@ -44,6 +44,7 @@ import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
 import { AffectationTest } from "@/components/AffectationTest"
 import { EmployeeMaterialValueTable } from "@/components/EmployeeMaterialValueTable"
 import { RecapCalculTable } from "@/components/RecapCalculTable"
+import RecapArticlesTable from "@/components/RecapArticlesTable"
 import { ReclamationForm } from "@/components/ReclamationForm"
 import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesForms"
 import { VehiculeForm } from "@/components/VehiculeForm"
@@ -97,6 +98,7 @@ import {
   Edit,
   PieChartIcon,
   RefreshCw,
+  GripVertical,
   User,
   UserCog,
   Activity,
@@ -257,6 +259,99 @@ export default function EmployeeTracker() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState("dashboard")
+
+  // Configuration des items de navigation pour la sidebar
+  const defaultNavOrder = [
+    'dashboard', 'employees', 'interventions', 'materials', 'recap-calcul', 
+    'documents', 'penalties', 'statistics', 'costs', 'cout-par-salaire',
+    'claims', 'reclamations-techniques', 'tarifs', 'recap-articles', 'vehicules',
+    'recette-generer', 'fuel-consumption', 'technicien-accounts', 'compte-admin', 'historique'
+  ]
+  
+  // État pour l'ordre personnalisé des sections (persisté dans la BDD par utilisateur)
+  const [navOrder, setNavOrder] = useState<string[]>(defaultNavOrder)
+  const [navOrderLoaded, setNavOrderLoaded] = useState(false)
+  
+  // État pour le drag & drop
+  const [draggedItem, setDraggedItem] = useState<string | null>(null)
+  const [dragOverItem, setDragOverItem] = useState<string | null>(null)
+
+  // Charger les préférences de l'utilisateur depuis la BDD
+  useEffect(() => {
+    const loadUserNavOrder = async () => {
+      if (!user?.email) return
+      
+      try {
+        const response = await fetch(`/api/user-preferences?userId=${encodeURIComponent(user.email)}`)
+        const data = await response.json()
+        
+        if (data.success && data.navOrder) {
+          setNavOrder(data.navOrder)
+        }
+        setNavOrderLoaded(true)
+      } catch (error) {
+        console.error('Erreur chargement préférences:', error)
+        setNavOrderLoaded(true)
+      }
+    }
+    
+    if (user?.email) {
+      loadUserNavOrder()
+    }
+  }, [user?.email])
+
+  // Sauvegarder l'ordre dans la BDD quand il change
+  const saveNavOrder = async (newOrder: string[]) => {
+    if (!user?.email || !navOrderLoaded) return
+    
+    try {
+      await fetch('/api/user-preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.email,
+          navOrder: newOrder
+        })
+      })
+    } catch (error) {
+      console.error('Erreur sauvegarde préférences:', error)
+    }
+  }
+
+  // Fonction pour gérer le drag & drop
+  const handleDragStart = (e: React.DragEvent, itemId: string) => {
+    setDraggedItem(itemId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e: React.DragEvent, itemId: string) => {
+    e.preventDefault()
+    if (draggedItem && draggedItem !== itemId) {
+      setDragOverItem(itemId)
+    }
+  }
+
+  const handleDragEnd = () => {
+    if (draggedItem && dragOverItem && draggedItem !== dragOverItem) {
+      const newOrder = [...navOrder]
+      const draggedIdx = newOrder.indexOf(draggedItem)
+      const targetIdx = newOrder.indexOf(dragOverItem)
+      
+      if (draggedIdx !== -1 && targetIdx !== -1) {
+        newOrder.splice(draggedIdx, 1)
+        newOrder.splice(targetIdx, 0, draggedItem)
+        setNavOrder(newOrder)
+        saveNavOrder(newOrder)
+      }
+    }
+    setDraggedItem(null)
+    setDragOverItem(null)
+  }
+
+  const resetNavOrder = () => {
+    setNavOrder(defaultNavOrder)
+    saveNavOrder(defaultNavOrder)
+  }
 
   // Data states - loaded from PostgreSQL
   const [interventions, setInterventions] = useState<any[]>([])
@@ -3208,67 +3303,103 @@ La page va se recharger automatiquement...`)
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md glass-card border border-white/20 rounded-3xl overflow-hidden hover-lift">
-          <CardHeader className="text-center pb-8">
-            <div className="flex justify-center mb-4">
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-primary to-chart-2 shadow-lg">
-                <Building2 className="w-12 h-12 text-gray-900" />
-            </div>
-            </div>
-            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
-              FinalFibre
-            </CardTitle>
-            <CardDescription className="text-lg text-muted-foreground">
-              Connexion à votre espace de travail
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-8 pb-8">
-            <form onSubmit={handleLogin} className="space-y-6">
-              <div className="space-y-3">
-                <Label htmlFor="email" className="text-sm font-semibold">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="votre@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="glass-card border border-white/20 h-12 rounded-xl"
-                  required
-                />
+      <div className="min-h-screen relative overflow-hidden">
+        {/* Background avec gradient animé */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-50"></div>
+          <div className="absolute top-0 -left-40 w-80 h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
+          <div className="absolute top-0 -right-40 w-80 h-80 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse delay-1000"></div>
+          <div className="absolute -bottom-40 left-1/2 w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse delay-500"></div>
+        </div>
+
+        {/* Contenu */}
+        <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
+          <div className="w-full max-w-md">
+            {/* Card principale */}
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl shadow-2xl overflow-hidden">
+              {/* Header avec logo */}
+              <div className="pt-10 pb-6 px-8 text-center">
+                <div className="flex justify-center mb-6">
+                  <div className="p-4 bg-white rounded-2xl shadow-lg">
+                    <img 
+                      src="/logo-networkcom.png" 
+                      alt="NetworkCom Logo" 
+                      className="h-16 object-contain"
+                    />
+                  </div>
+                </div>
+                <h1 className="text-3xl font-bold text-white mb-2">
+                  FinalFibre
+                </h1>
+                <p className="text-blue-200/80 text-sm">
+                  Connexion à votre espace de travail
+                </p>
               </div>
-              <div className="space-y-3">
-                <Label htmlFor="password" className="text-sm font-semibold">Mot de passe</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Votre mot de passe"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="glass-card border border-white/20 h-12 rounded-xl pr-12"
-                    required
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
+
+              {/* Formulaire */}
+              <div className="px-8 pb-10">
+                <form onSubmit={handleLogin} className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-sm font-medium text-blue-100">
+                      Email
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="votre@email.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full h-12 bg-white/10 border-white/20 text-white placeholder:text-white/40 rounded-xl pl-4 pr-4 focus:bg-white/20 focus:border-blue-400 transition-all duration-300"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-sm font-medium text-blue-100">
+                      Mot de passe
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full h-12 bg-white/10 border-white/20 text-white placeholder:text-white/40 rounded-xl pl-4 pr-12 focus:bg-white/20 focus:border-blue-400 transition-all duration-300"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0 text-white/60 hover:text-white hover:bg-white/10 rounded-lg"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Button 
+                    type="submit" 
+                    className="w-full h-12 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transition-all duration-300 mt-6"
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    Se connecter
                   </Button>
+                </form>
+
+                {/* Footer */}
+                <div className="mt-8 pt-6 border-t border-white/10 text-center">
+                  <p className="text-white/40 text-xs">
+                    © 2025 NetworkCom - Tous droits réservés
+                  </p>
                 </div>
               </div>
-              <Button 
-                type="submit" 
-                className="w-full h-12 rounded-xl gradient-primary text-white shadow-lg hover:shadow-xl transition-all duration-300"
-              >
-                Se connecter
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -3322,343 +3453,94 @@ La page va se recharger automatiquement...`)
         <aside className="w-80 glass-sidebar h-[calc(100vh-5rem)] sticky top-20">
           <nav className="h-full flex flex-col">
             <div className="p-6 pb-4">
-              <h2 className="text-lg font-semibold text-muted-foreground mb-4">Navigation</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-muted-foreground">Navigation</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetNavOrder}
+                  className="text-xs text-muted-foreground hover:text-primary"
+                  title="Réinitialiser l'ordre"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Glissez pour réordonner</p>
             </div>
             <div className="flex-1 overflow-y-auto px-6 pb-6 sidebar-scrollable">
               <div className="space-y-3">
+                {navOrder.map((itemId) => {
+                  // Configuration des items de navigation
+                  const navConfig: Record<string, { icon: React.ReactNode; label: string; permission?: string; adminOnly?: boolean; onClick?: () => void }> = {
+                    'dashboard': { icon: <BarChart3 className="w-5 h-5" />, label: 'Tableau de Bord' },
+                    'employees': { icon: <Users className="w-5 h-5" />, label: 'Employés', permission: 'employees' },
+                    'interventions': { icon: <FileText className="w-5 h-5" />, label: 'Interventions', permission: 'interventions' },
+                    'materials': { icon: <Package className="w-5 h-5" />, label: 'Matériel', permission: 'materials' },
+                    'recap-calcul': { icon: <Calculator className="w-5 h-5" />, label: 'Récap Calcul', permission: 'recap-calcul' },
+                    'documents': { icon: <FileText className="w-5 h-5" />, label: 'Documents', permission: 'documents' },
+                    'penalties': { icon: <AlertTriangle className="w-5 h-5" />, label: 'Pénalités', permission: 'penalties' },
+                    'statistics': { icon: <BarChart3 className="w-5 h-5" />, label: 'Statistiques', permission: 'statistics' },
+                    'costs': { icon: <Calculator className="w-5 h-5" />, label: 'Charges', permission: 'costs' },
+                    'cout-par-salaire': { icon: <DollarSign className="w-5 h-5" />, label: 'Charges par Salarié', permission: 'cout-par-salaire' },
+                    'claims': { icon: <FileText className="w-5 h-5" />, label: 'Réclamations', permission: 'claims' },
+                    'reclamations-techniques': { icon: <MessageSquare className="w-5 h-5" />, label: 'Réclamations Techniques', permission: 'reclamations-techniques' },
+                    'tarifs': { icon: <Building2 className="w-5 h-5" />, label: 'Tarifs', permission: 'tarifs' },
+                    'recap-articles': { icon: <Package className="w-5 h-5" />, label: 'Recap Articles', permission: 'recap-articles' },
+                    'vehicules': { icon: <Car className="w-5 h-5" />, label: 'Véhicules', permission: 'vehicules' },
+                    'recette-generer': { 
+                      icon: <TrendingUp className="w-5 h-5" />, 
+                      label: 'BENEFICE BRUTE', 
+                      permission: 'recette-generer',
+                      onClick: () => {
+                        setActiveTab("recette-generer")
+                        setTimeout(() => {
+                          window.dispatchEvent(new CustomEvent('reloadRevenueData'))
+                        }, 100)
+                      }
+                    },
+                    'fuel-consumption': { icon: <Fuel className="w-5 h-5" />, label: 'Consommation Carburant', permission: 'fuel-consumption' },
+                    'technicien-accounts': { icon: <UserCog className="w-5 h-5" />, label: 'Comptes Techniciens', permission: 'technicien-accounts' },
+                    'compte-admin': { icon: <UserPlus className="w-5 h-5" />, label: 'Compte Admin', adminOnly: true },
+                    'historique': { icon: <History className="w-5 h-5" />, label: 'Historique', adminOnly: true },
+                  }
 
-              <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                  activeTab === "dashboard"
-                    ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                    : "glass-card border border-white/20 hover:bg-primary/5"
-                }`}
-                onClick={() => setActiveTab("dashboard")}
-              >
-              <BarChart3 className="w-5 h-5" />
-              Tableau de Bord
-              </Button>
+                  const config = navConfig[itemId]
+                  if (!config) return null
 
-              {hasPermission('employees') && (
-                <Button
-                variant="ghost"
-                className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "employees"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-                  onClick={() => setActiveTab("employees")}
-                >
-                  <Users className="w-5 h-5" />
-                Employés
-                </Button>
-              )}
+                  // Vérifier les permissions
+                  if (config.permission && !hasPermission(config.permission)) return null
+                  if (config.adminOnly && !isAdmin) return null
 
-                {hasPermission('interventions') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "interventions"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("interventions")}
+                  const isActive = activeTab === itemId
+                  const isDragging = draggedItem === itemId
+                  const isDragOver = dragOverItem === itemId
+
+                  return (
+                    <div
+                      key={itemId}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, itemId)}
+                      onDragOver={(e) => handleDragOver(e, itemId)}
+                      onDragEnd={handleDragEnd}
+                      onDragLeave={() => setDragOverItem(null)}
+                      className={`group transition-all duration-200 ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'transform translate-y-1' : ''}`}
                     >
-                      <FileText className="w-5 h-5" />
-                  Interventions
-                    </Button>
-                )}
-
-                {/* Temporarily hidden - Carburant section */}
-                {/* <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "fuel"
-                  ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                  : "glass-card border border-white/20 hover:bg-primary/5"
-              }`}
-              onClick={() => setActiveTab("fuel")}
-            >
-              <Fuel className="w-5 h-5" />
-              Carburant
-            </Button> */}
-
-                {hasPermission('materials') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                        activeTab === "materials"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                      onClick={() => setActiveTab("materials")}
-                    >
-                      <Package className="w-5 h-5" />
-                  Matériel
-                    </Button>
-                )}
-
-                {hasPermission('recap-calcul') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "recap-calcul"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("recap-calcul")}
-                    >
-                      <Calculator className="w-5 h-5" />
-                  Récap Calcul
-                    </Button>
-                )}
-
-            {hasPermission('documents') && (
-              <Button
-                variant="ghost"
-                className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                  activeTab === "documents"
-                        ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                        : "glass-card border border-white/20 hover:bg-primary/5"
-                    }`}
-                onClick={() => setActiveTab("documents")}
-                  >
-                    <FileText className="w-5 h-5" />
-                Documents
-                  </Button>
-            )}
-
-
-                {hasPermission('penalties') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "penalties"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("penalties")}
-                    >
-                      <AlertTriangle className="w-5 h-5" />
-                  Pénalités
-                    </Button>
-                )}
-
-                {hasPermission('statistics') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "statistics"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("statistics")}
-                    >
-                      <BarChart3 className="w-5 h-5" />
-                      <span className="font-medium">Statistiques</span>
-                    </Button>
-                )}
-
-
-                {hasPermission('costs') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "costs"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("costs")}
-                    >
-                      <Calculator className="w-5 h-5" />
-                      <span className="font-medium">Charges</span>
-                    </Button>
-                )}
-
-                {hasPermission('cout-par-salaire') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "cout-par-salaire"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("cout-par-salaire")}
-                    >
-                      <DollarSign className="w-5 h-5" />
-                      <span className="font-medium">Charges par Salarié</span>
-                    </Button>
-                )}
-
-                {/* Temporarily hidden - Sync Employés section */}
-                {/* <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "employee-sync"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("employee-sync")}
-                >
-                  <UserPlus className="w-5 h-5" />
-                  <span className="font-medium">Sync Employés</span>
-                </Button> */}
-
-                {hasPermission('claims') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "claims"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("claims")}
-                    >
-                  <FileText className="w-5 h-5" />
-                  Réclamations
-                    </Button>
-                )}
-
-                {hasPermission('reclamations-techniques') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "reclamations-techniques"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("reclamations-techniques")}
-                    >
-                  <MessageSquare className="w-5 h-5" />
-                  Réclamations Techniques
-                    </Button>
-                )}
-
-                {hasPermission('tarifs') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "tarifs"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("tarifs")}
-                    >
-                      <Building2 className="w-5 h-5" />
-                      Tarifs
-                    </Button>
-                )}
-
-                {hasPermission('vehicules') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "vehicules"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("vehicules")}
-                    >
-                      <Car className="w-5 h-5" />
-                      Véhicules
-                    </Button>
-                )}
-
-                {hasPermission('recette-generer') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "recette-generer"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => {
-                    setActiveTab("recette-generer")
-                    // Recharger les recettes quand on change d'onglet
-                    setTimeout(() => {
-                      window.dispatchEvent(new CustomEvent('reloadRevenueData'))
-                    }, 100)
-                  }}
-                    >
-                      <TrendingUp className="w-5 h-5" />
-                      BENEFICE BRUTE
-                    </Button>
-                )}
-
-                {hasPermission('fuel-consumption') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "fuel-consumption"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("fuel-consumption")}
-                    >
-                      <Fuel className="w-5 h-5" />
-                      Consommation Carburant
-                    </Button>
-                )}
-
-                {/* Temporarily hidden - Rapports section */}
-                {/* <Button
-              variant="ghost"
-              className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                activeTab === "reports"
-                      ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                      : "glass-card border border-white/20 hover:bg-primary/5"
-                  }`}
-              onClick={() => setActiveTab("reports")}
-                >
-              <TrendingUp className="w-5 h-5" />
-              Rapports
-                </Button> */}
-
-                {hasPermission('technicien-accounts') && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "technicien-accounts"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("technicien-accounts")}
-                    >
-                  <UserCog className="w-5 h-5" />
-                  Comptes Techniciens
-                    </Button>
-                )}
-
-                {isAdmin && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "compte-admin"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("compte-admin")}
-                    >
-                  <UserPlus className="w-5 h-5" />
-                  Compte Admin
-                    </Button>
-                )}
-
-                {isAdmin && (
-                  <Button
-                  variant="ghost"
-                  className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
-                    activeTab === "historique"
-                          ? "gradient-primary text-white shadow-lg animate-pulse-glow"
-                          : "glass-card border border-white/20 hover:bg-primary/5"
-                      }`}
-                  onClick={() => setActiveTab("historique")}
-                    >
-                  <History className="w-5 h-5" />
-                  Historique
-                    </Button>
-                )}
+                      <Button
+                        variant="ghost"
+                        className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                          isActive
+                            ? "gradient-primary text-white shadow-lg animate-pulse-glow"
+                            : "glass-card border border-white/20 hover:bg-primary/5"
+                        } ${isDragOver ? 'border-primary border-2' : ''}`}
+                        onClick={() => config.onClick ? config.onClick() : setActiveTab(itemId)}
+                      >
+                        <GripVertical className="w-4 h-4 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing transition-opacity" />
+                        {config.icon}
+                        <span className="flex-1 text-left">{config.label}</span>
+                      </Button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </nav>
@@ -4121,6 +4003,11 @@ La page va se recharger automatiquement...`)
               onUpdate={handleUpdateTarif}
               onDelete={handleDeleteTarif}
             />
+          )}
+
+          {/* Recap Articles Tab */}
+          {activeTab === "recap-articles" && (
+            <RecapArticlesTable />
           )}
 
           {/* Recette Générée Tab */}
