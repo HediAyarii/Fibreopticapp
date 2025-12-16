@@ -8,9 +8,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const statut = searchParams.get('statut')
     
+    // Jointure avec assignations_vehicules pour récupérer le technicien assigné actif
     let queryText = `
-      SELECT v.*
+      SELECT v.*,
+             e.id as employe_id,
+             e.nom as employe_nom,
+             e.prenom as employe_prenom,
+             e.matricule as employe_matricule,
+             av.date_assignation,
+             av.kilometrage_debut
       FROM vehicules v
+      LEFT JOIN assignations_vehicules av ON v.id = av.vehicule_id AND av.statut = 'active'
+      LEFT JOIN employes e ON av.employe_id = e.id
     `
     let params: any[] = []
     
