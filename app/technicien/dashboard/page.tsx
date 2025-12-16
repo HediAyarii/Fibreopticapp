@@ -48,6 +48,7 @@ import { NewDocumentModal } from '@/components/NewDocumentModal'
 import { InterventionCategorieTable } from '@/components/InterventionCategorieTable'
 import TechnicienReclamations from '@/components/TechnicienReclamations'
 import { MonVehicule } from '@/components/MonVehicule'
+import { MesAmendes } from '@/components/MesAmendes'
 // import { useEmployeeUpdates } from '@/hooks/useEmployeeUpdates' // Désactivé pour éviter les erreurs de build
 
 interface User {
@@ -123,6 +124,15 @@ export default function TechnicienDashboard() {
     total_recette_technicien: 0,
     nombre_interventions: 0
   })
+  
+  // État pour les amendes du mois
+  const [amendesData, setAmendesData] = useState({
+    total_amendes: 0,
+    nombre_amendes: 0
+  })
+  
+  // État pour le total des pénalités en montant
+  const [totalPenalites, setTotalPenalites] = useState(0)
   
   // États pour le véhicule
   const [vehiculeData, setVehiculeData] = useState<any>(null)
@@ -313,11 +323,12 @@ export default function TechnicienDashboard() {
         : ''
       
       // Charger toutes les données en parallèle pour de meilleures performances
-      const [interventionsResponse, reclamationsResponse, penalitesResponse, revenueResponse] = await Promise.all([
+      const [interventionsResponse, reclamationsResponse, penalitesResponse, revenueResponse, amendesResponse] = await Promise.all([
         fetchWithAuth(`/api/interventions?employe_id=${user.id}${dateParams}`),
         fetchWithAuth(`/api/reclamations?employe_id=${user.id}${dateParams}`),
         fetchWithAuth(`/api/penalites?employe_id=${user.id}${dateParams}`),
-        fetchWithAuth(`/api/revenue-calculation?employe_id=${user.id}${revenueDateParams}`)
+        fetchWithAuth(`/api/revenue-calculation?employe_id=${user.id}${revenueDateParams}`),
+        fetchWithAuth(`/api/amendes-vehicules?employe_id=${user.id}`)
       ])
 
       // Vérifier si l'une des réponses indique une session expirée
@@ -391,6 +402,12 @@ export default function TechnicienDashboard() {
           console.log(`💰 Pénalités mises à jour: ${previousCount} → ${penalitesData.penalites.length}`)
         }
         
+        // Calculer le total des pénalités en montant
+        const totalPenalitesMontant = penalitesData.penalites.reduce((sum: number, p: any) => {
+          return sum + (parseFloat(p.montant) || 0)
+        }, 0)
+        setTotalPenalites(totalPenalitesMontant)
+        
         setStats(prev => ({
           ...prev,
           penalites: penalitesData.penalites.length
@@ -412,6 +429,30 @@ export default function TechnicienDashboard() {
           total_recette_technicien: 0,
           nombre_interventions: 0
         })
+      }
+
+      // Traiter les amendes
+      if (amendesResponse.ok) {
+        const amendesDataResponse = await amendesResponse.json()
+        if (amendesDataResponse.success && amendesDataResponse.amendes) {
+          // Filtrer les amendes par la période sélectionnée
+          const amendesFiltrees = amendesDataResponse.amendes.filter((amende: any) => {
+            if (!dateDebut || !dateFin || !amende.date_amende) return true
+            const dateAmende = new Date(amende.date_amende)
+            const debut = new Date(dateDebut)
+            const fin = new Date(dateFin)
+            return dateAmende >= debut && dateAmende <= fin
+          })
+          
+          const totalAmendesMontant = amendesFiltrees.reduce((sum: number, a: any) => {
+            return sum + (parseFloat(a.montant) || 0)
+          }, 0)
+          
+          setAmendesData({
+            total_amendes: totalAmendesMontant,
+            nombre_amendes: amendesFiltrees.length
+          })
+        }
       }
 
       console.log('✅ Données mises à jour avec succès')
@@ -1381,7 +1422,7 @@ export default function TechnicienDashboard() {
                       </p>
                     </div>
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Recette du Mois</p>
+                  <p className="text-sm font-medium text-gray-600">Total Généré</p>
                 </CardContent>
               </Card>
 
@@ -1392,10 +1433,60 @@ export default function TechnicienDashboard() {
                       <AlertCircle className="w-5 h-5 text-white" />
                     </div>
                     <div className="text-right">
-                      <p className="text-3xl font-bold text-gray-900">{stats.penalites}</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {totalPenalites.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {stats.penalites} pénalité(s)
+                      </p>
                     </div>
                   </div>
                   <p className="text-sm font-medium text-gray-600">Pénalités</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Deuxième ligne de statistiques financières */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-orange-500">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-3 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-md">
+                      <AlertCircle className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-gray-900">
+                        {amendesData.total_amendes.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {amendesData.nombre_amendes} amende(s)
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600">Amendes</p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-purple-500 lg:col-span-2">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-md">
+                      <DollarSign className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-2xl font-bold ${
+                        (recetteGeneree.total_recette_technicien - totalPenalites - amendesData.total_amendes) >= 0 
+                          ? 'text-green-600' 
+                          : 'text-red-600'
+                      }`}>
+                        {(recetteGeneree.total_recette_technicien - totalPenalites - amendesData.total_amendes).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        = {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR')}€ - {totalPenalites.toLocaleString('fr-FR')}€ - {amendesData.total_amendes.toLocaleString('fr-FR')}€
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600">Total Net (Total Généré - Pénalités - Amendes)</p>
                 </CardContent>
               </Card>
             </div>
@@ -1674,6 +1765,9 @@ export default function TechnicienDashboard() {
               technicienId={user?.id || 0}
               onSubmitKm={handleSubmitKm}
             />
+            
+            {/* Section Amendes */}
+            <MesAmendes employeId={user?.id || 0} />
           </div>
         )}
 

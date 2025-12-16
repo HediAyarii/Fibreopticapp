@@ -141,21 +141,41 @@ export async function GET(request: NextRequest) {
           
           const totalPaiements = parseFloat(paiementsResult.rows[0].total_paiements) || 0
           
+          // Récupérer le total des amendes pour cet employé ce mois
+          let totalAmendes = 0
+          try {
+            const amendesResult = await query(`
+              SELECT COALESCE(SUM(av.montant), 0) as total_amendes
+              FROM amendes_vehicules av
+              JOIN employes e ON av.employe_id = e.id
+              WHERE LOWER(e.nom) = LOWER($1) 
+                AND LOWER(e.prenom) = LOWER($2)
+                AND EXTRACT(MONTH FROM av.date_amende) = $3
+                AND EXTRACT(YEAR FROM av.date_amende) = $4
+            `, [cout.nom, cout.prenom, cout.mois, cout.annee])
+            totalAmendes = parseFloat(amendesResult.rows[0]?.total_amendes) || 0
+          } catch (amendesError) {
+            console.warn(`⚠️ Erreur calcul amendes pour ${cout.nom} ${cout.prenom}:`, amendesError)
+          }
+          
           // Recalculer le RAP avec le nouveau total_genere
+          // RAP = Total Généré - Salaire Net - Impôt + Prime - Paiements - Amendes
           const rapRecalcule = totalGenereCalcule - parseFloat(cout.salaire_net) - parseFloat(cout.impot) + parseFloat(cout.prime || 0)
-          const rapFinal = rapRecalcule - totalPaiements
+          const rapFinal = rapRecalcule - totalPaiements - totalAmendes
           
           return {
             ...cout,
             total_genere: totalGenereCalcule, // Valeur recalculée en temps réel
-            rap: rapFinal, // RAP recalculé avec le nouveau total_genere
-            total_paiements: totalPaiements
+            rap: rapFinal, // RAP recalculé avec amendes déduites
+            total_paiements: totalPaiements,
+            total_amendes: totalAmendes
           }
         } catch (error) {
           console.error(`Erreur calcul paiements pour ${cout.nom} ${cout.prenom}:`, error)
           return {
             ...cout,
             total_paiements: 0,
+            total_amendes: 0,
             rap: parseFloat(cout.rap)  // RAP de base si erreur
           }
         }

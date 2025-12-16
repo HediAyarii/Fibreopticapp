@@ -49,6 +49,7 @@ import { PenaltyForm, ArticlesEditModal } from "@/components/PenaltyAndArticlesF
 import { VehiculeForm } from "@/components/VehiculeForm"
 import { AssignationVehiculeForm } from "@/components/AssignationVehiculeForm"
 import { EntretienVehiculeForm } from "@/components/EntretienVehiculeForm"
+import { AmendeVehiculeForm } from "@/components/AmendeVehiculeForm"
 import { ValidationKmList } from "@/components/ValidationKmList"
 import { MonVehicule } from "@/components/MonVehicule"
 import { TestKmAlerts } from "@/components/TestKmAlerts"
@@ -278,15 +279,19 @@ export default function EmployeeTracker() {
   const [vehicules, setVehicules] = useState<any[]>([])
   const [assignationsVehicules, setAssignationsVehicules] = useState<any[]>([])
   const [entretiensVehicules, setEntretiensVehicules] = useState<any[]>([])
+  const [amendesVehicules, setAmendesVehicules] = useState<any[]>([])
   const [kmUpdates, setKmUpdates] = useState<any[]>([])
   const [loadingVehicules, setLoadingVehicules] = useState(false)
   const [showVehiculeModal, setShowVehiculeModal] = useState(false)
   const [showAssignationVehiculeModal, setShowAssignationVehiculeModal] = useState(false)
   const [showEntretienVehiculeModal, setShowEntretienVehiculeModal] = useState(false)
+  const [showAmendeVehiculeModal, setShowAmendeVehiculeModal] = useState(false)
   const [editingVehicule, setEditingVehicule] = useState<any>(null)
   const [editingAssignationVehicule, setEditingAssignationVehicule] = useState<any>(null)
   const [editingEntretienVehicule, setEditingEntretienVehicule] = useState<any>(null)
-  const [vehiculesSubTab, setVehiculesSubTab] = useState<'flotte' | 'assignations' | 'validations' | 'entretiens'>('flotte')
+  const [editingAmendeVehicule, setEditingAmendeVehicule] = useState<any>(null)
+  const [vehiculesSubTab, setVehiculesSubTab] = useState<'flotte' | 'assignations' | 'validations' | 'entretiens' | 'amendes'>('flotte')
+  const [amendesDateFilter, setAmendesDateFilter] = useState<string>('')
 
   // Filtres pour réclamations
   const [claimSearchTerm, setClaimSearchTerm] = useState('')
@@ -679,12 +684,14 @@ export default function EmployeeTracker() {
             loadVehiculesFromDatabase(),
             loadAssignationsVehiculesFromDatabase(),
             loadEntretiensVehiculesFromDatabase(),
-            loadKmUpdatesFromDatabase()
-          ]).then(([vehiculesData, assignationsData, entretiensData, kmUpdatesData]) => {
+            loadKmUpdatesFromDatabase(),
+            loadAmendesVehiculesFromDatabase()
+          ]).then(([vehiculesData, assignationsData, entretiensData, kmUpdatesData, amendesData]) => {
             setVehicules(vehiculesData)
             setAssignationsVehicules(assignationsData)
             setEntretiensVehicules(entretiensData)
             setKmUpdates(kmUpdatesData)
+            setAmendesVehicules(amendesData)
           }).finally(() => setLoadingVehicules(false))
         }
         break
@@ -2556,6 +2563,18 @@ La page va se recharger automatiquement...`)
     }
   }
 
+  const loadAmendesVehiculesFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/amendes-vehicules")
+      if (!response.ok) throw new Error("Erreur lors du chargement des amendes")
+      const data = await response.json()
+      return data.amendes || []
+    } catch (error) {
+      console.error("Erreur chargement amendes véhicules:", error)
+      return []
+    }
+  }
+
   const saveVehicule = async (vehiculeData: any) => {
     try {
       const url = "/api/vehicules"
@@ -2808,6 +2827,54 @@ La page va se recharger automatiquement...`)
       alert("Entretien supprimé avec succès")
     } catch (error) {
       console.error("Erreur suppression entretien:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
+    }
+  }
+
+  const saveAmendeVehicule = async (formData: FormData) => {
+    try {
+      const url = "/api/amendes-vehicules"
+      const method = editingAmendeVehicule ? "PUT" : "POST"
+      
+      formData.append('created_by', user?.email || 'admin')
+      
+      const response = await fetch(url, {
+        method,
+        body: formData
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+
+      const amendesData = await loadAmendesVehiculesFromDatabase()
+      setAmendesVehicules(amendesData)
+      setShowAmendeVehiculeModal(false)
+      setEditingAmendeVehicule(null)
+      alert(editingAmendeVehicule ? "Amende mise à jour" : "Amende enregistrée")
+    } catch (error) {
+      console.error("Erreur sauvegarde amende:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+    }
+  }
+
+  const deleteAmendeVehicule = async (id: number) => {
+    try {
+      const response = await fetch(`/api/amendes-vehicules?id=${id}`, {
+        method: "DELETE"
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la suppression")
+      }
+
+      const amendesData = await loadAmendesVehiculesFromDatabase()
+      setAmendesVehicules(amendesData)
+      alert("Amende supprimée avec succès")
+    } catch (error) {
+      console.error("Erreur suppression amende:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
     }
   }
@@ -7135,6 +7202,14 @@ La page va se recharger automatiquement...`)
                   <Wrench className="w-4 h-4 mr-2" />
                   Entretiens
                 </Button>
+                <Button
+                  variant={vehiculesSubTab === 'amendes' ? 'default' : 'ghost'}
+                  onClick={() => setVehiculesSubTab('amendes')}
+                  className="rounded-b-none"
+                >
+                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  Amendes
+                </Button>
               </div>
               
                {/* Vehicules Management Section */}
@@ -7651,6 +7726,164 @@ La page va se recharger automatiquement...`)
                          </table>
                        </div>
                      )}
+                   </CardContent>
+                 </Card>
+                 )}
+
+                 {/* Section 5: Amendes de Véhicules */}
+                 {vehiculesSubTab === 'amendes' && (
+                 <Card className="glass-card border border-white/20 hover-lift">
+                   <CardHeader>
+                            <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-red-500/10 rounded-lg">
+                           <AlertTriangle className="w-5 h-5 text-red-500" />
+                          </div>
+                                <div>
+                           <CardTitle className="text-xl font-bold">Amendes</CardTitle>
+                           <CardDescription>
+                             {amendesVehicules.length} amende(s) enregistrée(s)
+                           </CardDescription>
+                            </div>
+                              </div>
+                       <Button onClick={() => { setEditingAmendeVehicule(null); setShowAmendeVehiculeModal(true); }} className="bg-red-500 hover:bg-red-600">
+                         <Plus className="w-4 h-4 mr-2" />
+                         Nouvelle Amende
+                       </Button>
+                            </div>
+                   </CardHeader>
+                   <CardContent>
+                     {/* Filtre par date */}
+                     <div className="flex items-center gap-4 mb-4">
+                       <div className="flex items-center gap-2">
+                         <Calendar className="w-4 h-4 text-muted-foreground" />
+                         <span className="text-sm text-muted-foreground">Filtrer par date:</span>
+                       </div>
+                       <Input
+                         type="month"
+                         value={amendesDateFilter}
+                         onChange={(e) => setAmendesDateFilter(e.target.value)}
+                         className="w-48"
+                       />
+                       {amendesDateFilter && (
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           onClick={() => setAmendesDateFilter('')}
+                           className="text-muted-foreground hover:text-foreground"
+                         >
+                           Effacer
+                         </Button>
+                       )}
+                     </div>
+                     
+                     {(() => {
+                       const filteredAmendes = amendesVehicules.filter(amende => {
+                         if (!amendesDateFilter) return true
+                         if (!amende.date_amende) return false
+                         const amendeDate = new Date(amende.date_amende)
+                         const [year, month] = amendesDateFilter.split('-').map(Number)
+                         return amendeDate.getFullYear() === year && (amendeDate.getMonth() + 1) === month
+                       })
+                       
+                       return filteredAmendes.length === 0 ? (
+                       <div className="text-center py-8 text-muted-foreground">
+                         <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                         <h3 className="text-lg font-semibold mb-2">Aucune amende</h3>
+                         <p>{amendesDateFilter ? 'Aucune amende pour cette période' : 'Aucune amende enregistrée pour les véhicules'}</p>
+                       </div>
+                     ) : (
+                       <div className="overflow-x-auto">
+                         <table className="w-full border-collapse">
+                           <thead>
+                             <tr className="border-b border-white/10">
+                               <th className="text-left p-4 font-semibold">Véhicule</th>
+                               <th className="text-left p-4 font-semibold">Date</th>
+                               <th className="text-left p-4 font-semibold">Type</th>
+                               <th className="text-left p-4 font-semibold">Montant</th>
+                               <th className="text-left p-4 font-semibold">Employé</th>
+                               <th className="text-left p-4 font-semibold">PDF</th>
+                               <th className="text-left p-4 font-semibold">Actions</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {filteredAmendes.map((amende) => (
+                               <tr key={amende.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                 <td className="p-4">
+                                   <div>
+                                     <div className="font-mono font-semibold">{amende.matricule}</div>
+                                     <div className="text-sm text-muted-foreground">{amende.marque} {amende.modele}</div>
+                                   </div>
+                                 </td>
+                                 <td className="p-4">
+                                   {amende.date_amende ? new Date(amende.date_amende).toLocaleDateString('fr-FR') : '-'}
+                                 </td>
+                                 <td className="p-4">
+                                   <span className="text-sm">{amende.type_infraction}</span>
+                                   {amende.lieu_infraction && (
+                                     <div className="text-xs text-muted-foreground">{amende.lieu_infraction}</div>
+                                   )}
+                                 </td>
+                                 <td className="p-4">
+                                   <span className="font-semibold text-red-400">
+                                     {amende.montant ? parseFloat(amende.montant).toFixed(2) : '0.00'} €
+                                   </span>
+                                 </td>
+                                 <td className="p-4">
+                                   {amende.employe_nom ? (
+                                     <span>{amende.employe_nom} {amende.employe_prenom}</span>
+                                   ) : (
+                                     <span className="text-muted-foreground">-</span>
+                                   )}
+                                 </td>
+                                 <td className="p-4">
+                                   {amende.pdf_url ? (
+                                     <a
+                                       href={amende.pdf_url}
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       className="flex items-center gap-1 text-blue-400 hover:text-blue-300"
+                                     >
+                                       <FileText className="w-4 h-4" />
+                                       <span className="text-sm">Voir</span>
+                                     </a>
+                                   ) : (
+                                     <span className="text-muted-foreground">-</span>
+                                   )}
+                                 </td>
+                                 <td className="p-4">
+                                   <div className="flex gap-2">
+                                     <Button
+                                       variant="outline"
+                                       size="sm"
+                                       onClick={() => {
+                                         setEditingAmendeVehicule(amende)
+                                         setShowAmendeVehiculeModal(true)
+                                       }}
+                                     >
+                                       <Edit className="w-4 h-4" />
+                                     </Button>
+                                     <Button
+                                       variant="outline"
+                                       size="sm"
+                                       onClick={() => {
+                                         if (confirm('Êtes-vous sûr de vouloir supprimer cette amende?')) {
+                                           deleteAmendeVehicule(amende.id)
+                                         }
+                                       }}
+                                       className="text-red-400 hover:text-red-300"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                                     </Button>
+                                   </div>
+                                 </td>
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
+                     )
+                     })()}
                    </CardContent>
                  </Card>
                  )}
@@ -8475,6 +8708,20 @@ La page va se recharger automatiquement...`)
           }}
         />
       </Dialog>
+
+      {/* Amende Vehicule Modal */}
+      <AmendeVehiculeForm
+        isOpen={showAmendeVehiculeModal}
+        onClose={() => {
+          setShowAmendeVehiculeModal(false)
+          setEditingAmendeVehicule(null)
+        }}
+        onSave={saveAmendeVehicule}
+        vehicules={vehicules}
+        employes={employees}
+        assignationsVehicules={assignationsVehicules}
+        editingAmende={editingAmendeVehicule}
+      />
 
       {/* Articles Edit Modal */}
       <ArticlesEditModal

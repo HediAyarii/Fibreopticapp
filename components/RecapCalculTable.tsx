@@ -1,13 +1,13 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar, RefreshCw, TrendingUp, Calculator, DollarSign, TrendingDown, Users, BarChart3, Fuel, Zap } from "lucide-react"
+import { Calendar, RefreshCw, TrendingUp, Calculator, DollarSign, TrendingDown, Users, BarChart3, Fuel, Zap, Wrench } from "lucide-react"
 import { useAutoSync } from "@/hooks/useAutoSync"
 
 interface RecapCalculData {
@@ -90,6 +90,7 @@ export function RecapCalculTable() {
   const [chargesData, setChargesData] = useState<ChargesData[]>([])
   const [chargesSummary, setChargesSummary] = useState<ChargesSummary | null>(null)
   const [totalImpot, setTotalImpot] = useState(0)
+  const [totalEntretiens, setTotalEntretiens] = useState(0)
 
   // Hook personnalisé pour la synchronisation automatique avec filtres
   const fetchRecapData = useCallback(async () => {
@@ -97,13 +98,15 @@ export function RecapCalculTable() {
     if (startDate) params.append('startDate', startDate)
     if (endDate) params.append('endDate', endDate)
     if (selectedEmployee !== 'all') params.append('employeId', selectedEmployee)
-    if (selectedGrille !== 'tout') params.append('grille', selectedGrille)
+    // Ne pas filtrer par grille côté API car certains employés (ZOBAIR MOULAHI) 
+    // n'ont pas d'interventions mais doivent apparaître dans ERT
+    // Le filtrage sera fait côté client
 
     const response = await fetch(`/api/recap-calcul?${params.toString()}`)
     if (!response.ok) throw new Error('Erreur lors du chargement du récap calcul')
     const data = await response.json()
     return data.recettesParTechnicien || []
-  }, [startDate, endDate, selectedEmployee, selectedGrille])
+  }, [startDate, endDate, selectedEmployee])
 
   // Fonction pour récupérer les charges avec filtrage par grille
   const fetchChargesData = useCallback(async () => {
@@ -129,9 +132,9 @@ export function RecapCalculTable() {
   }, [startDate, endDate, selectedGrille])
 
   // Utiliser le hook personnalisé avec les filtres
-  const { data: recapData, loading, triggerSync } = useAutoSync({
+  const { data: rawRecapData, loading, triggerSync } = useAutoSync({
     fetchFunction: fetchRecapData,
-    dependencies: [startDate, endDate, selectedEmployee, selectedGrille],
+    dependencies: [startDate, endDate, selectedEmployee],
     syncEvents: [
       'material-assignment-updated', 
       'material-updated', 
@@ -145,17 +148,106 @@ export function RecapCalculTable() {
     ]
   })
 
-  // Charger les charges quand les dates changent
-  useEffect(() => {
-    if (startDate && endDate) {
-      fetchChargesData()
-      fetchTotalImpot()
-    }
-  }, [fetchChargesData, startDate, endDate])
+  // Fonction pour déterminer si un employé est ZOBAIR MOULAHI (cas spécial: toujours ERT)
+  const isZobairMoulahi = (employee: any) => {
+    const nom = employee.employe_nom || employee.nom || ''
+    const prenom = employee.employe_prenom || employee.prenom || ''
+    return (nom?.toUpperCase() === 'MOULAHI' && prenom?.toUpperCase() === 'ZOBAIR') ||
+           (nom?.toUpperCase() === 'ZOBAIR' && prenom?.toUpperCase() === 'MOULAHI')
+  }
 
-  useEffect(() => {
-    loadEmployees()
-  }, [])
+  // Fonction pour déterminer la grille d'un employé basé sur recapData
+  const getEmployeeGrille = useCallback((nom: string, prenom: string) => {
+    // Cas spécial: ZOBAIR MOULAHI est toujours ERT
+    if ((nom?.toUpperCase() === 'MOULAHI' && prenom?.toUpperCase() === 'ZOBAIR') ||
+        (nom?.toUpperCase() === 'ZOBAIR' && prenom?.toUpperCase() === 'MOULAHI')) {
+      return 'ert'
+    }
+    
+    // Chercher dans rawRecapData pour trouver les labels de l'employé
+    const employee: any = rawRecapData?.find((e: any) => 
+      e.employe_nom?.toUpperCase() === nom?.toUpperCase() && 
+      e.employe_prenom?.toUpperCase() === prenom?.toUpperCase()
+    )
+    
+    if (!employee) return 'unknown'
+    
+    const hasErt = employee.ert_label === 'ERT'
+    const hasAxecom = employee.axecom_label === 'AXECOM'
+    
+    if (hasErt && hasAxecom) return 'both'
+    if (hasErt) return 'ert'
+    if (hasAxecom) return 'axecom'
+    return 'unknown'
+  }, [rawRecapData])
+
+  // Filtrer les données par grille côté client
+  const recapData: any[] = useMemo(() => {
+    if (!rawRecapData) return []
+    if (selectedGrille === 'tout') return rawRecapData
+
+    return rawRecapData.filter((employee: any) => {
+      // Cas spécial: ZOBAIR MOULAHI est toujours ERT
+      if (isZobairMoulahi(employee)) {
+        return selectedGrille === 'ert'
+      }
+      
+      // Sinon, filtrer par les labels ERT/AXECOM de l'API
+      if (selectedGrille === 'ert') {
+        return employee.ert_label === 'ERT'
+      } else if (selectedGrille === 'axecom') {
+        return employee.axecom_label === 'AXECOM'
+      }
+      return true
+    })
+  }, [rawRecapData, selectedGrille])
+
+  // Fonction pour récupérer le total des entretiens véhicules
+  const fetchTotalEntretiens = useCallback(async () => {
+    try {
+      if (!startDate || !endDate) return
+      
+      const response = await fetch('/api/entretiens-vehicules')
+      if (response.ok) {
+        const data = await response.json()
+        const entretiens = data.entretiens || []
+        
+        console.log('=== DEBUG ENTRETIENS ===')
+        console.log('Entretiens reçus:', entretiens)
+        console.log('Dates filtre:', startDate, '-', endDate)
+        
+        // Filtrer par date (comparer uniquement les dates sans heure)
+        const startDateStr = startDate.split('T')[0]
+        const endDateStr = endDate.split('T')[0]
+        
+        // Filtrer par date
+        const entretiensFiltres = entretiens.filter((entretien: any) => {
+          if (!entretien.date_entretien) {
+            console.log('Entretien sans date:', entretien)
+            return false
+          }
+          const dateEntretienStr = entretien.date_entretien.split('T')[0]
+          const dansLaPeriode = dateEntretienStr >= startDateStr && dateEntretienStr <= endDateStr
+          console.log(`Entretien: date=${dateEntretienStr}, cout=${entretien.cout_entretien || entretien.cout}, dansLaPeriode=${dansLaPeriode}`)
+          return dansLaPeriode
+        })
+        
+        console.log('Entretiens filtrés:', entretiensFiltres)
+        
+        // Calculer le total (cout_entretien ou cout)
+        const total = entretiensFiltres.reduce((sum: number, entretien: any) => {
+          const cout = parseFloat(entretien.cout_entretien) || parseFloat(entretien.cout) || 0
+          return sum + cout
+        }, 0)
+        
+        console.log('Total entretiens:', total)
+        setTotalEntretiens(total)
+      }
+    } catch (error) {
+      console.error('Erreur chargement total entretiens:', error)
+      setTotalEntretiens(0)
+    }
+  }, [startDate, endDate])
 
   const loadEmployees = async () => {
     try {
@@ -169,7 +261,7 @@ export function RecapCalculTable() {
     }
   }
 
-  const fetchTotalImpot = async () => {
+  const fetchTotalImpot = useCallback(async () => {
     try {
       if (!startDate || !endDate) return
       
@@ -178,6 +270,18 @@ export function RecapCalculTable() {
       if (response.ok) {
         const data = await response.json()
         const total = (data.couts || []).reduce((sum: number, cout: any) => {
+          // Filtrer par grille si sélectionnée
+          if (selectedGrille !== 'tout') {
+            const employeeGrille = getEmployeeGrille(cout.nom, cout.prenom)
+            
+            if (selectedGrille === 'ert' && employeeGrille !== 'ert' && employeeGrille !== 'both') {
+              return sum // Ne pas compter cet employé
+            }
+            if (selectedGrille === 'axecom' && employeeGrille !== 'axecom' && employeeGrille !== 'both') {
+              return sum // Ne pas compter cet employé
+            }
+          }
+          
           const taxe = parseFloat(cout.taxe || 0)
           const charge = parseFloat(cout.charge || 0)
           
@@ -210,7 +314,26 @@ export function RecapCalculTable() {
       console.error('Erreur chargement total impôt:', error)
       setTotalImpot(0)
     }
-  }
+  }, [startDate, endDate, selectedGrille, getEmployeeGrille])
+
+  // Charger les charges quand les dates changent
+  useEffect(() => {
+    if (startDate && endDate) {
+      fetchChargesData()
+      fetchTotalEntretiens()
+    }
+  }, [fetchChargesData, fetchTotalEntretiens, startDate, endDate, selectedGrille])
+
+  // Charger le total impôt quand rawRecapData est disponible (pour le filtrage par grille)
+  useEffect(() => {
+    if (startDate && endDate && rawRecapData) {
+      fetchTotalImpot()
+    }
+  }, [fetchTotalImpot, startDate, endDate, selectedGrille, rawRecapData])
+
+  useEffect(() => {
+    loadEmployees()
+  }, [])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-FR', {
@@ -232,14 +355,14 @@ export function RecapCalculTable() {
   }
 
   const getBeneficeBrut = () => {
-    // BÉNÉFICE NET = Recettes Entreprise - Recettes Technicien - Consommation Carburant - Valeur Matériel - Charges Totales - Total Impôt
-    const recetteEntreprise = recapData.reduce((sum, item: any) => sum + (item.total_recette_entreprise || 0), 0)
-    const recetteTechnicien = recapData.reduce((sum, item: any) => sum + (item.total_recette_technicien || 0), 0)
-    const consommationCarburant = recapData.reduce((sum, item: any) => sum + (item.consommation_totale_carburant || 0), 0)
-    const valeurMateriel = recapData.reduce((sum, item: any) => sum + (item.valeur_totale_materiel || 0), 0)
+    // BÉNÉFICE NET = Recettes Entreprise - Recettes Technicien - Consommation Carburant - Valeur Matériel - Charges Totales - Total Impôt - Total Entretiens
+    const recetteEntreprise = recapData.reduce((sum: number, item: any) => sum + (item.total_recette_entreprise || 0), 0)
+    const recetteTechnicien = recapData.reduce((sum: number, item: any) => sum + (item.total_recette_technicien || 0), 0)
+    const consommationCarburant = recapData.reduce((sum: number, item: any) => sum + (item.consommation_totale_carburant || 0), 0)
+    const valeurMateriel = recapData.reduce((sum: number, item: any) => sum + (item.valeur_totale_materiel || 0), 0)
     const chargesTotales = chargesSummary?.totalChargesGlobal || 0
     
-    return recetteEntreprise - recetteTechnicien - consommationCarburant - valeurMateriel - chargesTotales - totalImpot
+    return recetteEntreprise - recetteTechnicien - consommationCarburant - valeurMateriel - chargesTotales - totalImpot - totalEntretiens
   }
 
   const getTotalInterventions = () => {
@@ -315,14 +438,23 @@ export function RecapCalculTable() {
     
     let displayName = `${employee.employe_nom} ${employee.employe_prenom}`
     
-    // Ajouter l'étiquette ERT devant le nom
-    if (ertLabel) {
-      displayName = `[${ertLabel}] ${displayName}`
+    // Cas spécial: ZOBAIR MOULAHI (TECH_ZOBMO) est toujours ERT
+    const isZobairMoulahi = 
+      (employee.employe_nom?.toUpperCase() === 'MOULAHI' && employee.employe_prenom?.toUpperCase() === 'ZOBAIR') ||
+      (employee.employe_nom?.toUpperCase() === 'ZOBAIR' && employee.employe_prenom?.toUpperCase() === 'MOULAHI')
+    
+    if (isZobairMoulahi) {
+      return `[ERT] ${displayName}`
     }
     
-    // Ajouter l'étiquette AXECOM après le nom
-    if (axecomLabel) {
-      displayName = `${displayName} (${axecomLabel})`
+    // Afficher la grille de l'employé devant le nom
+    // Priorité: Si AXECOM uniquement -> [AXECOM], Si ERT uniquement -> [ERT], Si les deux -> [ERT/AXECOM]
+    if (axecomLabel && ertLabel) {
+      displayName = `[ERT/AXECOM] ${displayName}`
+    } else if (axecomLabel) {
+      displayName = `[AXECOM] ${displayName}`
+    } else if (ertLabel) {
+      displayName = `[ERT] ${displayName}`
     }
     
     return displayName
@@ -555,7 +687,7 @@ export function RecapCalculTable() {
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -581,6 +713,21 @@ export function RecapCalculTable() {
                   <p className="text-sm text-muted-foreground">Total Impôt</p>
                   <p className="text-2xl font-bold text-purple-600">
                     {formatCurrency(Number(totalImpot))}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card border border-white/20">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-500/10 rounded-lg">
+                  <Wrench className="w-5 h-5 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Entretiens</p>
+                  <p className="text-2xl font-bold text-amber-500">
+                    {formatCurrency(Number(totalEntretiens))}
                   </p>
                 </div>
               </div>

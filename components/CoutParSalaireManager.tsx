@@ -42,6 +42,7 @@ interface CoutParSalaire {
   total_genere?: number
   rap?: number
   total_paiements?: number
+  total_amendes?: number
   created_at: string
   updated_at: string
 }
@@ -1090,9 +1091,30 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     return sum + (rap > 0 ? rap : 0)
   }, 0)
 
+  // Calcul du total impôt basé sur le pourcentage de taxe
+  // 0% = employé paye tout (impôt = 0 pour l'entreprise)
+  // 100% = entreprise paye tout (impôt = charge)
   const totalImpot = couts.reduce((sum, cout) => {
-    const value = parseFloat(cout.impot || 0)
-    return sum + (isNaN(value) ? 0 : value)
+    const taxe = parseFloat(cout.taxe || 0)
+    const charge = parseFloat(cout.charge || 0)
+    
+    let impot = 0
+    if (Math.abs(taxe - 0) < 0.01) {
+      // 0% de taxe = 0 impôt (l'employé paye tout)
+      impot = 0
+    } else if (Math.abs(taxe - 100) < 0.01) {
+      // 100% de taxe = charge complète (l'entreprise paye tout)
+      impot = charge
+    } else if (Math.abs(taxe - 50) < 0.01) {
+      // 50% de taxe = moitié de la charge
+      impot = charge / 2
+    } else {
+      // Autre pourcentage = proportionnel
+      // Si taxe = 30%, l'entreprise paye 70% donc impot = charge * (100 - taxe) / 100
+      impot = charge * ((100 - taxe) / 100)
+    }
+    
+    return sum + (isNaN(impot) ? 0 : impot)
   }, 0)
 
   return (
@@ -1381,6 +1403,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                 <th className="text-right p-3">Prime (€)</th>
                 <th className="text-right p-3">Total Généré (€)</th>
                 <th className="text-right p-3">RAP (€)</th>
+                <th className="text-right p-3">Amendes (€)</th>
                 <th className="text-right p-3">Paiements (€)</th>
                 <th className="text-right p-3">Salaire Net</th>
                 <th className="text-right p-3">Salaire Brut</th>
@@ -1557,6 +1580,15 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                         )}
                         {cout.rap && Number(cout.rap) < 0 && (
                           <div className="text-xs text-red-600 mt-1">⚠️ Déficit</div>
+                        )}
+                      </td>
+                      
+                      <td className="p-3 text-right">
+                        <span className={`font-medium ${cout.total_amendes && Number(cout.total_amendes) > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                          {cout.total_amendes ? `${Number(cout.total_amendes).toFixed(2)}€` : '0.00€'}
+                        </span>
+                        {cout.total_amendes && Number(cout.total_amendes) > 0 && (
+                          <div className="text-xs text-red-600 mt-1">⚠️ Amendes</div>
                         )}
                       </td>
                       

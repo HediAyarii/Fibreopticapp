@@ -292,7 +292,6 @@ export async function GET(request: NextRequest) {
       LEFT JOIN employee_labels el ON COALESCE(id.employe_nom, cd.employe_nom, md.employe_nom) = el.nom_technicien 
                                    AND COALESCE(id.employe_prenom, cd.employe_prenom, md.employe_prenom) = el.prenom_technicien
       ${selectedEmployee ? `WHERE (id.employe_nom = '${selectedEmployee.nom}' AND id.employe_prenom = '${selectedEmployee.prenom}') OR (cd.employe_nom = '${selectedEmployee.nom}' AND cd.employe_prenom = '${selectedEmployee.prenom}') OR (md.employe_nom = '${selectedEmployee.nom}' AND md.employe_prenom = '${selectedEmployee.prenom}')` : ''}
-      ${grille && grille !== 'tout' ? `${selectedEmployee ? 'AND' : 'WHERE'} (id.employe_nom IS NOT NULL AND id.employe_prenom IS NOT NULL)` : ''}
       ORDER BY COALESCE(id.total_recette_technicien, 0) DESC
     `
 
@@ -300,24 +299,31 @@ export async function GET(request: NextRequest) {
     const result = await query(sqlQuery, queryParams)
     
     // Convertir les valeurs numériques en nombres
-    const recapData = result.rows.map((row: any) => ({
-      employe_id: -1, // Pas d'ID employé dans cette version simplifiée
-      employe_nom: row.employe_nom,
-      employe_prenom: row.employe_prenom,
-      employe_matricule: row.matricule,
-      nombre_interventions: Number(row.nombre_interventions) || 0,
-      total_recette_technicien: Number(row.total_recette_technicien) || 0,
-      total_recette_entreprise: Number(row.total_recette_entreprise) || 0,
-      nombre_transactions_carburant: Number(row.nombre_transactions_carburant) || 0,
-      consommation_totale_carburant: Number(row.consommation_totale_carburant) || 0,
-      consommation_moyenne_carburant: Number(row.consommation_moyenne_carburant) || 0,
-      nombre_affectations_materiel: Number(row.nombre_affectations_materiel) || 0,
-      quantite_totale_materiel: Number(row.quantite_totale_materiel) || 0,
-      valeur_totale_materiel: Number(row.valeur_totale_materiel) || 0,
-      prix_moyen_materiel: Number(row.prix_moyen_materiel) || 0,
-      ert_label: row.ert_label || '',
-      axecom_label: row.axecom_label || ''
-    }))
+    const recapData = result.rows.map((row: any) => {
+      // Cas spécial: ZOBAIR MOULAHI (TECH_ZOBMO) est toujours ERT
+      const isZobairMoulahi = 
+        (row.employe_nom?.toUpperCase() === 'MOULAHI' && row.employe_prenom?.toUpperCase() === 'ZOBAIR') ||
+        (row.employe_nom?.toUpperCase() === 'ZOBAIR' && row.employe_prenom?.toUpperCase() === 'MOULAHI')
+      
+      return {
+        employe_id: -1, // Pas d'ID employé dans cette version simplifiée
+        employe_nom: row.employe_nom,
+        employe_prenom: row.employe_prenom,
+        employe_matricule: row.matricule,
+        nombre_interventions: Number(row.nombre_interventions) || 0,
+        total_recette_technicien: Number(row.total_recette_technicien) || 0,
+        total_recette_entreprise: Number(row.total_recette_entreprise) || 0,
+        nombre_transactions_carburant: Number(row.nombre_transactions_carburant) || 0,
+        consommation_totale_carburant: Number(row.consommation_totale_carburant) || 0,
+        consommation_moyenne_carburant: Number(row.consommation_moyenne_carburant) || 0,
+        nombre_affectations_materiel: Number(row.nombre_affectations_materiel) || 0,
+        quantite_totale_materiel: Number(row.quantite_totale_materiel) || 0,
+        valeur_totale_materiel: Number(row.valeur_totale_materiel) || 0,
+        prix_moyen_materiel: Number(row.prix_moyen_materiel) || 0,
+        ert_label: isZobairMoulahi ? 'ERT' : (row.ert_label || ''),
+        axecom_label: isZobairMoulahi ? '' : (row.axecom_label || '')
+      }
+    })
     
     return NextResponse.json({ 
       success: true,
