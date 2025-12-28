@@ -98,15 +98,16 @@ export function RecapCalculTable() {
     if (startDate) params.append('startDate', startDate)
     if (endDate) params.append('endDate', endDate)
     if (selectedEmployee !== 'all') params.append('employeId', selectedEmployee)
-    // Ne pas filtrer par grille côté API car certains employés (ZOBAIR MOULAHI) 
-    // n'ont pas d'interventions mais doivent apparaître dans ERT
-    // Le filtrage sera fait côté client
+    // Passer le paramètre grille à l'API pour filtrer les interventions correctement
+    if (selectedGrille && selectedGrille !== 'tout') {
+      params.append('grille', selectedGrille)
+    }
 
     const response = await fetch(`/api/recap-calcul?${params.toString()}`)
     if (!response.ok) throw new Error('Erreur lors du chargement du récap calcul')
     const data = await response.json()
     return data.recettesParTechnicien || []
-  }, [startDate, endDate, selectedEmployee])
+  }, [startDate, endDate, selectedEmployee, selectedGrille])
 
   // Fonction pour récupérer les charges avec filtrage par grille
   const fetchChargesData = useCallback(async () => {
@@ -134,7 +135,7 @@ export function RecapCalculTable() {
   // Utiliser le hook personnalisé avec les filtres
   const { data: rawRecapData, loading, triggerSync } = useAutoSync({
     fetchFunction: fetchRecapData,
-    dependencies: [startDate, endDate, selectedEmployee],
+    dependencies: [startDate, endDate, selectedEmployee, selectedGrille],
     syncEvents: [
       'material-assignment-updated', 
       'material-updated', 
