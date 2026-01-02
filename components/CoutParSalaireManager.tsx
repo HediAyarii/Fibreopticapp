@@ -1014,8 +1014,26 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         return obj
       }))
       
-      // Filtrer les éléments valides
-      const validData = data.filter(item => item.nom && item.prenom)
+      // Filtrer les éléments valides et ajouter mois/année/charge automatiquement
+      const validData = data.filter(item => item.nom && item.prenom).map(item => {
+        // Utiliser les filtres sélectionnés pour le mois et l'année
+        if (!item.mois || !item.annee) {
+          item.mois = selectedMonth
+          item.annee = selectedYear
+          console.log(`📅 Mois/Année appliqués depuis les filtres: ${selectedMonth}/${selectedYear}`)
+        }
+        
+        // Calculer automatiquement la charge si non présente
+        // Charge = Coût Total - Salaire Net
+        if (!item.charge || item.charge === 0) {
+          const coutTotal = parseFloat(item.cout_total) || 0
+          const salaireNet = parseFloat(item.salaire_net) || 0
+          item.charge = coutTotal - salaireNet
+          console.log(`💰 Charge calculée automatiquement pour ${item.nom} ${item.prenom}: ${coutTotal} - ${salaireNet} = ${item.charge}`)
+        }
+        
+        return item
+      })
       
       // Calculer les statistiques de correspondance
       const matched = validData.filter(item => item.matricule).length
