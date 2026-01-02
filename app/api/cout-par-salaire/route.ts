@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       params.push(parseInt(annee))
     }
     
-    // Récupérer les données de base avec synchronisation automatique des taxes
+    // Récupérer les données de base avec synchronisation automatique des taxes via MATRICULE
     const result = await query(`
       SELECT 
         cps.id,
@@ -38,8 +38,11 @@ export async function GET(request: NextRequest) {
         cps.mois,
         cps.annee,
         cps.matricule,
-        -- Synchroniser automatiquement avec la table employes
+        -- Synchroniser automatiquement avec la table employes via MATRICULE
         COALESCE(e.pourcentage_taxe, 50) as taxe,
+        -- Récupérer nom/prénom de la table employes si correspondance matricule
+        COALESCE(e.nom, cps.nom) as nom_employe,
+        COALESCE(e.prenom, cps.prenom) as prenom_employe,
         -- Recalculer l'impôt basé sur la taxe synchronisée
         CASE 
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
@@ -61,7 +64,7 @@ export async function GET(request: NextRequest) {
         cps.created_at,
         cps.updated_at
       FROM cout_par_salaire cps
-      LEFT JOIN employes e ON LOWER(cps.nom) = LOWER(e.nom) AND LOWER(cps.prenom) = LOWER(e.prenom) AND e.statut = 'actif'
+      LEFT JOIN employes e ON cps.matricule IS NOT NULL AND cps.matricule = e.matricule AND e.statut = 'actif'
       ${whereClause}
       ORDER BY cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
     `, params)
@@ -70,7 +73,23 @@ export async function GET(request: NextRequest) {
     const coutsWithRevenue = await Promise.all(
       result.rows.map(async (cout: any) => {
         try {
-          // Calculer le total_genere en temps réel avec la logique de BENEFICE BRUTE
+          // Calculer le total_genere en temps réel via MATRICULE
+          // D'abord récupérer le nom/prénom de l'employé via le matricule
+          let nomTech = cout.nom
+          let prenomTech = cout.prenom
+          
+          if (cout.matricule) {
+            const employeResult = await query(`
+              SELECT nom, prenom FROM employes WHERE matricule = $1 AND statut = 'actif'
+            `, [cout.matricule])
+            
+            if (employeResult.rows.length > 0) {
+              nomTech = employeResult.rows[0].nom
+              prenomTech = employeResult.rows[0].prenom
+              console.log(`📍 Matricule ${cout.matricule} → ${nomTech} ${prenomTech}`)
+            }
+          }
+          
           const revenueResult = await query(`
             SELECT COALESCE(SUM(
               CASE 
@@ -130,7 +149,7 @@ export async function GET(request: NextRequest) {
                    (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
                  ))
               )
-          `, [cout.nom, cout.prenom, cout.annee, cout.mois])
+          `, [nomTech, prenomTech, cout.annee, cout.mois])
           
           const totalGenereCalcule = parseFloat(revenueResult.rows[0]?.total_genere || 0)
           
@@ -141,21 +160,22 @@ export async function GET(request: NextRequest) {
           
           const totalPaiements = parseFloat(paiementsResult.rows[0].total_paiements) || 0
           
-          // Récupérer le total des amendes pour cet employé ce mois
+          // Récupérer le total des amendes pour cet employé ce mois via MATRICULE
           let totalAmendes = 0
           try {
-            const amendesResult = await query(`
-              SELECT COALESCE(SUM(av.montant), 0) as total_amendes
-              FROM amendes_vehicules av
-              JOIN employes e ON av.employe_id = e.id
-              WHERE LOWER(e.nom) = LOWER($1) 
-                AND LOWER(e.prenom) = LOWER($2)
-                AND EXTRACT(MONTH FROM av.date_amende) = $3
-                AND EXTRACT(YEAR FROM av.date_amende) = $4
-            `, [cout.nom, cout.prenom, cout.mois, cout.annee])
-            totalAmendes = parseFloat(amendesResult.rows[0]?.total_amendes) || 0
+            if (cout.matricule) {
+              const amendesResult = await query(`
+                SELECT COALESCE(SUM(av.montant), 0) as total_amendes
+                FROM amendes_vehicules av
+                JOIN employes e ON av.employe_id = e.id
+                WHERE e.matricule = $1
+                  AND EXTRACT(MONTH FROM av.date_amende) = $2
+                  AND EXTRACT(YEAR FROM av.date_amende) = $3
+              `, [cout.matricule, cout.mois, cout.annee])
+              totalAmendes = parseFloat(amendesResult.rows[0]?.total_amendes) || 0
+            }
           } catch (amendesError) {
-            console.warn(`⚠️ Erreur calcul amendes pour ${cout.nom} ${cout.prenom}:`, amendesError)
+            console.warn(`⚠️ Erreur calcul amendes pour matricule ${cout.matricule}:`, amendesError)
           }
           
           // Recalculer le RAP avec le nouveau total_genere
