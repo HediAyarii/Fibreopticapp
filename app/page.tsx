@@ -8838,9 +8838,9 @@ La page va se recharger automatiquement...`)
 
       {/* PDF Viewer Modal pour documents véhicules */}
       {showVehiculePdfViewer && (
-        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
-          <div className="bg-white rounded-lg flex flex-col" style={{ width: '94vw', height: '92vh' }}>
-            <div className="flex items-center justify-between p-3 border-b bg-gray-50">
+        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center pt-16 pb-4 px-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white rounded-lg flex flex-col" style={{ width: '94vw', height: '88vh' }}>
+            <div className="flex items-center justify-between p-3 border-b bg-gray-50 rounded-t-lg">
               <h3 className="font-semibold text-gray-900">Document du Véhicule</h3>
               <div className="flex gap-2">
                 <a 
@@ -8859,7 +8859,7 @@ La page va se recharger automatiquement...`)
                 </button>
               </div>
             </div>
-            <div className="flex-1 p-1 bg-gray-100 overflow-hidden">
+            <div className="flex-1 p-1 bg-gray-100 overflow-hidden rounded-b-lg">
               <iframe
                 src={showVehiculePdfViewer}
                 className="w-full h-full rounded border bg-white"
