@@ -8851,7 +8851,8 @@ La page va se recharger automatiquement...`)
             </a>
             <button
               onClick={() => setShowVehiculePdfViewer(null)}
-              className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 shadow-lg font-medium"
+              className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 shadow-xl font-bold border-2 border-red-400"
+              style={{ backgroundColor: '#dc2626' }}
             >
               ✕ Fermer
             </button>
