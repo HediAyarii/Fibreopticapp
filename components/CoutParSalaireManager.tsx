@@ -20,7 +20,8 @@ import {
   History,
   Plus,
   Eye,
-  RefreshCw
+  RefreshCw,
+  Trash2
 } from 'lucide-react'
 import PaymentHistoryModal from './PaymentHistoryModal'
 
@@ -74,11 +75,30 @@ interface CoutParSalaireManagerProps {
   onClose?: () => void
 }
 
+// Fonction pour obtenir le mois précédent
+const getPreviousMonth = () => {
+  const now = new Date()
+  const currentMonth = now.getMonth() // 0-11
+  const currentYear = now.getFullYear()
+  
+  if (currentMonth === 0) {
+    // Si on est en janvier, retourner décembre de l'année précédente
+    return { month: 12, year: currentYear - 1 }
+  } else {
+    // Sinon, retourner le mois précédent
+    return { month: currentMonth, year: currentYear }
+  }
+}
+
 export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [couts, setCouts] = useState<CoutParSalaire[]>([])
   const [loading, setLoading] = useState(false)
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  
+  // Initialiser avec le mois précédent automatiquement
+  const previousMonth = getPreviousMonth()
+  const [selectedMonth, setSelectedMonth] = useState(previousMonth.month)
+  const [selectedYear, setSelectedYear] = useState(previousMonth.year)
+  
   const [editingField, setEditingField] = useState<{id: number, field: string} | null>(null)
   const [editValue, setEditValue] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -124,6 +144,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [selectedCoutForPrime, setSelectedCoutForPrime] = useState<CoutParSalaire | null>(null)
   const [primeAmount, setPrimeAmount] = useState('')
   const [isEditingPrime, setIsEditingPrime] = useState(false)
+  const [primeNote, setPrimeNote] = useState('')
+  const [primeDeduitRap, setPrimeDeduitRap] = useState(true)
+  const [primesList, setPrimesList] = useState<any[]>([])
+  const [loadingPrimes, setLoadingPrimes] = useState(false)
 
   // États pour la synchronisation des noms
   const [syncingNames, setSyncingNames] = useState(false)
@@ -472,25 +496,50 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     }
   }
 
+  // Fonction pour charger les primes d'un employé
+  const loadPrimes = async (coutId: number) => {
+    setLoadingPrimes(true)
+    try {
+      const response = await fetch(`/api/primes-employes?cout_par_salaire_id=${coutId}`)
+      const data = await response.json()
+      if (data.success) {
+        setPrimesList(data.primes || [])
+      }
+    } catch (error) {
+      console.error('Erreur chargement primes:', error)
+      setPrimesList([])
+    } finally {
+      setLoadingPrimes(false)
+    }
+  }
+
   // Fonction pour gérer l'ajout de prime
-  const handleAddPrime = (cout: CoutParSalaire) => {
-    console.log('💰 Ajout de prime pour:', cout.nom, cout.prenom)
+  const handleAddPrime = async (cout: CoutParSalaire) => {
+    console.log('💰 Gestion des primes pour:', cout.nom, cout.prenom)
     setSelectedCoutForPrime(cout)
     setPrimeAmount('')
+    setPrimeNote('')
+    setPrimeDeduitRap(true)
     setIsEditingPrime(false)
     setShowPrimeModal(true)
+    // Charger les primes existantes
+    await loadPrimes(cout.id)
   }
 
-  // Fonction pour gérer la modification de prime
-  const handleEditPrime = (cout: CoutParSalaire) => {
+  // Fonction pour gérer la modification de prime (ouvre le même modal)
+  const handleEditPrime = async (cout: CoutParSalaire) => {
     console.log('✏️ Modification de prime pour:', cout.nom, cout.prenom)
     setSelectedCoutForPrime(cout)
-    setPrimeAmount(cout.prime ? Number(cout.prime).toString() : '0')
-    setIsEditingPrime(true)
+    setPrimeAmount('')
+    setPrimeNote('')
+    setPrimeDeduitRap(true)
+    setIsEditingPrime(false)
     setShowPrimeModal(true)
+    // Charger les primes existantes
+    await loadPrimes(cout.id)
   }
 
-  // Fonction pour soumettre l'ajout/modification de prime
+  // Fonction pour soumettre l'ajout d'une nouvelle prime
   const handleSubmitPrime = async () => {
     if (!selectedCoutForPrime || !primeAmount) {
       alert('Veuillez saisir un montant de prime')
@@ -498,65 +547,98 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     }
 
     const amount = parseFloat(primeAmount)
-    if (isNaN(amount) || amount < 0) {
-      alert('Veuillez saisir un montant valide (≥ 0)')
+    if (isNaN(amount) || amount <= 0) {
+      alert('Veuillez saisir un montant valide (> 0)')
       return
     }
 
     try {
       setPaymentLoading(true)
       
-      let newPrime: number
-      let actionText: string
-      
-      if (isEditingPrime) {
-        // Modification : remplacer la prime existante
-        newPrime = amount
-        actionText = `Prime modifiée: ${amount}€`
-      } else {
-        // Ajout : ajouter au montant existant
-        const currentPrime = parseFloat(selectedCoutForPrime.prime || '0')
-        newPrime = currentPrime + amount
-        actionText = `Prime ajoutée: ${amount}€ (Total: ${newPrime}€)`
-      }
-      
-      // Mettre à jour la prime dans la base de données
-      const response = await fetch('/api/cout-par-salaire', {
-        method: 'PUT',
+      // Ajouter la prime via la nouvelle API
+      const response = await fetch('/api/primes-employes', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: selectedCoutForPrime.id,
-          prime: newPrime
+          cout_par_salaire_id: selectedCoutForPrime.id,
+          matricule: selectedCoutForPrime.matricule,
+          montant: amount,
+          note: primeNote || null,
+          deduit_rap: primeDeduitRap
         }),
       })
 
-      if (!response.ok) {
-        throw new Error('Erreur lors de la mise à jour de la prime')
-      }
-
       const result = await response.json()
-      
-      if (result.success) {
-        // Recharger les données
-        await loadData()
-        setShowPrimeModal(false)
-        setSelectedCoutForPrime(null)
-        setPrimeAmount('')
-        setIsEditingPrime(false)
-        
-        console.log(`✅ ${actionText}`)
-        alert(`${actionText} avec succès!`)
-      } else {
-        throw new Error(result.error || 'Erreur lors de la mise à jour')
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Erreur lors de l\'ajout de la prime')
       }
+      
+      // Recharger les primes et les données
+      await loadPrimes(selectedCoutForPrime.id)
+      await loadData()
+      
+      // Réinitialiser le formulaire mais garder le modal ouvert
+      setPrimeAmount('')
+      setPrimeNote('')
+      setPrimeDeduitRap(true)
+      
+      console.log(`✅ Prime de ${amount}€ ajoutée avec succès`)
+      alert(`Prime de ${amount}€ ajoutée avec succès!${primeDeduitRap ? ' (déduite du RAP)' : ' (non déduite du RAP)'}`)
+      
     } catch (error) {
-      console.error('Erreur lors de la gestion de la prime:', error)
-      alert('Erreur lors de la gestion de la prime')
+      console.error('Erreur lors de l\'ajout de la prime:', error)
+      alert('Erreur lors de l\'ajout de la prime')
     } finally {
       setPaymentLoading(false)
     }
+  }
+
+  // Fonction pour supprimer une prime
+  const handleDeletePrime = async (primeId: number) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette prime ?')) {
+      return
+    }
+
+    try {
+      setPaymentLoading(true)
+      
+      const response = await fetch(`/api/primes-employes?id=${primeId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Erreur lors de la suppression')
+      }
+      
+      // Recharger les primes et les données
+      if (selectedCoutForPrime) {
+        await loadPrimes(selectedCoutForPrime.id)
+      }
+      await loadData()
+      
+      console.log('✅ Prime supprimée avec succès')
+      
+    } catch (error) {
+      console.error('Erreur lors de la suppression de la prime:', error)
+      alert('Erreur lors de la suppression de la prime')
+    } finally {
+      setPaymentLoading(false)
+    }
+  }
+
+  // Fonction pour fermer le modal des primes
+  const handleClosePrimeModal = () => {
+    setShowPrimeModal(false)
+    setSelectedCoutForPrime(null)
+    setPrimeAmount('')
+    setPrimeNote('')
+    setPrimeDeduitRap(true)
+    setPrimesList([])
   }
 
   // Fonction pour synchroniser les pénalités
@@ -1550,15 +1632,22 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           onDoubleClick={() => handleAddPrime(cout)}
                           title="Double-clic pour ajouter une prime"
                         >
-                          <span className={`font-medium ${cout.prime && Number(cout.prime) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                            {cout.prime ? `${Number(cout.prime).toFixed(2)}€` : '0.00€'}
-                          </span>
-                          {cout.prime && Number(cout.prime) > 0 && (
-                            <div className="text-xs text-green-600 mt-1">✓ Prime</div>
-                          )}
+                          {(() => {
+                            const totalPrimes = (Number(cout.prime_deduit_rap) || 0) + (Number(cout.prime_non_deduit_rap) || 0)
+                            return (
+                              <>
+                                <span className={`font-medium ${totalPrimes > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                                  {totalPrimes > 0 ? `${totalPrimes.toFixed(2)}€` : '0.00€'}
+                                </span>
+                                {totalPrimes > 0 && (
+                                  <div className="text-xs text-green-600 mt-1">✓ Prime</div>
+                                )}
+                              </>
+                            )
+                          })()}
                           <div className="text-xs text-gray-500 mt-1">Double-clic pour ajouter</div>
                         </div>
-                        {cout.prime && Number(cout.prime) > 0 && (
+                        {((Number(cout.prime_deduit_rap) || 0) + (Number(cout.prime_non_deduit_rap) || 0)) > 0 && (
                           <button
                             onClick={() => handleEditPrime(cout)}
                             className="mt-1 text-xs text-blue-600 hover:text-blue-800 underline"
@@ -2111,81 +2200,170 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         employePrenom={selectedEmployeForHistory?.prenom}
       />
 
-      {/* Modal d'ajout/modification de prime */}
+      {/* Modal de gestion des primes */}
       {showPrimeModal && selectedCoutForPrime && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">
-                {isEditingPrime ? 'Modifier la Prime' : 'Ajouter une Prime'}
+                💰 Gestion des Primes - {selectedCoutForPrime.nom} {selectedCoutForPrime.prenom}
               </h3>
               <button
-                onClick={() => {
-                  setShowPrimeModal(false)
-                  setIsEditingPrime(false)
-                  setPrimeAmount('')
-                }}
+                onClick={handleClosePrimeModal}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
-                Employé: {selectedCoutForPrime.nom} {selectedCoutForPrime.prenom}
-              </label>
-              <label className="block text-sm font-medium mb-2">
-                Prime actuelle: {selectedCoutForPrime.prime ? `${Number(selectedCoutForPrime.prime).toFixed(2)}€` : '0.00€'}
-              </label>
+            {/* Résumé */}
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600">Matricule:</span>{' '}
+                  <span className="font-medium">{selectedCoutForPrime.matricule || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Total Primes:</span>{' '}
+                  <span className="font-medium text-green-600">
+                    {(() => {
+                      const total = (Number(selectedCoutForPrime.prime_deduit_rap) || 0) + (Number(selectedCoutForPrime.prime_non_deduit_rap) || 0)
+                      return `${total.toFixed(2)}€`
+                    })()}
+                  </span>
+                </div>
+              </div>
             </div>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
-                {isEditingPrime ? 'Nouveau montant de la prime (€)' : 'Montant de la prime à ajouter (€)'}
-              </label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={primeAmount}
-                onChange={(e) => setPrimeAmount(e.target.value)}
-                placeholder={isEditingPrime ? "Nouveau montant" : "0.00"}
-                className="w-full"
-              />
+
+            {/* Liste des primes existantes */}
+            <div className="mb-6">
+              <h4 className="text-sm font-semibold mb-2">Primes enregistrées</h4>
+              {loadingPrimes ? (
+                <div className="text-center py-4 text-gray-500">Chargement...</div>
+              ) : primesList.length === 0 ? (
+                <div className="text-center py-4 text-gray-500 bg-gray-50 rounded">
+                  Aucune prime enregistrée
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {primesList.map((prime: any) => (
+                    <div 
+                      key={prime.id} 
+                      className={`p-3 rounded-lg border ${prime.deduit_rap ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-lg">
+                              {parseFloat(prime.montant).toFixed(2)}€
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded ${prime.deduit_rap ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800'}`}>
+                              {prime.deduit_rap ? '✓ Déduit RAP' : '✗ Non déduit RAP'}
+                            </span>
+                          </div>
+                          {prime.note && (
+                            <p className="text-sm text-gray-600 mt-1">📝 {prime.note}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-1">
+                            {new Date(prime.date_prime || prime.created_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleDeletePrime(prime.id)}
+                          className="text-red-500 hover:text-red-700 p-1"
+                          title="Supprimer cette prime"
+                          disabled={paymentLoading}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-800">
-                <strong>Note:</strong> {isEditingPrime 
-                  ? 'La prime sera remplacée par le nouveau montant et le RAP sera recalculé.'
-                  : 'La prime sera ajoutée au montant existant et augmentera le RAP (Reste à Payer).'
-                }
-              </p>
-            </div>
-            
-            <div className="flex justify-end space-x-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowPrimeModal(false)
-                  setIsEditingPrime(false)
-                  setPrimeAmount('')
-                }}
-                disabled={paymentLoading}
-              >
-                Annuler
-              </Button>
-              <Button
-                onClick={handleSubmitPrime}
-                disabled={paymentLoading || !primeAmount}
-                className={isEditingPrime ? "bg-orange-600 hover:bg-orange-700" : "bg-green-600 hover:bg-green-700"}
-              >
-                {paymentLoading 
-                  ? (isEditingPrime ? 'Modification...' : 'Ajout...') 
-                  : (isEditingPrime ? 'Modifier la Prime' : 'Ajouter la Prime')
-                }
-              </Button>
+
+            {/* Formulaire d'ajout de prime */}
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-semibold mb-3">Ajouter une nouvelle prime</h4>
+              
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Montant (€) *</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={primeAmount}
+                    onChange={(e) => setPrimeAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Déduit du RAP ?</label>
+                  <div className="flex items-center gap-4 mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="deduit_rap"
+                        checked={primeDeduitRap}
+                        onChange={() => setPrimeDeduitRap(true)}
+                        className="w-4 h-4 text-green-600"
+                      />
+                      <span className="text-sm text-green-700">Oui</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="deduit_rap"
+                        checked={!primeDeduitRap}
+                        onChange={() => setPrimeDeduitRap(false)}
+                        className="w-4 h-4 text-orange-600"
+                      />
+                      <span className="text-sm text-orange-700">Non</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Note / Motif</label>
+                <textarea
+                  value={primeNote}
+                  onChange={(e) => setPrimeNote(e.target.value)}
+                  placeholder="Ex: Prime de performance, Prime exceptionnelle..."
+                  className="w-full p-2 border rounded-md text-sm"
+                  rows={2}
+                />
+              </div>
+              
+              <div className="p-3 bg-blue-50 rounded-lg mb-4">
+                <p className="text-sm text-blue-800">
+                  <strong>ℹ️ Note:</strong> 
+                  {primeDeduitRap 
+                    ? ' Cette prime sera DÉDUITE du RAP (réduit ce que l\'employé doit encore recevoir car il a déjà reçu cette prime).'
+                    : ' Cette prime est un BONUS qui n\'affecte PAS le RAP (versée en plus, hors calcul RAP).'
+                  }
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-2">
+                <Button
+                  variant="outline"
+                  onClick={handleClosePrimeModal}
+                  disabled={paymentLoading}
+                >
+                  Fermer
+                </Button>
+                <Button
+                  onClick={handleSubmitPrime}
+                  disabled={paymentLoading || !primeAmount || parseFloat(primeAmount) <= 0}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {paymentLoading ? 'Ajout...' : '+ Ajouter la Prime'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

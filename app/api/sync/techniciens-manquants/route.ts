@@ -3,117 +3,93 @@ import { query } from '@/lib/database'
 
 export const dynamic = 'force-dynamic'
 
-// POST - Synchroniser les techniciens manquants (qui ont généré mais pas dans l'import)
+// POST - Synchroniser les techniciens manquants basé sur MATRICULE
+// Trouve les employés qui ont des interventions ce mois mais pas d'entrée dans cout_par_salaire
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔄 Recherche des techniciens manquants (ont généré mais pas dans import)...')
+    console.log('🔄 Recherche des techniciens manquants par MATRICULE...')
     
     const { searchParams } = new URL(request.url)
     const moisParam = searchParams.get('mois')
     const anneeParam = searchParams.get('annee')
     
-    // Si mois/année spécifiés, filtrer, sinon traiter tous les mois
-    let dateFilter = ''
-    const params: any[] = []
-    
-    if (moisParam && anneeParam) {
-      dateFilter = `
-        AND EXTRACT(MONTH FROM i.date_rdv::date) = $1
-        AND EXTRACT(YEAR FROM i.date_rdv::date) = $2
-      `
-      params.push(parseInt(moisParam), parseInt(anneeParam))
+    if (!moisParam || !anneeParam) {
+      return NextResponse.json({
+        success: false,
+        error: 'Mois et année requis'
+      }, { status: 400 })
     }
     
-    // 1. Trouver les techniciens avec interventions CLOTUREES mais PAS dans cout_par_salaire
-    const techniciensMaquantsQuery = `
-      SELECT DISTINCT
-        i.nom_technicien,
-        i.prenom_technicien,
-        EXTRACT(MONTH FROM i.date_rdv::date)::int as mois,
-        EXTRACT(YEAR FROM i.date_rdv::date)::int as annee,
-        COUNT(*) as nb_interventions_cloturees
-      FROM interventions i
-      WHERE i.statut = 'CLOTURE TERMINEE'
-        AND i.date_rdv IS NOT NULL 
-        AND i.date_rdv != '' 
-        AND i.date_rdv != 'nan'
-        AND i.date_rdv ~ '^[0-9]'
-        AND i.nom_technicien IS NOT NULL
-        AND i.nom_technicien != ''
-        AND i.nom_technicien != 'nan'
-        ${dateFilter}
-        AND NOT EXISTS (
-          SELECT 1 FROM cout_par_salaire cps 
-          WHERE LOWER(TRIM(cps.nom)) = LOWER(TRIM(i.nom_technicien)) 
-            AND LOWER(TRIM(cps.prenom)) = LOWER(TRIM(i.prenom_technicien))
-            AND cps.mois = EXTRACT(MONTH FROM i.date_rdv::date)
-            AND cps.annee = EXTRACT(YEAR FROM i.date_rdv::date)
+    const mois = parseInt(moisParam)
+    const annee = parseInt(anneeParam)
+    
+    console.log(`📅 Période: ${mois}/${annee}`)
+    
+    // 1. Trouver tous les MATRICULES qui ont des interventions clôturées ce mois
+    // en joignant avec la table employes via le matricule généré
+    const matriculesAvecInterventionsQuery = `
+      WITH interventions_par_matricule AS (
+        SELECT DISTINCT
+          e.matricule,
+          e.id as employe_id,
+          e.nom,
+          e.prenom,
+          e.pourcentage_taxe,
+          COUNT(i.id) as nb_interventions
+        FROM employes e
+        INNER JOIN interventions i ON (
+          -- Correspondance via matricule généré depuis les interventions
+          CONCAT('TECH_', UPPER(SUBSTRING(TRIM(i.nom_technicien), 1, 3)), UPPER(SUBSTRING(TRIM(i.prenom_technicien), 1, 2))) = e.matricule
+          OR (LOWER(TRIM(i.nom_technicien)) = LOWER(TRIM(e.nom)) AND LOWER(TRIM(i.prenom_technicien)) = LOWER(TRIM(e.prenom)))
         )
-      GROUP BY i.nom_technicien, i.prenom_technicien, 
-               EXTRACT(MONTH FROM i.date_rdv::date), 
-               EXTRACT(YEAR FROM i.date_rdv::date)
-      ORDER BY annee DESC, mois DESC, nb_interventions_cloturees DESC
+        WHERE e.statut = 'actif'
+          AND e.matricule IS NOT NULL
+          AND i.statut = 'CLOTURE TERMINEE'
+          AND i.date_rdv IS NOT NULL 
+          AND i.date_rdv != '' 
+          AND i.date_rdv != 'nan'
+          AND i.date_rdv ~ '^[0-9]'
+          AND (
+            -- Format YYYY-MM-DD
+            (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+             AND EXTRACT(MONTH FROM i.date_rdv::date) = $1
+             AND EXTRACT(YEAR FROM i.date_rdv::date) = $2)
+            OR
+            -- Format DD/MM/YYYY  
+            (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+             AND EXTRACT(MONTH FROM TO_DATE(SUBSTRING(i.date_rdv FROM 1 FOR 10), 'DD/MM/YYYY')) = $1
+             AND EXTRACT(YEAR FROM TO_DATE(SUBSTRING(i.date_rdv FROM 1 FOR 10), 'DD/MM/YYYY')) = $2)
+          )
+        GROUP BY e.matricule, e.id, e.nom, e.prenom, e.pourcentage_taxe
+        HAVING COUNT(i.id) > 0
+      )
+      SELECT ipm.*
+      FROM interventions_par_matricule ipm
+      WHERE NOT EXISTS (
+        SELECT 1 FROM cout_par_salaire cps 
+        WHERE cps.matricule = ipm.matricule
+          AND cps.mois = $1
+          AND cps.annee = $2
+      )
+      ORDER BY ipm.nb_interventions DESC
     `
     
-    const techniciensMaquants = await query(techniciensMaquantsQuery, params)
+    const matriculesManquants = await query(matriculesAvecInterventionsQuery, [mois, annee])
     
-    console.log(`📊 ${techniciensMaquants.rows.length} techniciens manquants trouvés`)
+    console.log(`📊 ${matriculesManquants.rows.length} matricules manquants trouvés`)
     
     let totalCreated = 0
     const created: any[] = []
     const errors: any[] = []
     
-    // 2. Pour chaque technicien manquant, créer un enregistrement
-    for (const tech of techniciensMaquants.rows) {
+    // 2. Pour chaque matricule manquant, créer un enregistrement
+    for (const emp of matriculesManquants.rows) {
       try {
-        console.log(`👤 Création: ${tech.nom_technicien} ${tech.prenom_technicien} (${tech.mois}/${tech.annee})`)
+        console.log(`👤 Création: ${emp.nom} ${emp.prenom} (${emp.matricule}) - ${emp.nb_interventions} interventions`)
         
-        // Chercher si l'employé existe dans la table employes pour récupérer matricule et taxe
-        const employeResult = await query(`
-          SELECT id, matricule, pourcentage_taxe
-          FROM employes
-          WHERE LOWER(TRIM(nom)) = LOWER(TRIM($1))
-            AND LOWER(TRIM(prenom)) = LOWER(TRIM($2))
-            AND statut = 'actif'
-          LIMIT 1
-        `, [tech.nom_technicien, tech.prenom_technicien])
+        const taxe = emp.pourcentage_taxe || 50
         
-        const employe = employeResult.rows[0]
-        const matricule = employe?.matricule || null
-        const taxe = employe?.pourcentage_taxe || 0
-        const employeId = employe?.id || null
-        
-        // Insérer le technicien manquant avec valeurs vides (0) pour salaires
-        const insertResult = await query(`
-          INSERT INTO cout_par_salaire (
-            nom, prenom, mois, annee,
-            salaire_net, salaire_brut, cout_total, charge,
-            taxe, impot, penalite, prime,
-            total_genere, rap,
-            matricule, employe_id,
-            created_at, updated_at
-          ) VALUES (
-            $1, $2, $3, $4,
-            0, 0, 0, 0,
-            $5, 0, 0, 0,
-            0, 0,
-            $6, $7,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-          )
-          RETURNING id
-        `, [
-          tech.nom_technicien,
-          tech.prenom_technicien,
-          tech.mois,
-          tech.annee,
-          taxe,
-          matricule,
-          employeId
-        ])
-        
-        const newId = insertResult.rows[0].id
-        
-        // Calculer le total généré pour ce technicien
+        // Calculer le total généré pour ce matricule
         const totalGenereResult = await query(`
           SELECT COALESCE(SUM(
             CASE 
@@ -147,51 +123,80 @@ export async function POST(request: NextRequest) {
             END
           ), 0) as total_genere
           FROM interventions i
-          WHERE i.statut = 'CLOTURE TERMINEE'
+          JOIN employes e ON (
+            CONCAT('TECH_', UPPER(SUBSTRING(TRIM(i.nom_technicien), 1, 3)), UPPER(SUBSTRING(TRIM(i.prenom_technicien), 1, 2))) = e.matricule
+            OR (LOWER(TRIM(i.nom_technicien)) = LOWER(TRIM(e.nom)) AND LOWER(TRIM(i.prenom_technicien)) = LOWER(TRIM(e.prenom)))
+          )
+          WHERE e.matricule = $1
+            AND i.statut = 'CLOTURE TERMINEE'
             AND i.articles IS NOT NULL 
             AND i.articles != ''
-            AND LOWER(TRIM(i.nom_technicien)) = LOWER(TRIM($1))
-            AND LOWER(TRIM(i.prenom_technicien)) = LOWER(TRIM($2))
-            AND EXTRACT(MONTH FROM i.date_rdv::date) = $3
-            AND EXTRACT(YEAR FROM i.date_rdv::date) = $4
             AND i.date_rdv IS NOT NULL 
             AND i.date_rdv != '' 
             AND i.date_rdv != 'nan'
             AND i.date_rdv ~ '^[0-9]'
-        `, [tech.nom_technicien, tech.prenom_technicien, tech.mois, tech.annee])
+            AND (
+              (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+               AND EXTRACT(MONTH FROM i.date_rdv::date) = $2
+               AND EXTRACT(YEAR FROM i.date_rdv::date) = $3)
+              OR
+              (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+               AND EXTRACT(MONTH FROM TO_DATE(SUBSTRING(i.date_rdv FROM 1 FOR 10), 'DD/MM/YYYY')) = $2
+               AND EXTRACT(YEAR FROM TO_DATE(SUBSTRING(i.date_rdv FROM 1 FOR 10), 'DD/MM/YYYY')) = $3)
+            )
+        `, [emp.matricule, mois, annee])
         
         const totalGenere = parseFloat(totalGenereResult.rows[0]?.total_genere) || 0
         
-        // Mettre à jour avec le total généré et calculer le RAP
-        // RAP = total_genere - salaire_net - impot + prime = total_genere (car tout est 0)
-        await query(`
-          UPDATE cout_par_salaire
-          SET total_genere = $1,
-              rap = $1,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2
-        `, [totalGenere, newId])
+        // Insérer le technicien manquant avec les données de l'employé
+        const insertResult = await query(`
+          INSERT INTO cout_par_salaire (
+            nom, prenom, mois, annee,
+            salaire_net, salaire_brut, cout_total, charge,
+            taxe, impot, penalite, prime,
+            total_genere, rap,
+            matricule,
+            created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4,
+            0, 0, 0, 0,
+            $5, 0, 0, 0,
+            $6, $6,
+            $7,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          )
+          RETURNING id
+        `, [
+          emp.nom,
+          emp.prenom,
+          mois,
+          annee,
+          taxe,
+          totalGenere,
+          emp.matricule
+        ])
+        
+        const newId = insertResult.rows[0].id
         
         totalCreated++
         created.push({
-          nom: tech.nom_technicien,
-          prenom: tech.prenom_technicien,
-          mois: tech.mois,
-          annee: tech.annee,
-          nb_interventions: tech.nb_interventions_cloturees,
-          total_genere: totalGenere,
-          matricule: matricule
+          id: newId,
+          nom: emp.nom,
+          prenom: emp.prenom,
+          matricule: emp.matricule,
+          taxe: taxe,
+          nb_interventions: emp.nb_interventions,
+          total_genere: totalGenere
         })
         
-        console.log(`  ✅ Créé avec ID ${newId}, Total Généré: ${totalGenere}€`)
+        console.log(`  ✅ Créé ID ${newId}: ${emp.nom} ${emp.prenom} (${emp.matricule}) - Total Généré: ${totalGenere}€`)
         
       } catch (error: any) {
-        console.error(`  ❌ Erreur pour ${tech.nom_technicien} ${tech.prenom_technicien}:`, error.message)
+        console.error(`  ❌ Erreur pour ${emp.nom} ${emp.prenom} (${emp.matricule}):`, error.message)
         errors.push({
-          nom: tech.nom_technicien,
-          prenom: tech.prenom_technicien,
-          mois: tech.mois,
-          annee: tech.annee,
+          nom: emp.nom,
+          prenom: emp.prenom,
+          matricule: emp.matricule,
           error: error.message
         })
       }
@@ -202,7 +207,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: `${totalCreated} techniciens manquants ajoutés`,
-      total_found: techniciensMaquants.rows.length,
+      total_found: matriculesManquants.rows.length,
       total_created: totalCreated,
       total_errors: errors.length,
       created,
@@ -218,59 +223,74 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET - Lister les techniciens manquants sans les créer
+// GET - Lister les techniciens manquants par MATRICULE sans les créer
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const moisParam = searchParams.get('mois')
     const anneeParam = searchParams.get('annee')
     
-    let dateFilter = ''
-    const params: any[] = []
-    
-    if (moisParam && anneeParam) {
-      dateFilter = `
-        AND EXTRACT(MONTH FROM i.date_rdv::date) = $1
-        AND EXTRACT(YEAR FROM i.date_rdv::date) = $2
-      `
-      params.push(parseInt(moisParam), parseInt(anneeParam))
+    if (!moisParam || !anneeParam) {
+      return NextResponse.json({
+        success: false,
+        error: 'Mois et année requis'
+      }, { status: 400 })
     }
     
-    const techniciensMaquantsQuery = `
-      SELECT DISTINCT
-        i.nom_technicien,
-        i.prenom_technicien,
-        EXTRACT(MONTH FROM i.date_rdv::date)::int as mois,
-        EXTRACT(YEAR FROM i.date_rdv::date)::int as annee,
-        COUNT(*) as nb_interventions_cloturees
-      FROM interventions i
-      WHERE i.statut = 'CLOTURE TERMINEE'
-        AND i.date_rdv IS NOT NULL 
-        AND i.date_rdv != '' 
-        AND i.date_rdv != 'nan'
-        AND i.date_rdv ~ '^[0-9]'
-        AND i.nom_technicien IS NOT NULL
-        AND i.nom_technicien != ''
-        AND i.nom_technicien != 'nan'
-        ${dateFilter}
-        AND NOT EXISTS (
-          SELECT 1 FROM cout_par_salaire cps 
-          WHERE LOWER(TRIM(cps.nom)) = LOWER(TRIM(i.nom_technicien)) 
-            AND LOWER(TRIM(cps.prenom)) = LOWER(TRIM(i.prenom_technicien))
-            AND cps.mois = EXTRACT(MONTH FROM i.date_rdv::date)
-            AND cps.annee = EXTRACT(YEAR FROM i.date_rdv::date)
+    const mois = parseInt(moisParam)
+    const annee = parseInt(anneeParam)
+    
+    // Trouver les matricules avec interventions mais pas dans cout_par_salaire
+    const matriculesManquantsQuery = `
+      WITH interventions_par_matricule AS (
+        SELECT DISTINCT
+          e.matricule,
+          e.nom,
+          e.prenom,
+          e.pourcentage_taxe,
+          COUNT(i.id) as nb_interventions
+        FROM employes e
+        INNER JOIN interventions i ON (
+          CONCAT('TECH_', UPPER(SUBSTRING(TRIM(i.nom_technicien), 1, 3)), UPPER(SUBSTRING(TRIM(i.prenom_technicien), 1, 2))) = e.matricule
+          OR (LOWER(TRIM(i.nom_technicien)) = LOWER(TRIM(e.nom)) AND LOWER(TRIM(i.prenom_technicien)) = LOWER(TRIM(e.prenom)))
         )
-      GROUP BY i.nom_technicien, i.prenom_technicien, 
-               EXTRACT(MONTH FROM i.date_rdv::date), 
-               EXTRACT(YEAR FROM i.date_rdv::date)
-      ORDER BY annee DESC, mois DESC, nb_interventions_cloturees DESC
+        WHERE e.statut = 'actif'
+          AND e.matricule IS NOT NULL
+          AND i.statut = 'CLOTURE TERMINEE'
+          AND i.date_rdv IS NOT NULL 
+          AND i.date_rdv != '' 
+          AND i.date_rdv != 'nan'
+          AND i.date_rdv ~ '^[0-9]'
+          AND (
+            (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+             AND EXTRACT(MONTH FROM i.date_rdv::date) = $1
+             AND EXTRACT(YEAR FROM i.date_rdv::date) = $2)
+            OR
+            (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+             AND EXTRACT(MONTH FROM TO_DATE(SUBSTRING(i.date_rdv FROM 1 FOR 10), 'DD/MM/YYYY')) = $1
+             AND EXTRACT(YEAR FROM TO_DATE(SUBSTRING(i.date_rdv FROM 1 FOR 10), 'DD/MM/YYYY')) = $2)
+          )
+        GROUP BY e.matricule, e.nom, e.prenom, e.pourcentage_taxe
+        HAVING COUNT(i.id) > 0
+      )
+      SELECT ipm.*
+      FROM interventions_par_matricule ipm
+      WHERE NOT EXISTS (
+        SELECT 1 FROM cout_par_salaire cps 
+        WHERE cps.matricule = ipm.matricule
+          AND cps.mois = $1
+          AND cps.annee = $2
+      )
+      ORDER BY ipm.nb_interventions DESC
     `
     
-    const result = await query(techniciensMaquantsQuery, params)
+    const result = await query(matriculesManquantsQuery, [mois, annee])
     
     return NextResponse.json({
       success: true,
       total: result.rows.length,
+      mois,
+      annee,
       techniciens_manquants: result.rows
     })
     

@@ -421,6 +421,10 @@ export default function EmployeeTracker() {
   const [editingIntervention, setEditingIntervention] = useState<any>(null)
   const [articlesText, setArticlesText] = useState("")
   const [savingArticles, setSavingArticles] = useState(false)
+  
+  // Inline articles editing states
+  const [inlineEditingArticles, setInlineEditingArticles] = useState<number | null>(null)
+  const [inlineArticlesValue, setInlineArticlesValue] = useState("")
 
   // Tax edit states
   const [editingTaxEmployee, setEditingTaxEmployee] = useState<any>(null)
@@ -1028,6 +1032,69 @@ export default function EmployeeTracker() {
     setShowArticlesModal(false)
     setEditingIntervention(null)
     setArticlesText("")
+  }
+
+  // Inline articles editing functions
+  const handleInlineArticlesDoubleClick = (intervention: any) => {
+    setInlineEditingArticles(intervention.id)
+    const cleanArticles = intervention.articles && intervention.articles.toString().toLowerCase() !== 'nan' 
+      ? intervention.articles 
+      : ""
+    setInlineArticlesValue(cleanArticles)
+  }
+
+  const handleInlineArticlesSave = async (interventionId: number) => {
+    try {
+      setSavingArticles(true)
+      const cleanArticles = inlineArticlesValue.trim() === '' || inlineArticlesValue.toLowerCase() === 'nan' ? '' : inlineArticlesValue.trim()
+      
+      const response = await fetch('/api/interventions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: interventionId,
+          articles: cleanArticles
+        })
+      })
+
+      if (response.ok) {
+        // Update local state
+        setInterventions(prev => 
+          prev.map(intervention => 
+            intervention.id === interventionId 
+              ? { ...intervention, articles: cleanArticles }
+              : intervention
+          )
+        )
+        setInlineEditingArticles(null)
+        setInlineArticlesValue("")
+        
+        // Recharger les données
+        await loadDataFromDatabase()
+        console.log("✅ Articles mis à jour en ligne")
+      } else {
+        alert('Erreur lors de la sauvegarde')
+      }
+    } catch (error) {
+      console.error("Erreur sauvegarde articles inline:", error)
+      alert('Erreur lors de la sauvegarde')
+    } finally {
+      setSavingArticles(false)
+    }
+  }
+
+  const handleInlineArticlesCancel = () => {
+    setInlineEditingArticles(null)
+    setInlineArticlesValue("")
+  }
+
+  const handleInlineArticlesKeyDown = (e: React.KeyboardEvent, interventionId: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleInlineArticlesSave(interventionId)
+    } else if (e.key === 'Escape') {
+      handleInlineArticlesCancel()
+    }
   }
 
   // Tax edit functions
@@ -4864,9 +4931,42 @@ La page va se recharger automatiquement...`)
                               <td className="p-4">{intervention.type_intervention}</td>
                             <td className="p-4">
                                 <div className="max-w-xs">
-                                  <span className={`text-sm ${needsArticlesFlag ? 'text-red-600 font-semibold' : 'text-gray-600'} block truncate`} title={intervention.articles}>
-                                    {intervention.articles && intervention.articles.toString().toLowerCase() !== 'nan' ? intervention.articles : 'N/A'}
-                                  </span>
+                                  {inlineEditingArticles === intervention.id ? (
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="text"
+                                        value={inlineArticlesValue}
+                                        onChange={(e) => setInlineArticlesValue(e.target.value)}
+                                        onKeyDown={(e) => handleInlineArticlesKeyDown(e, intervention.id)}
+                                        onBlur={() => handleInlineArticlesSave(intervention.id)}
+                                        autoFocus
+                                        className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                        placeholder="Ex: REFRAC x1, DEP_OFFE x1"
+                                      />
+                                      <button
+                                        onClick={() => handleInlineArticlesSave(intervention.id)}
+                                        className="p-1 text-green-600 hover:bg-green-100 rounded"
+                                        title="Sauvegarder (Entrée)"
+                                      >
+                                        ✓
+                                      </button>
+                                      <button
+                                        onClick={handleInlineArticlesCancel}
+                                        className="p-1 text-red-600 hover:bg-red-100 rounded"
+                                        title="Annuler (Échap)"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span 
+                                      className={`text-sm ${needsArticlesFlag ? 'text-red-600 font-semibold' : 'text-gray-600'} block truncate cursor-pointer hover:bg-blue-50 hover:text-blue-700 px-2 py-1 rounded transition-colors`} 
+                                      title={`${intervention.articles || 'N/A'} - Double-cliquez pour modifier`}
+                                      onDoubleClick={() => handleInlineArticlesDoubleClick(intervention)}
+                                    >
+                                      {intervention.articles && intervention.articles.toString().toLowerCase() !== 'nan' ? intervention.articles : 'N/A'}
+                                    </span>
+                                  )}
                               </div>
                             </td>
                             <td className="p-4">

@@ -74,17 +74,38 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Construire la requête SQL avec les filtres
+    // Construire la requête SQL avec les filtres - REGROUPEMENT PAR MATRICULE pour éviter les doublons
     const sqlQuery = `
-      WITH employee_labels AS (
-        SELECT 
+      WITH employee_mapping AS (
+        -- Mapper les noms des interventions aux employés via correspondance nom/prénom normalisée
+        SELECT DISTINCT
           i.nom_technicien,
           i.prenom_technicien,
+          e.id as employe_id,
+          e.nom as employe_nom_officiel,
+          e.prenom as employe_prenom_officiel,
+          e.matricule as employe_matricule
+        FROM interventions i
+        LEFT JOIN employes e ON (
+          -- Correspondance exacte insensible à la casse
+          (LOWER(TRIM(i.nom_technicien)) = LOWER(TRIM(e.nom)) AND LOWER(TRIM(SPLIT_PART(i.prenom_technicien, ',', 1))) = LOWER(TRIM(e.prenom)))
+          OR
+          -- Correspondance avec le premier mot du nom
+          (LOWER(TRIM(SPLIT_PART(i.nom_technicien, ' ', 1))) = LOWER(TRIM(e.nom)) AND LOWER(TRIM(SPLIT_PART(i.prenom_technicien, ',', 1))) = LOWER(TRIM(e.prenom)))
+          OR
+          -- Correspondance inversée nom/prénom
+          (LOWER(TRIM(i.nom_technicien)) = LOWER(TRIM(e.prenom)) AND LOWER(TRIM(SPLIT_PART(i.prenom_technicien, ',', 1))) = LOWER(TRIM(e.nom)))
+        )
+        WHERE e.statut = 'actif' OR e.statut IS NULL
+      ),
+      employee_labels AS (
+        SELECT 
+          em.employe_matricule as matricule,
           CASE 
             WHEN EXISTS (
               SELECT 1 FROM interventions i2 
-              WHERE i2.nom_technicien = i.nom_technicien 
-              AND i2.prenom_technicien = i.prenom_technicien
+              JOIN employee_mapping em2 ON i2.nom_technicien = em2.nom_technicien AND i2.prenom_technicien = em2.prenom_technicien
+              WHERE em2.employe_matricule = em.employe_matricule
               AND i2.grille IN ('AXECOM MANCHE', 'B2B : AXECOM MANCHE')
               AND i2.date_rdv IS NOT NULL 
               AND i2.date_rdv != '' 
@@ -100,8 +121,8 @@ export async function GET(request: NextRequest) {
           CASE 
             WHEN EXISTS (
               SELECT 1 FROM interventions i3 
-              WHERE i3.nom_technicien = i.nom_technicien 
-              AND i3.prenom_technicien = i.prenom_technicien
+              JOIN employee_mapping em3 ON i3.nom_technicien = em3.nom_technicien AND i3.prenom_technicien = em3.prenom_technicien
+              WHERE em3.employe_matricule = em.employe_matricule
               AND i3.grille NOT IN ('AXECOM MANCHE', 'B2B : AXECOM MANCHE')
               AND i3.grille IS NOT NULL
               AND i3.grille != ''
@@ -116,27 +137,18 @@ export async function GET(request: NextRequest) {
             ) THEN 'ERT'
             ELSE NULL
           END as ert_label
-        FROM interventions i
-        WHERE i.statut = 'CLOTURE TERMINEE'
-          AND i.articles IS NOT NULL 
-          AND i.articles != ''
-          ${employeFilter}
-          ${grilleInterventionFilter}
-          AND i.date_rdv IS NOT NULL 
-          AND i.date_rdv != '' 
-          AND i.date_rdv != 'nan'
-          AND i.date_rdv ~ '^[0-9]'
-          AND (
-            (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
-            (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= $1::date AND i.date_rdv::date <= $2::date)
-          )
-        GROUP BY i.nom_technicien, i.prenom_technicien
+        FROM employee_mapping em
+        WHERE em.employe_matricule IS NOT NULL
+        GROUP BY em.employe_matricule
       ),
       interventions_data AS (
         SELECT 
-          i.nom_technicien as employe_nom,
-          i.prenom_technicien as employe_prenom,
-          CONCAT('TECH_', UPPER(SUBSTRING(i.nom_technicien, 1, 3)), UPPER(SUBSTRING(i.prenom_technicien, 1, 2))) as matricule,
+          -- Utiliser le nom/prénom officiel de l'employé
+          COALESCE(em.employe_nom_officiel, i.nom_technicien) as employe_nom,
+          COALESCE(em.employe_prenom_officiel, i.prenom_technicien) as employe_prenom,
+          -- Utiliser le vrai matricule de la table employés
+          COALESCE(em.employe_matricule, CONCAT('TECH_', UPPER(SUBSTRING(i.nom_technicien, 1, 3)), UPPER(SUBSTRING(i.prenom_technicien, 1, 2)))) as matricule,
+          em.employe_id,
           COUNT(*) as nombre_interventions,
           SUM(
             CASE 
@@ -205,6 +217,7 @@ export async function GET(request: NextRequest) {
             END
           ) as total_recette_entreprise
         FROM interventions i
+        LEFT JOIN employee_mapping em ON i.nom_technicien = em.nom_technicien AND i.prenom_technicien = em.prenom_technicien
         WHERE i.statut = 'CLOTURE TERMINEE'
           AND i.articles IS NOT NULL 
           AND i.articles != ''
@@ -218,13 +231,17 @@ export async function GET(request: NextRequest) {
             (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
             (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= $1::date AND i.date_rdv::date <= $2::date)
           )
-        GROUP BY i.nom_technicien, i.prenom_technicien
+        -- REGROUPER PAR MATRICULE pour fusionner les variations de noms
+        GROUP BY COALESCE(em.employe_matricule, CONCAT('TECH_', UPPER(SUBSTRING(i.nom_technicien, 1, 3)), UPPER(SUBSTRING(i.prenom_technicien, 1, 2)))),
+                 COALESCE(em.employe_nom_officiel, i.nom_technicien),
+                 COALESCE(em.employe_prenom_officiel, i.prenom_technicien),
+                 em.employe_id
       ),
       carburant_data AS (
         SELECT 
           e.nom as employe_nom,
           e.prenom as employe_prenom,
-          CONCAT('TECH_', UPPER(SUBSTRING(e.nom, 1, 3)), UPPER(SUBSTRING(e.prenom, 1, 2))) as matricule,
+          e.matricule as matricule,
           COUNT(cc.id) as nombre_transactions_carburant,
           SUM(COALESCE(CAST(REPLACE(cc.ca_ttc, ',', '.') AS DECIMAL(10,2)), 0)) as consommation_totale_carburant,
           AVG(COALESCE(CAST(REPLACE(cc.ca_ttc, ',', '.') AS DECIMAL(10,2)), 0)) as consommation_moyenne_carburant
@@ -235,7 +252,7 @@ export async function GET(request: NextRequest) {
           AND cc.ca_ttc != ''
           AND cc.ca_ttc != '0'
           AND cc.ca_ttc ~ '^[0-9]'
-          ${selectedEmployee ? `AND e.nom = '${selectedEmployee.nom}' AND e.prenom = '${selectedEmployee.prenom}'` : ''}
+          ${selectedEmployee ? `AND e.matricule = '${selectedEmployee.matricule}'` : ''}
           AND (
             -- Format dd.MM.yyyy
             (cc.date_livraison ~ '^[0-9]{2}\.[0-9]{2}\.[0-9]{4}$' AND 
@@ -250,13 +267,13 @@ export async function GET(request: NextRequest) {
              TO_DATE(cc.date_livraison, 'DD/MM/YYYY') >= $1::date AND 
              TO_DATE(cc.date_livraison, 'DD/MM/YYYY') <= $2::date)
           )
-        GROUP BY e.nom, e.prenom
+        GROUP BY e.nom, e.prenom, e.matricule
       ),
       materiel_data AS (
         SELECT 
           e.nom as employe_nom,
           e.prenom as employe_prenom,
-          CONCAT('TECH_', UPPER(SUBSTRING(e.nom, 1, 3)), UPPER(SUBSTRING(e.prenom, 1, 2))) as matricule,
+          e.matricule as matricule,
           COUNT(am.id) as nombre_affectations_materiel,
           SUM(am.quantite_assignee) as quantite_totale_materiel,
           SUM(COALESCE(m.prix_unitaire, 0) * am.quantite_assignee) as valeur_totale_materiel,
@@ -265,15 +282,16 @@ export async function GET(request: NextRequest) {
         INNER JOIN affectations_materiel am ON e.id = am.employe_id
         INNER JOIN materiel m ON am.materiel_id = m.id
         WHERE am.statut = 'active'
-          ${selectedEmployee ? `AND e.nom = '${selectedEmployee.nom}' AND e.prenom = '${selectedEmployee.prenom}'` : ''}
+          ${selectedEmployee ? `AND e.matricule = '${selectedEmployee.matricule}'` : ''}
           AND am.date_affectation::date >= $1::date 
           AND am.date_affectation::date <= $2::date
-        GROUP BY e.nom, e.prenom
+        GROUP BY e.nom, e.prenom, e.matricule
       )
       SELECT 
         COALESCE(id.employe_nom, cd.employe_nom, md.employe_nom) as employe_nom,
         COALESCE(id.employe_prenom, cd.employe_prenom, md.employe_prenom) as employe_prenom,
         COALESCE(id.matricule, cd.matricule, md.matricule) as matricule,
+        COALESCE(id.employe_id, -1) as employe_id,
         COALESCE(id.nombre_interventions, 0) as nombre_interventions,
         COALESCE(id.total_recette_technicien, 0) as total_recette_technicien,
         COALESCE(id.total_recette_entreprise, 0) as total_recette_entreprise,
@@ -287,11 +305,10 @@ export async function GET(request: NextRequest) {
         COALESCE(el.ert_label, '') as ert_label,
         COALESCE(el.axecom_label, '') as axecom_label
       FROM interventions_data id
-      FULL OUTER JOIN carburant_data cd ON id.employe_nom = cd.employe_nom AND id.employe_prenom = cd.employe_prenom
-      FULL OUTER JOIN materiel_data md ON COALESCE(id.employe_nom, cd.employe_nom) = md.employe_nom AND COALESCE(id.employe_prenom, cd.employe_prenom) = md.employe_prenom
-      LEFT JOIN employee_labels el ON COALESCE(id.employe_nom, cd.employe_nom, md.employe_nom) = el.nom_technicien 
-                                   AND COALESCE(id.employe_prenom, cd.employe_prenom, md.employe_prenom) = el.prenom_technicien
-      ${selectedEmployee ? `WHERE (id.employe_nom = '${selectedEmployee.nom}' AND id.employe_prenom = '${selectedEmployee.prenom}') OR (cd.employe_nom = '${selectedEmployee.nom}' AND cd.employe_prenom = '${selectedEmployee.prenom}') OR (md.employe_nom = '${selectedEmployee.nom}' AND md.employe_prenom = '${selectedEmployee.prenom}')` : ''}
+      FULL OUTER JOIN carburant_data cd ON id.matricule = cd.matricule
+      FULL OUTER JOIN materiel_data md ON COALESCE(id.matricule, cd.matricule) = md.matricule
+      LEFT JOIN employee_labels el ON COALESCE(id.matricule, cd.matricule, md.matricule) = el.matricule
+      ${selectedEmployee ? `WHERE id.matricule = '${selectedEmployee.matricule}' OR cd.matricule = '${selectedEmployee.matricule}' OR md.matricule = '${selectedEmployee.matricule}'` : ''}
       ORDER BY COALESCE(id.total_recette_technicien, 0) DESC
     `
 
@@ -306,7 +323,7 @@ export async function GET(request: NextRequest) {
         (row.employe_nom?.toUpperCase() === 'ZOBAIR' && row.employe_prenom?.toUpperCase() === 'MOULAHI')
       
       return {
-        employe_id: -1, // Pas d'ID employé dans cette version simplifiée
+        employe_id: Number(row.employe_id) || -1,
         employe_nom: row.employe_nom,
         employe_prenom: row.employe_prenom,
         employe_matricule: row.matricule,

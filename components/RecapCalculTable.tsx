@@ -203,52 +203,53 @@ export function RecapCalculTable() {
     })
   }, [rawRecapData, selectedGrille])
 
-  // Fonction pour récupérer le total des entretiens véhicules
+  // Fonction pour récupérer le total des entretiens véhicules avec filtrage par grille
   const fetchTotalEntretiens = useCallback(async () => {
     try {
       if (!startDate || !endDate) return
       
-      const response = await fetch('/api/entretiens-vehicules')
+      // Utiliser la nouvelle API qui gère le filtrage par grille
+      const response = await fetch(`/api/entretiens-vehicules/recap?startDate=${startDate}&endDate=${endDate}&grille=${selectedGrille}`)
       if (response.ok) {
         const data = await response.json()
-        const entretiens = data.entretiens || []
         
-        console.log('=== DEBUG ENTRETIENS ===')
-        console.log('Entretiens reçus:', entretiens)
-        console.log('Dates filtre:', startDate, '-', endDate)
+        console.log('=== DEBUG ENTRETIENS AVEC GRILLE ===')
+        console.log('Grille sélectionnée:', selectedGrille)
+        console.log('Entretiens reçus:', data.entretiens?.length || 0)
+        console.log('Total base:', data.total)
+        console.log('Total filtré:', data.totalFiltre)
         
-        // Filtrer par date (comparer uniquement les dates sans heure)
-        const startDateStr = startDate.split('T')[0]
-        const endDateStr = endDate.split('T')[0]
-        
-        // Filtrer par date
-        const entretiensFiltres = entretiens.filter((entretien: any) => {
-          if (!entretien.date_entretien) {
-            console.log('Entretien sans date:', entretien)
-            return false
-          }
-          const dateEntretienStr = entretien.date_entretien.split('T')[0]
-          const dansLaPeriode = dateEntretienStr >= startDateStr && dateEntretienStr <= endDateStr
-          console.log(`Entretien: date=${dateEntretienStr}, cout=${entretien.cout_entretien || entretien.cout}, dansLaPeriode=${dansLaPeriode}`)
-          return dansLaPeriode
-        })
-        
-        console.log('Entretiens filtrés:', entretiensFiltres)
-        
-        // Calculer le total (cout_entretien ou cout)
-        const total = entretiensFiltres.reduce((sum: number, entretien: any) => {
-          const cout = parseFloat(entretien.cout_entretien) || parseFloat(entretien.cout) || 0
-          return sum + cout
-        }, 0)
-        
-        console.log('Total entretiens:', total)
-        setTotalEntretiens(total)
+        // Utiliser le total filtré qui prend en compte l'appartenance grille
+        setTotalEntretiens(data.totalFiltre || 0)
+      } else {
+        // Fallback vers l'ancienne API si la nouvelle échoue
+        const fallbackResponse = await fetch('/api/entretiens-vehicules')
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json()
+          const entretiens = data.entretiens || []
+          
+          const startDateStr = startDate.split('T')[0]
+          const endDateStr = endDate.split('T')[0]
+          
+          const entretiensFiltres = entretiens.filter((entretien: any) => {
+            if (!entretien.date_entretien) return false
+            const dateEntretienStr = entretien.date_entretien.split('T')[0]
+            return dateEntretienStr >= startDateStr && dateEntretienStr <= endDateStr
+          })
+          
+          const total = entretiensFiltres.reduce((sum: number, entretien: any) => {
+            const cout = parseFloat(entretien.cout_entretien) || parseFloat(entretien.cout) || 0
+            return sum + cout
+          }, 0)
+          
+          setTotalEntretiens(total)
+        }
       }
     } catch (error) {
       console.error('Erreur chargement total entretiens:', error)
       setTotalEntretiens(0)
     }
-  }, [startDate, endDate])
+  }, [startDate, endDate, selectedGrille])
 
   const loadEmployees = async () => {
     try {
