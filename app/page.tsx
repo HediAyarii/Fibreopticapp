@@ -272,9 +272,12 @@ export default function EmployeeTracker() {
   const [navOrder, setNavOrder] = useState<string[]>(defaultNavOrder)
   const [navOrderLoaded, setNavOrderLoaded] = useState(false)
   
-  // État pour le drag & drop
+  // État pour le drag & drop (navigation)
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [dragOverItem, setDragOverItem] = useState<string | null>(null)
+
+  // État pour le drag & drop de fichiers (import)
+  const [fileDragOver, setFileDragOver] = useState<string | null>(null) // 'interventions' | 'carburant' | null
 
   // Charger les préférences de l'utilisateur depuis la BDD
   useEffect(() => {
@@ -353,6 +356,97 @@ export default function EmployeeTracker() {
     saveNavOrder(defaultNavOrder)
   }
 
+  // Handlers pour le drag & drop de fichiers (import automatique)
+  const handleFileDragOver = (e: React.DragEvent, section: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileDragOver(section)
+  }
+
+  const handleFileDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileDragOver(null)
+  }
+
+  const handleFileDropInterventions = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileDragOver(null)
+    
+    const files = e.dataTransfer.files
+    if (files.length > 0) {
+      const file = files[0]
+      if (file.name.endsWith('.csv')) {
+        try {
+          const formData = new FormData()
+          formData.append('file', file)
+          
+          console.log("[v0] Import interventions via drag & drop:", file.name)
+          
+          const response = await fetch('/api/import-interventions', {
+            method: 'POST',
+            body: formData,
+          })
+          
+          if (response.ok) {
+            const result = await response.json()
+            await loadDataFromDatabase()
+            alert(`Import terminé: ${result.message}`)
+          } else {
+            const error = await response.text()
+            console.error("[v0] Erreur import interventions:", error)
+            alert(`Erreur lors de l'import: ${error}`)
+          }
+        } catch (error) {
+          console.error("[v0] Erreur import interventions:", error)
+          alert("Erreur lors de l'import des interventions")
+        }
+      } else {
+        alert("Veuillez déposer un fichier CSV")
+      }
+    }
+  }
+
+  const handleFileDropCarburant = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileDragOver(null)
+    
+    const files = e.dataTransfer.files
+    if (files.length > 0) {
+      const file = files[0]
+      if (file.name.endsWith('.csv') || file.name.endsWith('.xlsx')) {
+        try {
+          const formData = new FormData()
+          formData.append('file', file)
+          
+          console.log("[v0] Import carburant via drag & drop:", file.name)
+          
+          const response = await fetch('/api/import-carburant', {
+            method: 'POST',
+            body: formData,
+          })
+          
+          if (response.ok) {
+            const result = await response.json()
+            await loadDataFromDatabase()
+            alert(`Import terminé: ${result.message}`)
+          } else {
+            const error = await response.text()
+            console.error("[v0] Erreur import carburant:", error)
+            alert(`Erreur lors de l'import: ${error}`)
+          }
+        } catch (error) {
+          console.error("[v0] Erreur import carburant:", error)
+          alert("Erreur lors de l'import des données carburant")
+        }
+      } else {
+        alert("Veuillez déposer un fichier CSV ou XLSX")
+      }
+    }
+  }
+
   // Data states - loaded from PostgreSQL
   const [interventions, setInterventions] = useState<any[]>([])
   const [totalInterventions, setTotalInterventions] = useState<number>(0) // Total réel d'interventions
@@ -381,6 +475,7 @@ export default function EmployeeTracker() {
   const [showAssignationVehiculeModal, setShowAssignationVehiculeModal] = useState(false)
   const [showEntretienVehiculeModal, setShowEntretienVehiculeModal] = useState(false)
   const [showAmendeVehiculeModal, setShowAmendeVehiculeModal] = useState(false)
+  const [showVehiculePdfViewer, setShowVehiculePdfViewer] = useState<string | null>(null)
   const [editingVehicule, setEditingVehicule] = useState<any>(null)
   const [editingAssignationVehicule, setEditingAssignationVehicule] = useState<any>(null)
   const [editingEntretienVehicule, setEditingEntretienVehicule] = useState<any>(null)
@@ -4532,14 +4627,32 @@ La page va se recharger automatiquement...`)
 
           {/* Interventions Tab */}
           {activeTab === "interventions" && (
-             <div className="space-y-8">
+             <div 
+               className="space-y-8"
+               onDragOver={(e) => handleFileDragOver(e, 'interventions')}
+               onDragLeave={handleFileDragLeave}
+               onDrop={handleFileDropInterventions}
+             >
+                {/* Zone de drop visuelle */}
+                {fileDragOver === 'interventions' && (
+                  <div className="fixed inset-0 z-50 bg-primary/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+                    <div className="bg-white/90 rounded-2xl p-12 shadow-2xl border-4 border-dashed border-primary">
+                      <div className="text-center">
+                        <Upload className="w-16 h-16 mx-auto mb-4 text-primary animate-bounce" />
+                        <h3 className="text-2xl font-bold text-gray-800">Déposez votre fichier CSV</h3>
+                        <p className="text-gray-600 mt-2">Import automatique des interventions</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex items-center justify-between">
                   <div>
                     <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
                       Gestion des Interventions
                     </h1>
                     <p className="text-lg text-muted-foreground mt-2">
-                      Importez et gérez vos interventions techniques
+                      Importez et gérez vos interventions techniques • <span className="text-primary font-medium">Glissez-déposez un fichier CSV pour importer</span>
                     </p>
                       </div>
                   <div className="flex gap-2">
@@ -5053,14 +5166,32 @@ La page va se recharger automatiquement...`)
 
            {/* Fuel Tab */}
           {activeTab === "fuel" && (
-             <div className="space-y-8">
+             <div 
+               className="space-y-8"
+               onDragOver={(e) => handleFileDragOver(e, 'carburant')}
+               onDragLeave={handleFileDragLeave}
+               onDrop={handleFileDropCarburant}
+             >
+                {/* Zone de drop visuelle */}
+                {fileDragOver === 'carburant' && (
+                  <div className="fixed inset-0 z-50 bg-chart-3/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+                    <div className="bg-white/90 rounded-2xl p-12 shadow-2xl border-4 border-dashed border-chart-3">
+                      <div className="text-center">
+                        <Upload className="w-16 h-16 mx-auto mb-4 text-chart-3 animate-bounce" />
+                        <h3 className="text-2xl font-bold text-gray-800">Déposez votre fichier CSV/XLSX</h3>
+                        <p className="text-gray-600 mt-2">Import automatique des données carburant</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex items-center justify-between">
                   <div>
                     <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent">
                       Consommation Carburant
                     </h1>
                     <p className="text-lg text-muted-foreground mt-2">
-                      Gérez les transactions de carburant de vos véhicules
+                      Gérez les transactions de carburant de vos véhicules • <span className="text-chart-3 font-medium">Glissez-déposez un fichier pour importer</span>
                     </p>
                   </div>
                   <div className="flex gap-3">
@@ -7245,6 +7376,7 @@ La page va se recharger automatiquement...`)
                                <th className="text-left p-4 font-semibold">Année</th>
                                <th className="text-left p-4 font-semibold">Kilométrage</th>
                                <th className="text-left p-4 font-semibold">Type</th>
+                               <th className="text-left p-4 font-semibold">Documents</th>
                                <th className="text-left p-4 font-semibold">Statut</th>
                                <th className="text-left p-4 font-semibold">Technicien Assigné</th>
                                <th className="text-left p-4 font-semibold">Actions</th>
@@ -7266,6 +7398,37 @@ La page va se recharger automatiquement...`)
                                  <td className="p-4">{vehicule.kilometrage?.toLocaleString()} km</td>
                                  <td className="p-4">
                                    <Badge variant="outline">{vehicule.type_vehicule}</Badge>
+                                 </td>
+                                 <td className="p-4">
+                                   <div className="flex gap-1">
+                                     {vehicule.assurance_pdf_url && (
+                                       <Button
+                                         variant="outline"
+                                         size="sm"
+                                         onClick={() => setShowVehiculePdfViewer(vehicule.assurance_pdf_url)}
+                                         className="text-blue-400 hover:text-blue-300"
+                                         title="Voir Assurance"
+                                       >
+                                         <FileText className="w-4 h-4 mr-1" />
+                                         <span className="text-xs">Assur.</span>
+                                       </Button>
+                                     )}
+                                     {vehicule.carte_grise_pdf_url && (
+                                       <Button
+                                         variant="outline"
+                                         size="sm"
+                                         onClick={() => setShowVehiculePdfViewer(vehicule.carte_grise_pdf_url)}
+                                         className="text-green-400 hover:text-green-300"
+                                         title="Voir Carte Grise"
+                                       >
+                                         <FileText className="w-4 h-4 mr-1" />
+                                         <span className="text-xs">C.Grise</span>
+                                       </Button>
+                                     )}
+                                     {!vehicule.assurance_pdf_url && !vehicule.carte_grise_pdf_url && (
+                                       <span className="text-muted-foreground text-xs">Aucun</span>
+                                     )}
+                                   </div>
                                  </td>
                                  <td className="p-4">
                                    <Badge className={
@@ -8666,8 +8829,47 @@ La page va se recharger automatiquement...`)
             setShowVehiculeModal(false)
             setEditingVehicule(null)
           }}
+          onRefresh={async () => {
+            const vehiculesData = await loadVehiculesFromDatabase()
+            setVehicules(vehiculesData)
+          }}
         />
       </Dialog>
+
+      {/* PDF Viewer Modal pour documents véhicules */}
+      {showVehiculePdfViewer && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-5xl h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-gray-900">Document du Véhicule</h3>
+              <div className="flex gap-2">
+                <a 
+                  href={showVehiculePdfViewer} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Ouvrir dans un nouvel onglet
+                </a>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowVehiculePdfViewer(null)}
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 p-2 bg-gray-100">
+              <iframe
+                src={showVehiculePdfViewer}
+                className="w-full h-full rounded border bg-white"
+                title="Document PDF"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Assignation Vehicule Modal */}
       <Dialog open={showAssignationVehiculeModal} onOpenChange={setShowAssignationVehiculeModal}>

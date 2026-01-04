@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Camera, Upload, CheckCircle, Clock, AlertTriangle, Car } from "lucide-react"
+import { Camera, Upload, CheckCircle, Clock, AlertTriangle, Car, FileText, Eye, X } from "lucide-react"
 import Image from "next/image"
 
 interface Vehicule {
@@ -18,6 +18,10 @@ interface Vehicule {
   annee: number
   km_actuel: number
   prochaine_echeance_km: string
+  assurance_pdf_url?: string
+  assurance_pdf_filename?: string
+  carte_grise_pdf_url?: string
+  carte_grise_pdf_filename?: string
 }
 
 interface Assignation {
@@ -43,6 +47,7 @@ export function MonVehicule({ vehicule, assignation, technicienId, onSubmitKm }:
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showPdfViewer, setShowPdfViewer] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Calculer les jours restants jusqu'à l'échéance
@@ -381,6 +386,52 @@ export function MonVehicule({ vehicule, assignation, technicienId, onSubmitKm }:
             </div>
           )}
 
+          {/* Documents du véhicule */}
+          {(vehicule.assurance_pdf_url || vehicule.carte_grise_pdf_url) && (
+            <>
+              <div className="h-px bg-white/10"></div>
+              <div>
+                <Label className="text-muted-foreground text-sm mb-3 block">Documents du Véhicule</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {vehicule.assurance_pdf_url && (
+                    <button
+                      onClick={() => setShowPdfViewer(vehicule.assurance_pdf_url!)}
+                      className="flex items-center gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg hover:bg-blue-500/20 transition-colors text-left"
+                    >
+                      <div className="p-2 bg-blue-500/20 rounded-lg">
+                        <FileText className="w-5 h-5 text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-blue-400">Assurance</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {vehicule.assurance_pdf_filename || 'Document PDF'}
+                        </div>
+                      </div>
+                      <Eye className="w-4 h-4 text-blue-400" />
+                    </button>
+                  )}
+                  {vehicule.carte_grise_pdf_url && (
+                    <button
+                      onClick={() => setShowPdfViewer(vehicule.carte_grise_pdf_url!)}
+                      className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg hover:bg-green-500/20 transition-colors text-left"
+                    >
+                      <div className="p-2 bg-green-500/20 rounded-lg">
+                        <FileText className="w-5 h-5 text-green-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-green-400">Carte Grise</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {vehicule.carte_grise_pdf_filename || 'Document PDF'}
+                        </div>
+                      </div>
+                      <Eye className="w-4 h-4 text-green-400" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
           <div className="h-px bg-white/10"></div>
 
           {/* Bouton d'action */}
@@ -484,6 +535,42 @@ export function MonVehicule({ vehicule, assignation, technicienId, onSubmitKm }:
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de visualisation PDF */}
+      {showPdfViewer && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-background rounded-lg w-full max-w-4xl h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold">Document du Véhicule</h3>
+              <div className="flex gap-2">
+                <a 
+                  href={showPdfViewer} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-primary/20 hover:bg-primary/30 rounded-md transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  Ouvrir
+                </a>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowPdfViewer(null)}
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 p-2">
+              <iframe
+                src={showPdfViewer}
+                className="w-full h-full rounded border"
+                title="PDF Viewer"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

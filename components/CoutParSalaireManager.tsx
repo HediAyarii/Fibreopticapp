@@ -104,6 +104,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [editValue, setEditValue] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
+  const [fileDragOver, setFileDragOver] = useState(false)
   const [importResults, setImportResults] = useState<{
     matched: number,
     unmatched: number,
@@ -845,6 +846,35 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     }
   }
 
+  // Handlers pour le drag & drop de fichiers
+  const handleFileDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileDragOver(true)
+  }
+
+  const handleFileDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileDragOver(false)
+  }
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileDragOver(false)
+    
+    const files = e.dataTransfer.files
+    if (files.length > 0) {
+      const file = files[0]
+      if (file.name.endsWith('.csv')) {
+        setImportFile(file)
+      } else {
+        alert("Veuillez déposer un fichier CSV")
+      }
+    }
+  }
+
   // Fonction de normalisation des noms pour la correspondance intelligente
   const normalizeName = (name: string): string => {
     return name
@@ -1214,11 +1244,30 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   }, 0)
 
   return (
-    <div className="space-y-6">
+    <div 
+      className="space-y-6"
+      onDragOver={handleFileDragOver}
+      onDragLeave={handleFileDragLeave}
+      onDrop={handleFileDrop}
+    >
+      {/* Zone de drop visuelle */}
+      {fileDragOver && (
+        <div className="fixed inset-0 z-50 bg-green-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="bg-white/90 rounded-2xl p-12 shadow-2xl border-4 border-dashed border-green-500">
+            <div className="text-center">
+              <Upload className="w-16 h-16 mx-auto mb-4 text-green-500 animate-bounce" />
+              <h3 className="text-2xl font-bold text-gray-800">Déposez votre fichier CSV</h3>
+              <p className="text-gray-600 mt-2">Import automatique des coûts par salarié</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* En-tête avec filtres et actions */}
       <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
         <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
           <h3 className="text-2xl font-bold">Coûts par Salarié</h3>
+          <span className="text-sm text-muted-foreground">• Glissez-déposez un fichier CSV pour importer</span>
           
           {/* Filtres mois/année */}
           <div className="flex gap-2 items-center">

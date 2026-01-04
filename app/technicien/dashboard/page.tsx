@@ -625,7 +625,11 @@ export default function TechnicienDashboard() {
           modele: data.assignation.modele,
           annee: data.assignation.annee || new Date().getFullYear(),
           km_actuel: data.assignation.kilometrage_actuel_vehicule || 0,
-          prochaine_echeance_km: data.assignation.prochaine_echeance_km || null
+          prochaine_echeance_km: data.assignation.prochaine_echeance_km || null,
+          assurance_pdf_url: data.assignation.assurance_pdf_url || null,
+          assurance_pdf_filename: data.assignation.assurance_pdf_filename || null,
+          carte_grise_pdf_url: data.assignation.carte_grise_pdf_url || null,
+          carte_grise_pdf_filename: data.assignation.carte_grise_pdf_filename || null
         })
         
         setAssignationVehicule({

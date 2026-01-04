@@ -66,6 +66,7 @@ export function AmendeVehiculeForm({
   const [existingPdfUrl, setExistingPdfUrl] = useState("")
   const [existingPdfFilename, setExistingPdfFilename] = useState("")
   const [loading, setLoading] = useState(false)
+  const [pdfDragOver, setPdfDragOver] = useState(false)
 
   // Synchronisation véhicule → employé
   const handleVehiculeChange = (newVehiculeId: string) => {
@@ -147,15 +148,42 @@ export function AmendeVehiculeForm({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert('Veuillez sélectionner un fichier PDF')
-        return
-      }
-      if (file.size > 10 * 1024 * 1024) { // 10MB max
-        alert('Le fichier ne doit pas dépasser 10 Mo')
-        return
-      }
-      setPdfFile(file)
+      validateAndSetPdf(file)
+    }
+  }
+
+  const validateAndSetPdf = (file: File) => {
+    if (file.type !== 'application/pdf') {
+      alert('Veuillez sélectionner un fichier PDF')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) { // 10MB max
+      alert('Le fichier ne doit pas dépasser 10 Mo')
+      return
+    }
+    setPdfFile(file)
+  }
+
+  const handlePdfDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setPdfDragOver(true)
+  }
+
+  const handlePdfDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setPdfDragOver(false)
+  }
+
+  const handlePdfDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setPdfDragOver(false)
+    
+    const files = e.dataTransfer.files
+    if (files.length > 0) {
+      validateAndSetPdf(files[0])
     }
   }
 
@@ -344,7 +372,16 @@ export function AmendeVehiculeForm({
           {/* Upload PDF */}
           <div className="space-y-2">
             <Label>Document PDF de l'amende</Label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+            <div 
+              className={`border-2 border-dashed rounded-lg p-4 transition-all ${
+                pdfDragOver 
+                  ? 'border-red-500 bg-red-50' 
+                  : 'border-gray-300 hover:border-gray-400'
+              }`}
+              onDragOver={handlePdfDragOver}
+              onDragLeave={handlePdfDragLeave}
+              onDrop={handlePdfDrop}
+            >
               {existingPdfUrl && !pdfFile && (
                 <div className="flex items-center justify-between mb-3 p-2 bg-blue-50 rounded">
                   <div className="flex items-center gap-2">
@@ -391,9 +428,9 @@ export function AmendeVehiculeForm({
               )}
 
               <label className="flex flex-col items-center cursor-pointer">
-                <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                <span className="text-sm text-gray-500">
-                  Cliquez pour uploader un PDF
+                <Upload className={`w-8 h-8 mb-2 transition-colors ${pdfDragOver ? 'text-red-500' : 'text-gray-400'}`} />
+                <span className={`text-sm ${pdfDragOver ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                  {pdfDragOver ? 'Déposez le fichier ici' : 'Glissez-déposez ou cliquez pour uploader un PDF'}
                 </span>
                 <span className="text-xs text-gray-400 mt-1">
                   Max 10 Mo

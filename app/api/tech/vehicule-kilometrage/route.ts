@@ -18,7 +18,9 @@ export async function GET(request: NextRequest) {
 
     const result = await query(
       `SELECT av.*, 
-             v.matricule, v.marque, v.modele, v.kilometrage as kilometrage_actuel_vehicule
+             v.matricule, v.marque, v.modele, v.annee, v.kilometrage as kilometrage_actuel_vehicule,
+             v.assurance_pdf_url, v.assurance_pdf_filename,
+             v.carte_grise_pdf_url, v.carte_grise_pdf_filename
       FROM assignations_vehicules av
       JOIN vehicules v ON av.vehicule_id = v.id
       WHERE av.employe_id = $1 AND av.statut = 'active'
