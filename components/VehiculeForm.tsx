@@ -612,23 +612,33 @@ export function VehiculeForm({
 
         {/* Modal visualisation PDF */}
         {showPdfViewer && (
-          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg w-full max-w-4xl h-[90vh] flex flex-col">
-              <div className="flex items-center justify-between p-4 border-b">
+          <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-2">
+            <div className="bg-white rounded-lg w-[98vw] h-[96vh] flex flex-col">
+              <div className="flex items-center justify-between p-3 border-b">
                 <h3 className="font-semibold">Visualisation du document</h3>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowPdfViewer(null)}
-                >
-                  <X className="w-5 h-5" />
-                </Button>
+                <div className="flex gap-2">
+                  <a 
+                    href={showPdfViewer} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    Ouvrir dans un nouvel onglet
+                  </a>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowPdfViewer(null)}
+                  >
+                    <X className="w-5 h-5" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex-1 p-2">
+              <div className="flex-1 p-1 bg-gray-100">
                 <iframe
                   src={showPdfViewer}
-                  className="w-full h-full rounded border"
+                  className="w-full h-full rounded border bg-white"
                   title="PDF Viewer"
                 />
               </div>

@@ -1,7 +1,8 @@
+require('dotenv').config()
 const { Pool } = require('pg')
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://fibre_user:fibre_password@localhost:5432/fibre_db'
+  connectionString: process.env.DATABASE_URL || 'postgresql://finalfibre_user:finalfibre_password_2024@localhost:5432/finalfibre_db'
 })
 
 async function migrate() {
