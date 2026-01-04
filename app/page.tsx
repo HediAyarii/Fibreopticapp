@@ -8838,34 +8838,32 @@ La page va se recharger automatiquement...`)
 
       {/* PDF Viewer Modal pour documents véhicules */}
       {showVehiculePdfViewer && (
-        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center pt-16 pb-4 px-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
-          <div className="bg-white rounded-lg flex flex-col" style={{ width: '94vw', height: '88vh' }}>
-            <div className="flex items-center justify-between p-3 border-b bg-gray-50 rounded-t-lg">
-              <h3 className="font-semibold text-gray-900">Document du Véhicule</h3>
-              <div className="flex gap-2">
-                <a 
-                  href={showVehiculePdfViewer} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  Ouvrir dans un nouvel onglet
-                </a>
-                <button
-                  onClick={() => setShowVehiculePdfViewer(null)}
-                  className="px-3 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 font-medium"
-                >
-                  ✕ Fermer
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 p-1 bg-gray-100 overflow-hidden rounded-b-lg">
-              <iframe
-                src={showVehiculePdfViewer}
-                className="w-full h-full rounded border bg-white"
-                title="Document PDF"
-              />
-            </div>
+        <div className="fixed inset-0 z-[9999] bg-black/90" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          {/* Bouton fermer flottant en haut à droite */}
+          <div className="absolute top-20 right-8 z-[10000] flex gap-2">
+            <a 
+              href={showVehiculePdfViewer} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-lg font-medium"
+            >
+              📄 Nouvel onglet
+            </a>
+            <button
+              onClick={() => setShowVehiculePdfViewer(null)}
+              className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 shadow-lg font-medium"
+            >
+              ✕ Fermer
+            </button>
+          </div>
+          
+          {/* Conteneur PDF */}
+          <div className="w-full h-full pt-16 pb-4 px-4">
+            <iframe
+              src={showVehiculePdfViewer}
+              className="w-full h-full rounded-lg border-2 border-white/20 bg-white"
+              title="Document PDF"
+            />
           </div>
         </div>
       )}
