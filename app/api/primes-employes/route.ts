@@ -3,62 +3,95 @@ import { query } from "@/lib/database"
 
 export const dynamic = 'force-dynamic'
 
-// GET - Récupérer les primes pour un cout_par_salaire_id
+// GET - Récupérer les primes pour un cout_par_salaire_id ou par matricule/mois/année
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const coutParSalaireId = searchParams.get('cout_par_salaire_id')
     const matricule = searchParams.get('matricule')
+    const mois = searchParams.get('mois')
+    const annee = searchParams.get('annee')
     
-    let whereClause = ''
+    let sqlQuery = ''
     const params: any[] = []
     
     if (coutParSalaireId) {
-      whereClause = 'WHERE cout_par_salaire_id = $1'
+      // Requête par cout_par_salaire_id
+      sqlQuery = `
+        SELECT 
+          pe.id,
+          pe.cout_par_salaire_id,
+          pe.matricule,
+          pe.montant,
+          pe.note,
+          pe.deduit_rap,
+          pe.date_prime,
+          pe.created_at,
+          pe.updated_at
+        FROM primes_employes pe
+        WHERE pe.cout_par_salaire_id = $1
+        ORDER BY pe.date_prime DESC, pe.created_at DESC
+      `
       params.push(parseInt(coutParSalaireId))
+    } else if (matricule && mois && annee) {
+      // Requête par matricule + mois + année (pour le dashboard technicien)
+      sqlQuery = `
+        SELECT 
+          pe.id,
+          pe.cout_par_salaire_id,
+          pe.matricule,
+          pe.montant,
+          pe.note,
+          pe.deduit_rap,
+          pe.date_prime,
+          pe.created_at,
+          pe.updated_at
+        FROM primes_employes pe
+        JOIN cout_par_salaire cps ON pe.cout_par_salaire_id = cps.id
+        WHERE cps.matricule = $1 AND cps.mois = $2 AND cps.annee = $3
+        ORDER BY pe.date_prime DESC, pe.created_at DESC
+      `
+      params.push(matricule, parseInt(mois), parseInt(annee))
     } else if (matricule) {
-      whereClause = 'WHERE matricule = $1'
+      // Requête par matricule uniquement
+      sqlQuery = `
+        SELECT 
+          pe.id,
+          pe.cout_par_salaire_id,
+          pe.matricule,
+          pe.montant,
+          pe.note,
+          pe.deduit_rap,
+          pe.date_prime,
+          pe.created_at,
+          pe.updated_at
+        FROM primes_employes pe
+        JOIN cout_par_salaire cps ON pe.cout_par_salaire_id = cps.id
+        WHERE cps.matricule = $1
+        ORDER BY pe.date_prime DESC, pe.created_at DESC
+      `
       params.push(matricule)
+    } else {
+      return NextResponse.json({
+        success: true,
+        primes: [],
+        totaux: { total: 0 }
+      })
     }
     
-    const result = await query(`
-      SELECT 
-        id,
-        cout_par_salaire_id,
-        matricule,
-        montant,
-        note,
-        deduit_rap,
-        date_prime,
-        created_at,
-        updated_at
-      FROM primes_employes
-      ${whereClause}
-      ORDER BY date_prime DESC, created_at DESC
-    `, params)
+    const result = await query(sqlQuery, params)
     
-    // Calculer les totaux
+    // Calculer le total des primes
     let totalPrimes = 0
-    let totalPrimesRap = 0
-    let totalPrimesNonRap = 0
-    
     result.rows.forEach((prime: any) => {
-      const montant = parseFloat(prime.montant) || 0
-      totalPrimes += montant
-      if (prime.deduit_rap) {
-        totalPrimesRap += montant
-      } else {
-        totalPrimesNonRap += montant
-      }
+      totalPrimes += parseFloat(prime.montant) || 0
     })
     
     return NextResponse.json({
       success: true,
       primes: result.rows,
       totaux: {
-        total: totalPrimes,
-        deduit_rap: totalPrimesRap,
-        non_deduit_rap: totalPrimesNonRap
+        total: totalPrimes
       }
     })
     

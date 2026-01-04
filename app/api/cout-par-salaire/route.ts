@@ -52,21 +52,18 @@ export async function GET(request: NextRequest) {
         END as impot,
         cps.penalite,
         cps.prime,
-        -- Total des primes qui se déduisent du RAP
-        COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id AND deduit_rap = true), 0) as prime_deduit_rap,
-        -- Total des primes qui ne se déduisent pas du RAP
-        COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id AND deduit_rap = false), 0) as prime_non_deduit_rap,
+        -- Total des primes (toutes les primes s'ajoutent au RAP)
+        COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id), 0) as total_primes,
         cps.total_genere,
         -- Calculer automatiquement le RAP avec la formule correcte
-        -- RAP = Total Généré - Salaire Net - Impôt - Primes déduites du RAP
-        -- Les primes déduites REDUISENT le RAP (l'employé a déjà reçu ces primes)
+        -- RAP = Total Généré - Salaire Net - Impôt + Primes (les primes s'ajoutent au RAP)
         (cps.total_genere - cps.salaire_net - 
          CASE 
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
            ELSE cps.charge * (COALESCE(e.pourcentage_taxe, 50) / 100)
-         END - COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id AND deduit_rap = true), 0)) as rap,
+         END + COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id), 0)) as rap,
         cps.created_at,
         cps.updated_at
       FROM cout_par_salaire cps
@@ -178,21 +175,19 @@ export async function GET(request: NextRequest) {
           }
           
           // Recalculer le RAP avec le nouveau total_genere
-          // RAP = Total Généré - Salaire Net - Impôt - Prime (déduit RAP) - Paiements - Amendes
-          // Les primes "déduit RAP" REDUISENT le reste à payer (l'employé a déjà reçu ces primes)
-          // Les primes "non déduit RAP" sont des bonus qui n'affectent pas le RAP
-          const primeDeduitRap = parseFloat(cout.prime_deduit_rap || 0)
-          const rapRecalcule = totalGenereCalcule - parseFloat(cout.salaire_net) - parseFloat(cout.impot) - primeDeduitRap
+          // RAP = Total Généré - Salaire Net - Impôt + Primes - Paiements - Amendes
+          // Les primes S'AJOUTENT au reste à payer (bonus pour l'employé)
+          const totalPrimes = parseFloat(cout.total_primes || 0)
+          const rapRecalcule = totalGenereCalcule - parseFloat(cout.salaire_net) - parseFloat(cout.impot) + totalPrimes
           const rapFinal = rapRecalcule - totalPaiements - totalAmendes
           
           return {
             ...cout,
             total_genere: totalGenereCalcule, // Valeur recalculée en temps réel
-            rap: rapFinal, // RAP recalculé avec amendes déduites
+            rap: rapFinal, // RAP recalculé avec primes ajoutées
             total_paiements: totalPaiements,
             total_amendes: totalAmendes,
-            prime_deduit_rap: primeDeduitRap,
-            prime_non_deduit_rap: parseFloat(cout.prime_non_deduit_rap || 0)
+            total_primes: totalPrimes
           }
         } catch (error) {
           console.error(`Erreur calcul paiements pour ${cout.nom} ${cout.prenom}:`, error)

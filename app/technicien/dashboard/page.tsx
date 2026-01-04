@@ -134,6 +134,13 @@ export default function TechnicienDashboard() {
   // État pour le total des pénalités en montant
   const [totalPenalites, setTotalPenalites] = useState(0)
   
+  // État pour les primes du mois
+  const [primesData, setPrimesData] = useState({
+    total_primes: 0,
+    primes: [] as any[]
+  })
+  const [showPrimesModal, setShowPrimesModal] = useState(false)
+  
   // États pour le véhicule
   const [vehiculeData, setVehiculeData] = useState<any>(null)
   const [assignationVehicule, setAssignationVehicule] = useState<any>(null)
@@ -452,6 +459,33 @@ export default function TechnicienDashboard() {
             total_amendes: totalAmendesMontant,
             nombre_amendes: amendesFiltrees.length
           })
+        }
+      }
+
+      // Charger les primes du technicien pour la période
+      if (user?.matricule && dateDebut) {
+        try {
+          // Extraire mois et année de dateDebut
+          const dateDebutObj = new Date(dateDebut)
+          const mois = dateDebutObj.getMonth() + 1
+          const annee = dateDebutObj.getFullYear()
+          
+          const primesResponse = await fetchWithAuth(
+            `/api/primes-employes?matricule=${user.matricule}&mois=${mois}&annee=${annee}`
+          )
+          
+          if (primesResponse.ok) {
+            const primesDataResponse = await primesResponse.json()
+            if (primesDataResponse.success) {
+              setPrimesData({
+                total_primes: primesDataResponse.totaux?.total || 0,
+                primes: primesDataResponse.primes || []
+              })
+            }
+          }
+        } catch (primesError) {
+          console.warn('⚠️ Erreur chargement primes:', primesError)
+          setPrimesData({ total_primes: 0, primes: [] })
         }
       }
 
@@ -1447,7 +1481,7 @@ export default function TechnicienDashboard() {
             </div>
 
             {/* Deuxième ligne de statistiques financières */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-orange-500">
                 <CardContent className="p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -1467,6 +1501,34 @@ export default function TechnicienDashboard() {
                 </CardContent>
               </Card>
 
+              {/* Carte des Primes */}
+              <Card 
+                className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-green-500 cursor-pointer"
+                onClick={() => primesData.primes.length > 0 && setShowPrimesModal(true)}
+              >
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-md">
+                      <Plus className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-green-600">
+                        +{primesData.total_primes.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {primesData.primes.length} prime(s)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-600">Primes</p>
+                    {primesData.primes.length > 0 && (
+                      <Eye className="w-4 h-4 text-gray-400" />
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-purple-500 lg:col-span-2">
                 <CardContent className="p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -1475,18 +1537,18 @@ export default function TechnicienDashboard() {
                     </div>
                     <div className="text-right">
                       <p className={`text-2xl font-bold ${
-                        (recetteGeneree.total_recette_technicien - totalPenalites - amendesData.total_amendes) >= 0 
+                        (recetteGeneree.total_recette_technicien + primesData.total_primes - totalPenalites - amendesData.total_amendes) >= 0 
                           ? 'text-green-600' 
                           : 'text-red-600'
                       }`}>
-                        {(recetteGeneree.total_recette_technicien - totalPenalites - amendesData.total_amendes).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                        {(recetteGeneree.total_recette_technicien + primesData.total_primes - totalPenalites - amendesData.total_amendes).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        = {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR')}€ - {totalPenalites.toLocaleString('fr-FR')}€ - {amendesData.total_amendes.toLocaleString('fr-FR')}€
+                        = {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR')}€ + {primesData.total_primes.toLocaleString('fr-FR')}€ - {totalPenalites.toLocaleString('fr-FR')}€ - {amendesData.total_amendes.toLocaleString('fr-FR')}€
                       </p>
                     </div>
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Total Net (Total Généré - Pénalités - Amendes)</p>
+                  <p className="text-sm font-medium text-gray-600">Total Net (Total Généré + Primes - Pénalités - Amendes)</p>
                 </CardContent>
               </Card>
             </div>
@@ -1990,6 +2052,80 @@ export default function TechnicienDashboard() {
           onSignal={handleSignalProblem}
           isSignaling={isSignaling}
         />
+      )}
+
+      {/* Modal des détails des primes */}
+      {showPrimesModal && (
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b bg-gradient-to-r from-green-500 to-green-600">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  🎁 Détails des Primes
+                </h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowPrimesModal(false)}
+                  className="text-white hover:bg-white/20"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+              <p className="text-green-100 text-sm mt-1">
+                Total: {primesData.total_primes.toLocaleString('fr-FR')}€
+              </p>
+            </div>
+            
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {primesData.primes.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Plus className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                  <p>Aucune prime pour cette période</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {primesData.primes.map((prime: any) => (
+                    <div 
+                      key={prime.id} 
+                      className="p-4 rounded-lg border bg-green-50 border-green-200"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xl text-green-700">
+                              +{parseFloat(prime.montant).toLocaleString('fr-FR')}€
+                            </span>
+                          </div>
+                          {prime.note && (
+                            <div className="mt-2 p-2 bg-white rounded border border-green-100">
+                              <p className="text-sm text-gray-700">
+                                <span className="font-medium text-gray-500">📝 Note:</span> {prime.note}
+                              </p>
+                            </div>
+                          )}
+                          <p className="text-xs text-gray-400 mt-2">
+                            Ajoutée le {new Date(prime.date_prime || prime.created_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t bg-gray-50">
+              <Button 
+                className="w-full" 
+                variant="outline"
+                onClick={() => setShowPrimesModal(false)}
+              >
+                Fermer
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal de changement de mot de passe */}

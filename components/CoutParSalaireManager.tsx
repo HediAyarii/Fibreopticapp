@@ -40,6 +40,7 @@ interface CoutParSalaire {
   impot?: number
   penalite?: number
   prime?: number
+  total_primes?: number
   total_genere?: number
   rap?: number
   total_paiements?: number
@@ -145,7 +146,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [primeAmount, setPrimeAmount] = useState('')
   const [isEditingPrime, setIsEditingPrime] = useState(false)
   const [primeNote, setPrimeNote] = useState('')
-  const [primeDeduitRap, setPrimeDeduitRap] = useState(true)
   const [primesList, setPrimesList] = useState<any[]>([])
   const [loadingPrimes, setLoadingPrimes] = useState(false)
 
@@ -519,7 +519,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     setSelectedCoutForPrime(cout)
     setPrimeAmount('')
     setPrimeNote('')
-    setPrimeDeduitRap(true)
     setIsEditingPrime(false)
     setShowPrimeModal(true)
     // Charger les primes existantes
@@ -532,7 +531,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     setSelectedCoutForPrime(cout)
     setPrimeAmount('')
     setPrimeNote('')
-    setPrimeDeduitRap(true)
     setIsEditingPrime(false)
     setShowPrimeModal(true)
     // Charger les primes existantes
@@ -566,7 +564,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
           matricule: selectedCoutForPrime.matricule,
           montant: amount,
           note: primeNote || null,
-          deduit_rap: primeDeduitRap
+          deduit_rap: true // Toutes les primes s'ajoutent au RAP
         }),
       })
 
@@ -583,10 +581,9 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       // Réinitialiser le formulaire mais garder le modal ouvert
       setPrimeAmount('')
       setPrimeNote('')
-      setPrimeDeduitRap(true)
       
       console.log(`✅ Prime de ${amount}€ ajoutée avec succès`)
-      alert(`Prime de ${amount}€ ajoutée avec succès!${primeDeduitRap ? ' (déduite du RAP)' : ' (non déduite du RAP)'}`)
+      alert(`Prime de ${amount}€ ajoutée avec succès! (ajoutée au RAP)`)
       
     } catch (error) {
       console.error('Erreur lors de l\'ajout de la prime:', error)
@@ -637,7 +634,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     setSelectedCoutForPrime(null)
     setPrimeAmount('')
     setPrimeNote('')
-    setPrimeDeduitRap(true)
     setPrimesList([])
   }
 
@@ -1633,7 +1629,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           title="Double-clic pour ajouter une prime"
                         >
                           {(() => {
-                            const totalPrimes = (Number(cout.prime_deduit_rap) || 0) + (Number(cout.prime_non_deduit_rap) || 0)
+                            const totalPrimes = Number(cout.total_primes) || 0
                             return (
                               <>
                                 <span className={`font-medium ${totalPrimes > 0 ? 'text-green-600' : 'text-gray-400'}`}>
@@ -1647,7 +1643,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           })()}
                           <div className="text-xs text-gray-500 mt-1">Double-clic pour ajouter</div>
                         </div>
-                        {((Number(cout.prime_deduit_rap) || 0) + (Number(cout.prime_non_deduit_rap) || 0)) > 0 && (
+                        {(Number(cout.total_primes) || 0) > 0 && (
                           <button
                             onClick={() => handleEditPrime(cout)}
                             className="mt-1 text-xs text-blue-600 hover:text-blue-800 underline"
@@ -2227,7 +2223,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                   <span className="text-gray-600">Total Primes:</span>{' '}
                   <span className="font-medium text-green-600">
                     {(() => {
-                      const total = (Number(selectedCoutForPrime.prime_deduit_rap) || 0) + (Number(selectedCoutForPrime.prime_non_deduit_rap) || 0)
+                      const total = Number(selectedCoutForPrime.total_primes) || 0
                       return `${total.toFixed(2)}€`
                     })()}
                   </span>
@@ -2249,7 +2245,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                   {primesList.map((prime: any) => (
                     <div 
                       key={prime.id} 
-                      className={`p-3 rounded-lg border ${prime.deduit_rap ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}
+                      className="p-3 rounded-lg border bg-green-50 border-green-200"
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
@@ -2257,8 +2253,8 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                             <span className="font-semibold text-lg">
                               {parseFloat(prime.montant).toFixed(2)}€
                             </span>
-                            <span className={`text-xs px-2 py-0.5 rounded ${prime.deduit_rap ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800'}`}>
-                              {prime.deduit_rap ? '✓ Déduit RAP' : '✗ Non déduit RAP'}
+                            <span className="text-xs px-2 py-0.5 rounded bg-green-200 text-green-800">
+                              + RAP
                             </span>
                           </div>
                           {prime.note && (
@@ -2287,7 +2283,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
             <div className="border-t pt-4">
               <h4 className="text-sm font-semibold mb-3">Ajouter une nouvelle prime</h4>
               
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Montant (€) *</label>
                   <Input
@@ -2299,31 +2295,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                     placeholder="0.00"
                     className="w-full"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Déduit du RAP ?</label>
-                  <div className="flex items-center gap-4 mt-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="deduit_rap"
-                        checked={primeDeduitRap}
-                        onChange={() => setPrimeDeduitRap(true)}
-                        className="w-4 h-4 text-green-600"
-                      />
-                      <span className="text-sm text-green-700">Oui</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="deduit_rap"
-                        checked={!primeDeduitRap}
-                        onChange={() => setPrimeDeduitRap(false)}
-                        className="w-4 h-4 text-orange-600"
-                      />
-                      <span className="text-sm text-orange-700">Non</span>
-                    </label>
-                  </div>
                 </div>
               </div>
               
@@ -2338,13 +2309,9 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                 />
               </div>
               
-              <div className="p-3 bg-blue-50 rounded-lg mb-4">
-                <p className="text-sm text-blue-800">
-                  <strong>ℹ️ Note:</strong> 
-                  {primeDeduitRap 
-                    ? ' Cette prime sera DÉDUITE du RAP (réduit ce que l\'employé doit encore recevoir car il a déjà reçu cette prime).'
-                    : ' Cette prime est un BONUS qui n\'affecte PAS le RAP (versée en plus, hors calcul RAP).'
-                  }
+              <div className="p-3 bg-green-50 rounded-lg mb-4">
+                <p className="text-sm text-green-800">
+                  <strong>ℹ️ Note:</strong> Les primes s'ajoutent automatiquement au reste à payer (RAP).
                 </p>
               </div>
               
