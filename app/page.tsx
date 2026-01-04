@@ -8838,26 +8838,25 @@ La page va se recharger automatiquement...`)
 
       {/* PDF Viewer Modal pour documents véhicules */}
       {showVehiculePdfViewer && (
-        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
-          <div className="bg-white rounded-lg flex flex-col" style={{ width: '98vw', height: '96vh' }}>
-            <div className="flex items-center justify-between p-3 border-b">
+        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white rounded-lg flex flex-col" style={{ width: '94vw', height: '92vh' }}>
+            <div className="flex items-center justify-between p-3 border-b bg-gray-50">
               <h3 className="font-semibold text-gray-900">Document du Véhicule</h3>
               <div className="flex gap-2">
                 <a 
                   href={showVehiculePdfViewer} 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
                 >
                   Ouvrir dans un nouvel onglet
                 </a>
-                <Button
-                  variant="ghost"
-                  size="sm"
+                <button
                   onClick={() => setShowVehiculePdfViewer(null)}
+                  className="px-3 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 font-medium"
                 >
-                  <X className="w-5 h-5" />
-                </Button>
+                  ✕ Fermer
+                </button>
               </div>
             </div>
             <div className="flex-1 p-1 bg-gray-100 overflow-hidden">
