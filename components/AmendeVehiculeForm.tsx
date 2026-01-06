@@ -41,6 +41,7 @@ const TYPES_INFRACTION = [
   "Défaut d'assurance",
   "Défaut de permis",
   "Conduite en état d'ivresse",
+  "Péage",
   "Autre"
 ]
 
