@@ -53,6 +53,7 @@ import { MesAmendes } from '@/components/MesAmendes'
 
 interface User {
   id: number
+  account_id?: number
   username: string
   prenom: string
   nom: string
@@ -2005,6 +2006,7 @@ export default function TechnicienDashboard() {
               documents={documents}
               loading={loadingDocuments}
               onNewRequest={() => setShowDocumentModal(true)}
+              technicienAccountId={user?.account_id}
             />
             <NewDocumentModal
               show={showDocumentModal}

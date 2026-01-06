@@ -185,6 +185,7 @@ export async function GET(request: NextRequest) {
         success: true,
         user: {
           id: userData.id, // ID de l'employé
+          account_id: userData.account_id, // ID du compte technicien
           username: userData.username,
           prenom: userData.prenom,
           nom: userData.nom,
