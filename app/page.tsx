@@ -38,6 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdminDocumentsManager } from "@/components/AdminDocumentsManager"
+import { SecuriteDocumentsManager } from "@/components/SecuriteDocumentsManager"
 import { HistoriqueManager } from "@/components/HistoriqueManager"
 import { MaterialForm, EmployeeForm } from "@/components/Forms"
 import { AffectationForm, InterventionSearch } from "@/components/SearchForms"
@@ -127,6 +128,7 @@ import {
   Wrench,
   UserCheck,
   Clock,
+  Shield,
 } from "lucide-react"
 
 // User authentication data
@@ -482,6 +484,7 @@ export default function EmployeeTracker() {
   const [editingAmendeVehicule, setEditingAmendeVehicule] = useState<any>(null)
   const [vehiculesSubTab, setVehiculesSubTab] = useState<'flotte' | 'assignations' | 'validations' | 'entretiens' | 'amendes'>('flotte')
   const [amendesDateFilter, setAmendesDateFilter] = useState<string>('')
+  const [documentsSubTab, setDocumentsSubTab] = useState<'demandes' | 'securite'>('demandes')
 
   // Filtres pour réclamations
   const [claimSearchTerm, setClaimSearchTerm] = useState('')
@@ -6446,8 +6449,34 @@ La page va se recharger automatiquement...`)
                 </div>
               </div>
 
-              {/* Admin Documents Manager */}
-              <AdminDocumentsManager />
+              {/* Sub-tabs pour Documents */}
+              <div className="flex gap-2 border-b pb-2">
+                <Button
+                  variant={documentsSubTab === 'demandes' ? 'default' : 'ghost'}
+                  onClick={() => setDocumentsSubTab('demandes')}
+                  className="gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Demandes
+                </Button>
+                <Button
+                  variant={documentsSubTab === 'securite' ? 'default' : 'ghost'}
+                  onClick={() => setDocumentsSubTab('securite')}
+                  className="gap-2"
+                >
+                  <Shield className="w-4 h-4" />
+                  Sécurité
+                </Button>
+              </div>
+
+              {/* Contenu selon l'onglet */}
+              {documentsSubTab === 'demandes' && (
+                <AdminDocumentsManager />
+              )}
+
+              {documentsSubTab === 'securite' && (
+                <SecuriteDocumentsManager />
+              )}
             </div>
           )}
 
