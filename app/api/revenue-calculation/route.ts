@@ -118,17 +118,43 @@ export async function GET(request: NextRequest) {
     }
 
     if (dateFrom) {
+      // Utiliser cloture_tech ou cloture_hotline (cohérence avec Coût par Salaire)
       conditions.push(`(
-        (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= $${params.length + 1}::date)
-        OR (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= $${params.length + 1}::date)
+        (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]' AND
+          CASE
+            WHEN i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_tech::date >= $${params.length + 1}::date
+            WHEN i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') >= $${params.length + 1}::date
+            ELSE FALSE
+          END
+        ) OR
+        (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]' AND
+          CASE
+            WHEN i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_hotline::date >= $${params.length + 1}::date
+            WHEN i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') >= $${params.length + 1}::date
+            ELSE FALSE
+          END
+        )
       )`)
       params.push(dateFrom)
     }
 
     if (dateTo) {
+      // Utiliser cloture_tech ou cloture_hotline (cohérence avec Coût par Salaire)
       conditions.push(`(
-        (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date <= $${params.length + 1}::date)
-        OR (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= $${params.length + 1}::date)
+        (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]' AND
+          CASE
+            WHEN i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_tech::date <= $${params.length + 1}::date
+            WHEN i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') <= $${params.length + 1}::date
+            ELSE FALSE
+          END
+        ) OR
+        (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]' AND
+          CASE
+            WHEN i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_hotline::date <= $${params.length + 1}::date
+            WHEN i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') <= $${params.length + 1}::date
+            ELSE FALSE
+          END
+        )
       )`)
       params.push(dateTo)
     }

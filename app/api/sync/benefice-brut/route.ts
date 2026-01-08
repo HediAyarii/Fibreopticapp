@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
           AND LOWER(i.nom_technicien) = LOWER($1)
           AND LOWER(i.prenom_technicien) = LOWER($2)
           AND (
+            -- Utiliser UNIQUEMENT cloture_tech ou cloture_hotline (PAS date_rdv) pour cohérence avec Coût par Salaire
             (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
              i.cloture_tech ~ '^[0-9]' AND 
              ${dateFrom && dateTo ? 
@@ -80,14 +81,6 @@ export async function POST(request: NextRequest) {
                `(i.cloture_hotline::date BETWEEN '${dateFrom}'::date AND '${dateTo}'::date)` :
                `(i.cloture_hotline::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
                 i.cloture_hotline::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))`
-             }) OR
-            (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
-             i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
-             i.date_rdv ~ '^[0-9]' AND 
-             ${dateFrom && dateTo ?
-               `(i.date_rdv::date BETWEEN '${dateFrom}'::date AND '${dateTo}'::date)` :
-               `(i.date_rdv::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-                i.date_rdv::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))`
              })
           )
       `, dateFrom && dateTo ? [record.nom, record.prenom] : [record.nom, record.prenom, record.annee, record.mois])
@@ -201,6 +194,7 @@ export async function GET(request: NextRequest) {
           AND LOWER(i.nom_technicien) = LOWER($1)
           AND LOWER(i.prenom_technicien) = LOWER($2)
           AND (
+            -- Utiliser UNIQUEMENT cloture_tech ou cloture_hotline (PAS date_rdv) pour cohérence avec Coût par Salaire
             (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
              i.cloture_tech ~ '^[0-9]' AND 
              (i.cloture_tech::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
@@ -208,12 +202,7 @@ export async function GET(request: NextRequest) {
             (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
              i.cloture_hotline ~ '^[0-9]' AND 
              (i.cloture_hotline::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-              i.cloture_hotline::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))) OR
-            (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
-             i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
-             i.date_rdv ~ '^[0-9]' AND 
-             (i.date_rdv::date >= DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') AND 
-              i.date_rdv::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day')))
+              i.cloture_hotline::date <= (DATE($3 || '-' || LPAD($4::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day')))
           )
       `, [record.nom, record.prenom, record.annee, record.mois])
       

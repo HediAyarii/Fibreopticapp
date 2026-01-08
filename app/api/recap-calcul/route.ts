@@ -107,13 +107,20 @@ export async function GET(request: NextRequest) {
               JOIN employee_mapping em2 ON i2.nom_technicien = em2.nom_technicien AND i2.prenom_technicien = em2.prenom_technicien
               WHERE em2.employe_matricule = em.employe_matricule
               AND i2.grille IN ('AXECOM MANCHE', 'B2B : AXECOM MANCHE')
-              AND i2.date_rdv IS NOT NULL 
-              AND i2.date_rdv != '' 
-              AND i2.date_rdv != 'nan'
-              AND i2.date_rdv ~ '^[0-9]'
               AND (
-                (i2.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i2.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i2.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
-                (i2.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i2.date_rdv::date >= $1::date AND i2.date_rdv::date <= $2::date)
+                -- Utiliser cloture_tech ou cloture_hotline (cohérence avec Coût par Salaire)
+                (i2.cloture_tech IS NOT NULL AND i2.cloture_tech != '' AND i2.cloture_tech != 'nan' AND i2.cloture_tech ~ '^[0-9]' AND
+                  CASE
+                    WHEN i2.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i2.cloture_tech::date
+                    WHEN i2.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i2.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY')
+                  END BETWEEN $1::date AND $2::date
+                ) OR
+                (i2.cloture_hotline IS NOT NULL AND i2.cloture_hotline != '' AND i2.cloture_hotline != 'nan' AND i2.cloture_hotline ~ '^[0-9]' AND
+                  CASE
+                    WHEN i2.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i2.cloture_hotline::date
+                    WHEN i2.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i2.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY')
+                  END BETWEEN $1::date AND $2::date
+                )
               )
             ) THEN 'AXECOM'
             ELSE NULL
@@ -126,13 +133,20 @@ export async function GET(request: NextRequest) {
               AND i3.grille NOT IN ('AXECOM MANCHE', 'B2B : AXECOM MANCHE')
               AND i3.grille IS NOT NULL
               AND i3.grille != ''
-              AND i3.date_rdv IS NOT NULL 
-              AND i3.date_rdv != '' 
-              AND i3.date_rdv != 'nan'
-              AND i3.date_rdv ~ '^[0-9]'
               AND (
-                (i3.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i3.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i3.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
-                (i3.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i3.date_rdv::date >= $1::date AND i3.date_rdv::date <= $2::date)
+                -- Utiliser cloture_tech ou cloture_hotline (cohérence avec Coût par Salaire)
+                (i3.cloture_tech IS NOT NULL AND i3.cloture_tech != '' AND i3.cloture_tech != 'nan' AND i3.cloture_tech ~ '^[0-9]' AND
+                  CASE
+                    WHEN i3.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i3.cloture_tech::date
+                    WHEN i3.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i3.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY')
+                  END BETWEEN $1::date AND $2::date
+                ) OR
+                (i3.cloture_hotline IS NOT NULL AND i3.cloture_hotline != '' AND i3.cloture_hotline != 'nan' AND i3.cloture_hotline ~ '^[0-9]' AND
+                  CASE
+                    WHEN i3.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i3.cloture_hotline::date
+                    WHEN i3.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i3.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY')
+                  END BETWEEN $1::date AND $2::date
+                )
               )
             ) THEN 'ERT'
             ELSE NULL
