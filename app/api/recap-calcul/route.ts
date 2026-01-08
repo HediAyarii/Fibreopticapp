@@ -223,13 +223,26 @@ export async function GET(request: NextRequest) {
           AND i.articles != ''
           ${employeFilter}
           ${grilleInterventionFilter}
-          AND i.date_rdv IS NOT NULL 
-          AND i.date_rdv != '' 
-          AND i.date_rdv != 'nan'
-          AND i.date_rdv ~ '^[0-9]'
           AND (
-            (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= $1::date AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= $2::date) OR
-            (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= $1::date AND i.date_rdv::date <= $2::date)
+            -- Utiliser CASE pour déterminer la date effective (priorité: cloture_tech > cloture_hotline)
+            -- NOTE: On n'utilise PAS date_rdv comme fallback pour être cohérent avec Coût par Salaire
+            CASE
+              -- Si cloture_tech existe et est valide, l'utiliser
+              WHEN i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]' THEN
+                CASE
+                  WHEN i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_tech::date
+                  WHEN i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY')
+                  ELSE NULL
+                END
+              -- Sinon si cloture_hotline existe et est valide, l'utiliser
+              WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]' THEN
+                CASE
+                  WHEN i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_hotline::date
+                  WHEN i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY')
+                  ELSE NULL
+                END
+              ELSE NULL
+            END BETWEEN $1::date AND $2::date
           )
         -- REGROUPER PAR MATRICULE pour fusionner les variations de noms
         GROUP BY COALESCE(em.employe_matricule, CONCAT('TECH_', UPPER(SUBSTRING(i.nom_technicien, 1, 3)), UPPER(SUBSTRING(i.prenom_technicien, 1, 2)))),

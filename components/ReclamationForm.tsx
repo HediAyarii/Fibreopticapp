@@ -7,14 +7,14 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { RefreshCw, CheckCircle, Plus, Edit, Trash2 } from "lucide-react"
+import { RefreshCw, CheckCircle, Plus, Edit, Trash2, Upload, X, Image as ImageIcon } from "lucide-react"
 
 // ReclamationForm component
 export function ReclamationForm({ reclamation, employees, interventions, onSave, onCancel }: { 
   reclamation: any, 
   employees: any[], 
   interventions: any[], 
-  onSave: (data: any) => void, 
+  onSave: (data: any, photos?: File[]) => void, 
   onCancel: () => void 
 }) {
   const formatDateForInput = (date: any) => {
@@ -54,10 +54,48 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
   const [showDropdown, setShowDropdown] = useState(false)
   const [interventionDisplayValue, setInterventionDisplayValue] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
+  
+  // État pour les photos uploadées
+  const [uploadedPhotos, setUploadedPhotos] = useState<File[]>([])
+  const [existingPhotos, setExistingPhotos] = useState<any[]>(reclamation?.photos || [])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
+    onSave(formData, uploadedPhotos)
+  }
+
+  // Gestion des photos
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files) {
+      const newPhotos = Array.from(files).filter(file => {
+        // Vérifier le type de fichier
+        if (!file.type.startsWith('image/')) {
+          alert(`Le fichier ${file.name} n'est pas une image valide`)
+          return false
+        }
+        // Limiter la taille à 10MB
+        if (file.size > 10 * 1024 * 1024) {
+          alert(`Le fichier ${file.name} est trop volumineux (max 10MB)`)
+          return false
+        }
+        return true
+      })
+      setUploadedPhotos(prev => [...prev, ...newPhotos])
+    }
+    // Reset l'input pour permettre de re-sélectionner le même fichier
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const removePhoto = (index: number) => {
+    setUploadedPhotos(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const removeExistingPhoto = (photoId: number) => {
+    setExistingPhotos(prev => prev.filter(p => p.id !== photoId))
   }
 
   const handleChange = (field: string, value: any) => {
@@ -436,6 +474,100 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
             placeholder="Commentaires supplémentaires..."
             rows={2}
           />
+        </div>
+
+        {/* Section Upload Photos */}
+        <div className="space-y-3">
+          <Label className="flex items-center gap-2">
+            <ImageIcon className="w-4 h-4" />
+            Photos Justificatives
+          </Label>
+          <p className="text-xs text-gray-500">
+            Ajoutez des photos pour accompagner la réclamation (formats: JPG, PNG, GIF - max 10MB par fichier)
+          </p>
+          
+          {/* Photos existantes (lors de l'édition) */}
+          {existingPhotos.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600 font-medium">Photos déjà enregistrées:</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {existingPhotos.map((photo: any) => (
+                  <div key={photo.id} className="relative group">
+                    <img
+                      src={photo.url}
+                      alt={photo.name || 'Photo réclamation'}
+                      className="w-full h-20 object-cover rounded border border-gray-200"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/placeholder.jpg'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeExistingPhoto(photo.id)}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Nouvelles photos à uploader */}
+          {uploadedPhotos.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600 font-medium">Nouvelles photos à ajouter:</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {uploadedPhotos.map((photo, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={URL.createObjectURL(photo)}
+                      alt={`Photo ${index + 1}`}
+                      className="w-full h-20 object-cover rounded border border-blue-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(index)}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate rounded-b">
+                      {photo.name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bouton d'ajout de photos */}
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handlePhotoUpload}
+              className="hidden"
+              id="photo-upload"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              Ajouter des photos
+            </Button>
+            {uploadedPhotos.length > 0 && (
+              <span className="text-sm text-gray-500">
+                {uploadedPhotos.length} nouvelle(s) photo(s)
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t sticky bottom-0 bg-white">

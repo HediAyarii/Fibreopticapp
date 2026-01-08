@@ -96,6 +96,16 @@ interface Reclamation {
   intervention_statut?: string
   created_at?: string
   updated_at?: string
+  photos?: Array<{
+    id: number
+    name: string
+    type: string
+    size: number
+    uploadedAt: string
+    url: string
+  }>
+  commentaire_resolution?: string
+  date_resolution?: string
 }
 
 interface Penalite {
@@ -2616,21 +2626,38 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
                 {/* Photos justificatives si disponibles */}
                 {reclamation.photos && reclamation.photos.length > 0 && (
                   <div className="mt-3">
-                    <span className="text-xs font-medium text-gray-500 uppercase block mb-2">Photos justificatives:</span>
+                    <span className="text-xs font-medium text-gray-500 uppercase block mb-2">
+                      📷 Photos justificatives ({reclamation.photos.length}):
+                    </span>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {reclamation.photos.map((photo: any, index: number) => (
-                        <div key={photo.id} className="relative">
-                          <img
-                            src={photo.url}
-                            alt={`Photo justificative ${index + 1}`}
-                            className="w-full h-20 object-cover rounded border"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = '/placeholder.jpg'
-                            }}
-                          />
+                        <div key={photo.id} className="relative group cursor-pointer">
+                          <a 
+                            href={photo.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="block"
+                          >
+                            <img
+                              src={photo.url}
+                              alt={photo.name || `Photo justificative ${index + 1}`}
+                              className="w-full h-24 object-cover rounded border border-gray-200 transition-transform group-hover:scale-105 group-hover:shadow-lg"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = '/placeholder.jpg'
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded flex items-center justify-center">
+                              <span className="text-white opacity-0 group-hover:opacity-100 text-xs font-medium bg-black/50 px-2 py-1 rounded">
+                                Voir
+                              </span>
+                            </div>
+                          </a>
                         </div>
                       ))}
                     </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Cliquez sur une photo pour l'agrandir
+                    </p>
                   </div>
                 )}
               </div>

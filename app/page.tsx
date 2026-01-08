@@ -490,6 +490,7 @@ export default function EmployeeTracker() {
   const [claimSearchTerm, setClaimSearchTerm] = useState('')
   const [claimEmployeeFilter, setClaimEmployeeFilter] = useState<string>('all')
   const [claimDateFilter, setClaimDateFilter] = useState<string>('all')
+  const [claimStatusFilter, setClaimStatusFilter] = useState<string>('all')
 
   // Loading states
   const [loadingInterventions, setLoadingInterventions] = useState(false)
@@ -824,9 +825,28 @@ export default function EmployeeTracker() {
         }
       })
     }
+
+    // Filtre par statut
+    if (claimStatusFilter !== 'all') {
+      filtered = filtered.filter(claim => {
+        const statut = (claim.statut || '').toLowerCase()
+        switch (claimStatusFilter) {
+          case 'ouverte':
+            return statut === 'ouverte' || statut === 'ouvert'
+          case 'en_cours':
+            return statut === 'en_cours' || statut === 'en cours'
+          case 'resolue':
+            return statut === 'resolue' || statut === 'résolu' || statut === 'resolu' || statut === 'résolue'
+          case 'fermee':
+            return statut === 'fermee' || statut === 'fermée' || statut === 'ferme' || statut === 'fermé'
+          default:
+            return true
+        }
+      })
+    }
     
     return filtered
-  }, [claims, claimSearchTerm, claimEmployeeFilter, claimDateFilter])
+  }, [claims, claimSearchTerm, claimEmployeeFilter, claimDateFilter, claimStatusFilter])
 
   // Load data from database on component mount
   useEffect(() => {
@@ -2538,7 +2558,7 @@ La page va se recharger automatiquement...`)
   }
 
   // CRUD Functions for Reclamations
-  const saveReclamation = async (reclamationData: any) => {
+  const saveReclamation = async (reclamationData: any, photos?: File[]) => {
     try {
       const url = editingItem ? "/api/reclamations" : "/api/reclamations"
       const method = editingItem ? "PUT" : "POST"
@@ -2565,6 +2585,31 @@ La page va se recharger automatiquement...`)
       if (!response.ok) {
         const error = await response.json()
         throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+
+      const result = await response.json()
+      const reclamationId = editingItem?.id || result.reclamation?.id
+
+      // Upload des photos si présentes
+      if (photos && photos.length > 0 && reclamationId) {
+        const formData = new FormData()
+        formData.append('reclamation_id', reclamationId.toString())
+        
+        photos.forEach((photo, index) => {
+          formData.append(`photo_${index}`, photo)
+        })
+
+        const photoResponse = await fetch('/api/reclamations/upload-photos', {
+          method: 'POST',
+          body: formData
+        })
+
+        if (!photoResponse.ok) {
+          console.error('Erreur upload photos:', await photoResponse.text())
+          // On ne bloque pas la création de la réclamation si l'upload échoue
+        } else {
+          console.log('Photos uploadées avec succès')
+        }
       }
 
       await loadAllCRUDData()
@@ -6858,7 +6903,7 @@ La page va se recharger automatiquement...`)
                          <div>
                            <CardTitle className="text-xl font-bold">Liste des Réclamations</CardTitle>
                       <CardDescription>
-                      {filteredClaims.length} réclamation{filteredClaims.length > 1 ? 's' : ''} {claimSearchTerm || claimEmployeeFilter !== 'all' || claimDateFilter !== 'all' ? `filtrée${filteredClaims.length > 1 ? 's' : ''} sur ${claims.length}` : 'dans la base de données'}
+                      {filteredClaims.length} réclamation{filteredClaims.length > 1 ? 's' : ''} {claimSearchTerm || claimEmployeeFilter !== 'all' || claimDateFilter !== 'all' || claimStatusFilter !== 'all' ? `filtrée${filteredClaims.length > 1 ? 's' : ''} sur ${claims.length}` : 'dans la base de données'}
                       </CardDescription>
                          </div>
                        </div>
@@ -6944,10 +6989,29 @@ La page va se recharger automatiquement...`)
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {/* Filtre par statut */}
+                      <div>
+                        <Label htmlFor="claim-status-filter" className="mb-2 block text-sm font-medium">
+                          Filtrer par Statut
+                        </Label>
+                        <Select value={claimStatusFilter} onValueChange={setClaimStatusFilter}>
+                          <SelectTrigger id="claim-status-filter" className="glass-card border border-white/20">
+                            <SelectValue placeholder="Tous les statuts" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Tous les statuts</SelectItem>
+                            <SelectItem value="ouverte">Ouverte</SelectItem>
+                            <SelectItem value="en_cours">En cours</SelectItem>
+                            <SelectItem value="resolue">Résolue</SelectItem>
+                            <SelectItem value="fermee">Fermée</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
 
                     {/* Indicateur de filtres actifs */}
-                    {(claimSearchTerm || claimEmployeeFilter !== 'all' || claimDateFilter !== 'all') && (
+                    {(claimSearchTerm || claimEmployeeFilter !== 'all' || claimDateFilter !== 'all' || claimStatusFilter !== 'all') && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <span className="font-medium">Filtres actifs:</span>
                         {claimSearchTerm && (
@@ -6979,6 +7043,17 @@ La page va se recharger automatiquement...`)
                             />
                           </Badge>
                         )}
+                        {claimStatusFilter !== 'all' && (
+                          <Badge variant="outline" className="gap-1">
+                            Statut: {claimStatusFilter === 'ouverte' ? 'Ouverte' : 
+                                     claimStatusFilter === 'en_cours' ? 'En cours' :
+                                     claimStatusFilter === 'resolue' ? 'Résolue' : 'Fermée'}
+                            <X 
+                              className="w-3 h-3 cursor-pointer hover:text-destructive" 
+                              onClick={() => setClaimStatusFilter('all')}
+                            />
+                          </Badge>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -6986,6 +7061,7 @@ La page va se recharger automatiquement...`)
                             setClaimSearchTerm('')
                             setClaimEmployeeFilter('all')
                             setClaimDateFilter('all')
+                            setClaimStatusFilter('all')
                           }}
                           className="ml-2 h-7 text-xs"
                         >
