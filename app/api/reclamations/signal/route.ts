@@ -75,35 +75,41 @@ export async function POST(req: NextRequest) {
     const reclamation = result.rows[0]
     const numeroReclamation = `RT-${reclamation.id}`
 
-    // Créer une notification pour le technicien
-    await query(
-      `INSERT INTO notifications (
-        employe_id,
-        titre,
-        message,
-        type,
-        date_envoi,
-        lu,
-        created_at
-      ) VALUES ($1, $2, $3, $4, NOW(), false, NOW())`,
-      [
-        technicien_id,
-        'Réclamation enregistrée',
-        `Votre signalement pour l'intervention ${intervention.num_inter} a été enregistré sous le numéro ${numeroReclamation}. Vous serez notifié une fois qu'il sera traité.`,
-        'info'
-      ]
-    )
-
-    // Émettre l'événement Socket.IO pour notification en temps réel
+    // Créer une notification pour le technicien (optionnel - la table peut ne pas exister)
     try {
-      const socketio = require('../../../lib/socketio')
-      socketio.sendReclamationTechniqueCreated(reclamation)
-      console.log('✅ Événement Socket.IO émis: reclamation_technique_created')
-    } catch (socketError) {
-      console.error('⚠️ Erreur émission Socket.IO:', socketError)
+      await query(
+        `INSERT INTO notifications (
+          employe_id,
+          titre,
+          message,
+          type,
+          date_envoi,
+          lu,
+          created_at
+        ) VALUES ($1, $2, $3, $4, NOW(), false, NOW())`,
+        [
+          technicien_id,
+          'Réclamation enregistrée',
+          `Votre signalement pour l'intervention ${intervention.num_inter} a été enregistré sous le numéro ${numeroReclamation}. Vous serez notifié une fois qu'il sera traité.`,
+          'info'
+        ]
+      )
+    } catch (notifError) {
+      console.log('⚠️ Table notifications non disponible, notification ignorée')
     }
 
-    // Envoyer notification SSE au technicien si connecté
+    // Émettre l'événement Socket.IO pour notification en temps réel (optionnel)
+    try {
+      const socketioModule = await import('@/lib/socketio')
+      if (socketioModule && socketioModule.sendReclamationTechniqueCreated) {
+        socketioModule.sendReclamationTechniqueCreated(reclamation)
+        console.log('✅ Événement Socket.IO émis: reclamation_technique_created')
+      }
+    } catch (socketError) {
+      console.log('⚠️ Socket.IO non disponible')
+    }
+
+    // Envoyer notification SSE au technicien si connecté (optionnel)
     try {
       const { sendToTechnicien } = await import('@/app/api/sse/technicien/route')
       sendToTechnicien(technicien_id, 'reclamation_created', {
@@ -112,7 +118,7 @@ export async function POST(req: NextRequest) {
         message: 'Votre signalement a été enregistré avec succès'
       })
     } catch (error) {
-      console.log('SSE non disponible, notification en base uniquement')
+      console.log('⚠️ SSE non disponible')
     }
 
     return NextResponse.json({
