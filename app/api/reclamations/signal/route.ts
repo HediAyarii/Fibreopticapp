@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
       intervention_id,
       technicien_id, 
       description_probleme, 
-      type_reclamation = 'technique',
+      type_reclamation = 'probleme_technique',  // Valeur par défaut corrigée (doit être: article_manquant, probleme_technique, erreur_grille, autre)
       priorite = 'moyenne'
     } = body
 

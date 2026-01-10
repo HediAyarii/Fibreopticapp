@@ -587,7 +587,7 @@ export default function TechnicienDashboard() {
           intervention_id: selectedIntervention.id,
           technicien_id: user.id,
           description_probleme: description,
-          type_reclamation: 'technique',
+          type_reclamation: 'probleme_technique',  // Valeur correcte: article_manquant, probleme_technique, erreur_grille, autre
           priorite: 'moyenne'
         })
       })
