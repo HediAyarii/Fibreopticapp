@@ -59,6 +59,7 @@ import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
 import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
+import KPIProductionSection from "@/components/KPIProductionSection"
 import ReclamationsTechniques from "@/components/ReclamationsTechniques"
 import AutoSyncTotalGenere from "@/components/AutoSyncTotalGenere"
 import SyncButton from "@/components/SyncButton"
@@ -590,6 +591,10 @@ export default function EmployeeTracker() {
   const [lastAppliedFilters, setLastAppliedFilters] = useState<any>(null)
   const [filteredInterventions, setFilteredInterventions] = useState<any[]>([])
   const [duplicates, setDuplicates] = useState<any[]>([])
+  
+  // Liste des techniciens pour le dropdown de filtre
+  const [allTechnicians, setAllTechnicians] = useState<{nom: string, prenom: string, nomComplet: string, grille: string, nombreInterventions: number}[]>([])
+  const [loadingTechnicians, setLoadingTechnicians] = useState(false)
   const [loadingDuplicates, setLoadingDuplicates] = useState(false)
   const [showCardAssignmentModal, setShowCardAssignmentModal] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
@@ -1299,6 +1304,10 @@ export default function EmployeeTracker() {
     setLoadingInterventions(true)
     try {
       console.log('🔍 Application des filtres:', interventionFilters)
+      
+      // Recharger aussi la liste des techniciens avec les nouveaux filtres
+      loadAllTechnicians()
+      
       const result = await loadInterventionsFromDatabase(interventionFilters)
       setInterventions(result.interventions)
       setTotalInterventions(result.total)
@@ -1381,8 +1390,39 @@ export default function EmployeeTracker() {
     return [...new Set(types)].sort()
   }
 
-  // Get unique technicians for filter dropdown
+  // Charger la liste complète des techniciens depuis l'API
+  const loadAllTechnicians = async () => {
+    try {
+      setLoadingTechnicians(true)
+      const params = new URLSearchParams()
+      if (interventionFilters.grille && interventionFilters.grille !== 'all') {
+        params.append('grille', interventionFilters.grille)
+      }
+      if (interventionFilters.dateRdvStart) {
+        params.append('dateStart', interventionFilters.dateRdvStart)
+      }
+      if (interventionFilters.dateRdvEnd) {
+        params.append('dateEnd', interventionFilters.dateRdvEnd)
+      }
+      const url = `/api/technicians${params.toString() ? `?${params.toString()}` : ''}`
+      const response = await fetch(url)
+      if (response.ok) {
+        const data = await response.json()
+        setAllTechnicians(data.technicians || [])
+      }
+    } catch (error) {
+      console.error('Erreur chargement techniciens:', error)
+    } finally {
+      setLoadingTechnicians(false)
+    }
+  }
+
+  // Get unique technicians for filter dropdown (utilise maintenant allTechnicians)
   const getUniqueTechnicians = () => {
+    if (allTechnicians.length > 0) {
+      return allTechnicians.map(t => t.nomComplet).sort()
+    }
+    // Fallback: extraire des interventions chargées
     const technicians = interventions
       .map(intervention => {
         const nom = intervention.nom_technicien || ''
@@ -1772,6 +1812,9 @@ La page va se recharger automatiquement...`)
     setLoadingFuel(true)
     
     try {
+      // Charger aussi la liste des techniciens en parallèle
+      loadAllTechnicians()
+      
       const [interventionsResult, fuelConsumptionData, revenueData] = await Promise.all([
         loadInterventionsFromDatabase(),
         loadFuelDataFromDatabase(),
@@ -6705,6 +6748,9 @@ La page va se recharger automatiquement...`)
                 <RaccByTypeStatistics />
               </CardContent>
             </Card>
+
+            {/* KPI Production - Taux de Réalisé sur Planifié */}
+            <KPIProductionSection />
 
             {/* Interface de statistiques */}
             <StatisticsDashboard />
