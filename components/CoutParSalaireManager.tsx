@@ -1560,7 +1560,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                 <tbody>
                   {couts.map((cout) => (
                     <tr key={cout.id} className={`border-b hover:bg-gray-50 ${
-                      cout.rap && Math.abs(Number(cout.rap)) < 0.01 
+                      cout.rap != null && Math.abs(Number(cout.rap)) < 0.01 
                         ? 'bg-green-50 border-green-200' 
                         : ''
                     }`}>

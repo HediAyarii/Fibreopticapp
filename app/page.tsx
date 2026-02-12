@@ -3724,7 +3724,18 @@ La page va se recharger automatiquement...`)
               <div className="space-y-3">
                 {navOrder.map((itemId) => {
                   // Configuration des items de navigation
-                  const navConfig: Record<string, { icon: React.ReactNode; label: string; permission?: string; adminOnly?: boolean; onClick?: () => void }> = {
+                  
+                  // Vérifier s'il y a des alertes véhicules (expirations)
+                  const hasVehiculeAlerts = (() => {
+                    const now = new Date();
+                    const in30Days = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                    return vehicules.some(v => 
+                      (v.assurance_expiration && new Date(v.assurance_expiration) <= in30Days) ||
+                      (v.visite_technique_expiration && new Date(v.visite_technique_expiration) <= in30Days)
+                    );
+                  })();
+                  
+                  const navConfig: Record<string, { icon: React.ReactNode; label: string; permission?: string; adminOnly?: boolean; onClick?: () => void; hasNotification?: boolean }> = {
                     'dashboard': { icon: <BarChart3 className="w-5 h-5" />, label: 'Tableau de Bord' },
                     'employees': { icon: <Users className="w-5 h-5" />, label: 'Employés', permission: 'employees' },
                     'interventions': { icon: <FileText className="w-5 h-5" />, label: 'Interventions', permission: 'interventions' },
@@ -3739,7 +3750,7 @@ La page va se recharger automatiquement...`)
                     'reclamations-techniques': { icon: <MessageSquare className="w-5 h-5" />, label: 'Réclamations Techniques', permission: 'reclamations-techniques' },
                     'tarifs': { icon: <Building2 className="w-5 h-5" />, label: 'Tarifs', permission: 'tarifs' },
                     'recap-articles': { icon: <Package className="w-5 h-5" />, label: 'Recap Articles', permission: 'recap-articles' },
-                    'vehicules': { icon: <Car className="w-5 h-5" />, label: 'Véhicules', permission: 'vehicules' },
+                    'vehicules': { icon: <Car className="w-5 h-5" />, label: 'Véhicules', permission: 'vehicules', hasNotification: hasVehiculeAlerts },
                     'recette-generer': { 
                       icon: <TrendingUp className="w-5 h-5" />, 
                       label: 'BENEFICE BRUTE', 
@@ -3789,7 +3800,15 @@ La page va se recharger automatiquement...`)
                       >
                         <GripVertical className="w-4 h-4 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing transition-opacity" />
                         {config.icon}
-                        <span className="flex-1 text-left">{config.label}</span>
+                        <span className="flex-1 text-left flex items-center gap-2">
+                          {config.label}
+                          {config.hasNotification && (
+                            <span className="relative flex h-3 w-3">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                            </span>
+                          )}
+                        </span>
                       </Button>
                     </div>
                   )
@@ -7483,6 +7502,70 @@ La page va se recharger automatiquement...`)
               
                {/* Vehicules Management Section */}
                     <div className="space-y-6">
+                 
+                 {/* Alertes de documents véhicules expirant bientôt */}
+                 {(() => {
+                   const now = new Date();
+                   const in30Days = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                   
+                   const vehiculesAssuranceExpiree = vehicules.filter(v => v.assurance_expiration && new Date(v.assurance_expiration) < now);
+                   const vehiculesVisiteExpiree = vehicules.filter(v => v.visite_technique_expiration && new Date(v.visite_technique_expiration) < now);
+                   const vehiculesAssuranceBientot = vehicules.filter(v => v.assurance_expiration && new Date(v.assurance_expiration) >= now && new Date(v.assurance_expiration) <= in30Days);
+                   const vehiculesVisiteBientot = vehicules.filter(v => v.visite_technique_expiration && new Date(v.visite_technique_expiration) >= now && new Date(v.visite_technique_expiration) <= in30Days);
+                   
+                   const hasAlerts = vehiculesAssuranceExpiree.length > 0 || vehiculesVisiteExpiree.length > 0 || vehiculesAssuranceBientot.length > 0 || vehiculesVisiteBientot.length > 0;
+                   
+                   if (!hasAlerts) return null;
+                   
+                   return (
+                     <div className="space-y-3 mb-4">
+                       {/* Alertes EXPIRÉES (rouge) */}
+                       {(vehiculesAssuranceExpiree.length > 0 || vehiculesVisiteExpiree.length > 0) && (
+                         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                           <div className="flex items-center gap-2 text-red-500 font-semibold mb-2">
+                             <AlertTriangle className="w-5 h-5" />
+                             <span>⚠️ Documents expirés</span>
+                           </div>
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                             {vehiculesAssuranceExpiree.length > 0 && (
+                               <div className="text-red-400">
+                                 <strong>Assurance expirée:</strong> {vehiculesAssuranceExpiree.map(v => v.matricule).join(', ')}
+                               </div>
+                             )}
+                             {vehiculesVisiteExpiree.length > 0 && (
+                               <div className="text-red-400">
+                                 <strong>Visite technique expirée:</strong> {vehiculesVisiteExpiree.map(v => v.matricule).join(', ')}
+                               </div>
+                             )}
+                           </div>
+                         </div>
+                       )}
+                       
+                       {/* Alertes BIENTÔT EXPIRÉES (orange) */}
+                       {(vehiculesAssuranceBientot.length > 0 || vehiculesVisiteBientot.length > 0) && (
+                         <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
+                           <div className="flex items-center gap-2 text-orange-500 font-semibold mb-2">
+                             <Clock className="w-5 h-5" />
+                             <span>⏰ Documents expirant dans moins de 30 jours</span>
+                           </div>
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                             {vehiculesAssuranceBientot.length > 0 && (
+                               <div className="text-orange-400">
+                                 <strong>Assurance:</strong> {vehiculesAssuranceBientot.map(v => `${v.matricule} (${new Date(v.assurance_expiration!).toLocaleDateString('fr-FR')})`).join(', ')}
+                               </div>
+                             )}
+                             {vehiculesVisiteBientot.length > 0 && (
+                               <div className="text-orange-400">
+                                 <strong>Visite technique:</strong> {vehiculesVisiteBientot.map(v => `${v.matricule} (${new Date(v.visite_technique_expiration!).toLocaleDateString('fr-FR')})`).join(', ')}
+                               </div>
+                             )}
+                           </div>
+                         </div>
+                       )}
+                     </div>
+                   );
+                 })()}
+                 
                  {/* Section 1: Liste des Véhicules */}
                  {vehiculesSubTab === 'flotte' && (
                  <Card className="glass-card border border-white/20 hover-lift">
@@ -7524,6 +7607,8 @@ La page va se recharger automatiquement...`)
                              <tr className="border-b border-white/10">
                                <th className="text-left p-4 font-semibold">Matricule</th>
                                <th className="text-left p-4 font-semibold">Marque/Modèle</th>
+                               <th className="text-left p-4 font-semibold">Exp. Assurance</th>
+                               <th className="text-left p-4 font-semibold">Exp. Visite Tech.</th>
                                <th className="text-left p-4 font-semibold">Année</th>
                                <th className="text-left p-4 font-semibold">Kilométrage</th>
                                <th className="text-left p-4 font-semibold">Type</th>
@@ -7544,6 +7629,24 @@ La page va se recharger automatiquement...`)
                                      <div className="font-medium">{vehicule.marque}</div>
                                      <div className="text-sm text-muted-foreground">{vehicule.modele}</div>
                                    </div>
+                                 </td>
+                                 <td className="p-4">
+                                   {vehicule.assurance_expiration ? (
+                                     <span className={new Date(vehicule.assurance_expiration) < new Date() ? 'text-red-500 font-semibold' : new Date(vehicule.assurance_expiration) < new Date(Date.now() + 30*24*60*60*1000) ? 'text-orange-500' : 'text-green-500'}>
+                                       {new Date(vehicule.assurance_expiration).toLocaleDateString('fr-FR')}
+                                     </span>
+                                   ) : (
+                                     <span className="text-muted-foreground text-sm">-</span>
+                                   )}
+                                 </td>
+                                 <td className="p-4">
+                                   {vehicule.visite_technique_expiration ? (
+                                     <span className={new Date(vehicule.visite_technique_expiration) < new Date() ? 'text-red-500 font-semibold' : new Date(vehicule.visite_technique_expiration) < new Date(Date.now() + 30*24*60*60*1000) ? 'text-orange-500' : 'text-green-500'}>
+                                       {new Date(vehicule.visite_technique_expiration).toLocaleDateString('fr-FR')}
+                                     </span>
+                                   ) : (
+                                     <span className="text-muted-foreground text-sm">-</span>
+                                   )}
                                  </td>
                                  <td className="p-4">{vehicule.annee}</td>
                                  <td className="p-4">{vehicule.kilometrage?.toLocaleString()} km</td>
