@@ -970,8 +970,8 @@ export default function TechnicienDashboard() {
     const creationDate = new Date(creationDateStr)
     const now = new Date()
     
-    // Délai selon le type de réclamation (7 jours pour client, 14 jours pour technique)
-    const deadlineDays = reclamation.type_reclamation === 'client' ? 7 : 14
+    // Délai selon le type de réclamation: 7j client, 10j contrôleur, 14j technique
+    const deadlineDays = reclamation.type_reclamation === 'client' ? 7 : reclamation.type_reclamation === 'controleur' ? 10 : 14
     const deadlineDate = new Date(creationDate)
     deadlineDate.setDate(deadlineDate.getDate() + deadlineDays)
     
@@ -2443,7 +2443,7 @@ function ReclamationCard({ reclamation, onResolve, calculateDeadline }: { reclam
                     </div>
                   </div>
                   <div className="mt-2 text-xs text-gray-500 break-words">
-                    Délai de traitement: {deadline.deadlineDays} jours ({reclamation.type_reclamation === 'client' ? 'Réclamation client' : 'Réclamation technique'})
+                    Délai de traitement: {deadline.deadlineDays} jours ({reclamation.type_reclamation === 'client' ? 'Réclamation client' : reclamation.type_reclamation === 'controleur' ? 'Réclamation contrôleur' : 'Réclamation technique'})
                   </div>
                 </div>
               )

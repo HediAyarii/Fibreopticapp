@@ -107,9 +107,11 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
       let deadlineDate = new Date(today)
       
       if (value === 'client') {
-        deadlineDate.setDate(today.getDate() + 5) // 5 days for client
+        deadlineDate.setDate(today.getDate() + 7) // 7 jours pour client
       } else if (value === 'controleur') {
-        deadlineDate.setDate(today.getDate() + 7) // 7 days for controleur
+        deadlineDate.setDate(today.getDate() + 10) // 10 jours pour contrôleur
+      } else if (value === 'technique') {
+        deadlineDate.setDate(today.getDate() + 14) // 14 jours pour technique
       }
       
       newFormData.deadline_calculated = deadlineDate.toISOString().split('T')[0]
@@ -263,9 +265,9 @@ export function ReclamationForm({ reclamation, employees, interventions, onSave,
                 <SelectValue placeholder="Sélectionnez un type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="client">Client (5 jours)</SelectItem>
-                <SelectItem value="controleur">Contrôleur (7 jours)</SelectItem>
-                <SelectItem value="technique">Technique</SelectItem>
+                <SelectItem value="client">Client (7 jours)</SelectItem>
+                <SelectItem value="controleur">Contrôleur (10 jours)</SelectItem>
+                <SelectItem value="technique">Technique (14 jours)</SelectItem>
                 <SelectItem value="administrative">Administrative</SelectItem>
                 <SelectItem value="autre">Autre</SelectItem>
               </SelectContent>

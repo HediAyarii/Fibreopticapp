@@ -7240,7 +7240,7 @@ La page va se recharger automatiquement...`)
                                        <Badge variant="outline" className="text-xs w-fit">7j</Badge>
                                      )}
                                      {claim.type_reclamation === 'controleur' && (
-                                       <Badge variant="outline" className="text-xs w-fit">14j</Badge>
+                                       <Badge variant="outline" className="text-xs w-fit">10j</Badge>
                                      )}
                                    </div>
                                  </td>
