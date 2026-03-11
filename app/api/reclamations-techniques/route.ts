@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
         i.statut as intervention_statut,
         i.date_rdv as intervention_date_rdv
       FROM reclamations_techniques rt
-      LEFT JOIN interventions i ON rt.num_inter = i.num_inter
+      LEFT JOIN interventions i ON rt.intervention_id = i.id
       ${whereClause}
       ORDER BY 
         CASE rt.statut

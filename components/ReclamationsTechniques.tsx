@@ -232,15 +232,24 @@ export default function ReclamationsTechniques() {
     try {
       // Nettoyer: retirer # et espaces
       const cleanNumInter = numInter.replace(/^#/, '').trim();
-      console.log('Recherche intervention:', cleanNumInter);
+      console.log('Recherche intervention:', cleanNumInter, 'intervention_id:', interventionId);
       
-      const response = await fetch(`/api/interventions?num_inter=${encodeURIComponent(cleanNumInter)}`);
+      // Chercher par intervention_id si disponible, sinon par num_inter
+      const url = interventionId 
+        ? `/api/interventions?id=${interventionId}`
+        : `/api/interventions?num_inter=${encodeURIComponent(cleanNumInter)}`;
+      const response = await fetch(url);
       const data = await response.json();
       
       console.log('Résultat API:', data);
       
       if (data.success && data.interventions.length > 0) {
-        const details = data.interventions[0];
+        // Si plusieurs résultats, trouver celui qui correspond à l'intervention_id
+        let details = data.interventions[0];
+        if (interventionId && data.interventions.length > 1) {
+          const match = data.interventions.find((i: any) => i.id === interventionId);
+          if (match) details = match;
+        }
         setInterventionDetails(details);
         // Stocker dans la map pour affichage dans la liste
         setInterventionsMap(prev => ({
@@ -367,13 +376,28 @@ export default function ReclamationsTechniques() {
   // Fonction pour ouvrir la modal d'édition des articles
   const handleOpenArticlesModal = async (reclamation: Reclamation) => {
     try {
-      // Chercher l'intervention par num_inter
       const cleanNumInter = reclamation.num_inter.replace(/^#/, '').trim();
-      const response = await fetch(`/api/interventions?num_inter=${encodeURIComponent(cleanNumInter)}`);
+      
+      // Chercher l'intervention par intervention_id si disponible, sinon par num_inter
+      let url: string;
+      if (reclamation.intervention_id) {
+        url = `/api/interventions?id=${reclamation.intervention_id}`;
+      } else {
+        url = `/api/interventions?num_inter=${encodeURIComponent(cleanNumInter)}`;
+      }
+      
+      const response = await fetch(url);
       const data = await response.json();
       
       if (data.interventions && data.interventions.length > 0) {
-        const intervention = data.interventions[0];
+        // Si on a cherché par num_inter et il y a plusieurs résultats,
+        // essayer de trouver celle qui correspond au bon intervention_id
+        let intervention = data.interventions[0];
+        if (reclamation.intervention_id && data.interventions.length > 1) {
+          const match = data.interventions.find((i: any) => i.id === reclamation.intervention_id);
+          if (match) intervention = match;
+        }
+        
         setEditingIntervention(intervention);
         
         // Nettoyer les articles pour l'édition
