@@ -441,6 +441,28 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     }
   }
 
+  // Fonction pour supprimer une ligne coût par salarié
+  const handleDeleteCout = async (coutId: number, nom: string, prenom: string) => {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer la ligne de ${nom} ${prenom} ?`)) return
+
+    try {
+      const response = await fetch(`/api/cout-par-salaire?id=${coutId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        alert('Ligne supprimée avec succès !')
+        await loadData()
+      } else {
+        const error = await response.json()
+        throw new Error(error.error || 'Erreur lors de la suppression')
+      }
+    } catch (error) {
+      console.error('Erreur suppression coût:', error)
+      alert(error instanceof Error ? error.message : 'Erreur lors de la suppression')
+    }
+  }
+
   const deletePayment = async (paymentId: number) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce paiement ?')) return
 
@@ -1895,6 +1917,15 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                             title="Voir l'historique complet de l'employé"
                           >
                             <Users className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteCout(cout.id, cout.nom, cout.prenom)}
+                            className="h-7 px-2 text-xs bg-red-100 hover:bg-red-200 border-red-300 text-red-800"
+                            title="Supprimer cette ligne"
+                          >
+                            <Trash2 className="w-3 h-3" />
                           </Button>
                         </div>
                       </td>
