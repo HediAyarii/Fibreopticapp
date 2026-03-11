@@ -1918,6 +1918,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           >
                             <Users className="w-3 h-3" />
                           </Button>
+                          {/* Bouton supprimer masqué
                           <Button
                             size="sm"
                             variant="outline"
@@ -1927,6 +1928,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                           >
                             <Trash2 className="w-3 h-3" />
                           </Button>
+                          */}
                         </div>
                       </td>
                     </tr>
