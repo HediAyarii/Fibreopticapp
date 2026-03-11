@@ -56,14 +56,15 @@ export async function GET(request: NextRequest) {
         COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id), 0) as total_primes,
         cps.total_genere,
         -- Calculer automatiquement le RAP avec la formule correcte
-        -- RAP = Total Généré - Salaire Net - Impôt + Primes (les primes s'ajoutent au RAP)
+        -- RAP = Total Généré - Salaire Net - Impôt + Primes - Pénalités
         (cps.total_genere - cps.salaire_net - 
          CASE 
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
            WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
            ELSE cps.charge * (COALESCE(e.pourcentage_taxe, 50) / 100)
-         END + COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id), 0)) as rap,
+         END + COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id), 0)
+         - COALESCE(cps.penalite, 0)) as rap,
         cps.created_at,
         cps.updated_at
       FROM cout_par_salaire cps
@@ -175,10 +176,12 @@ export async function GET(request: NextRequest) {
           }
           
           // Recalculer le RAP avec le nouveau total_genere
-          // RAP = Total Généré - Salaire Net - Impôt + Primes - Paiements - Amendes
+          // RAP = Total Généré - Salaire Net - Impôt + Primes - Pénalités - Paiements - Amendes
           // Les primes S'AJOUTENT au reste à payer (bonus pour l'employé)
+          // Les pénalités SE DÉDUISENT du reste à payer
           const totalPrimes = parseFloat(cout.total_primes || 0)
-          const rapRecalcule = totalGenereCalcule - parseFloat(cout.salaire_net) - parseFloat(cout.impot) + totalPrimes
+          const totalPenalite = parseFloat(cout.penalite || 0)
+          const rapRecalcule = totalGenereCalcule - parseFloat(cout.salaire_net) - parseFloat(cout.impot) + totalPrimes - totalPenalite
           const rapFinal = rapRecalcule - totalPaiements - totalAmendes
           
           return {
@@ -370,11 +373,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Coût non trouvé" }, { status: 400 })
     }
     
-    // Si la prime a été mise à jour, recalculer le RAP
-    if (updateData.prime !== undefined) {
+    // Si la prime ou la pénalité a été mise à jour, recalculer le RAP
+    if (updateData.prime !== undefined || updateData.penalite !== undefined) {
       const cout = result.rows[0]
       const impot = parseFloat(cout.charge) * 0.5 // Calculer l'impôt (50% de la charge)
-      const newRap = parseFloat(cout.total_genere) - parseFloat(cout.salaire_net) - impot + parseFloat(cout.prime)
+      const penalite = parseFloat(cout.penalite || 0)
+      const newRap = parseFloat(cout.total_genere) - parseFloat(cout.salaire_net) - impot + parseFloat(cout.prime) - penalite
       
       // Désactiver temporairement les triggers pour éviter les conflits
       await query('ALTER TABLE cout_par_salaire DISABLE TRIGGER trigger_recalcul_rap;')

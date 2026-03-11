@@ -47,12 +47,21 @@ export async function POST(request: NextRequest) {
       const penaliteYear = penaliteDate.getFullYear()
       
       // Vérifier s'il existe déjà un coût pour cet employé ce mois
+      // Vérification par employe_id OU par nom/prénom (case-insensitive)
       const existingCout = await query(`
-        SELECT id FROM cout_par_salaire 
-        WHERE employe_id = $1 
-          AND mois = $2 
-          AND annee = $3
-      `, [penalite.employe_id, penaliteMonth, penaliteYear])
+        SELECT id, employe_id FROM cout_par_salaire 
+        WHERE mois = $1 
+          AND annee = $2
+          AND (
+            employe_id = $3
+            OR (
+              LOWER(TRIM(nom)) = LOWER(TRIM($4)) 
+              AND LOWER(TRIM(prenom)) = LOWER(TRIM($5))
+            )
+          )
+        ORDER BY employe_id NULLS LAST
+        LIMIT 1
+      `, [penaliteMonth, penaliteYear, penalite.employe_id, penalite.employe_nom, penalite.employe_prenom])
       
       if (existingCout.rows.length === 0) {
         console.log(`🔧 Création d'un coût manquant pour ${penalite.employe_nom} ${penalite.employe_prenom} (${penaliteMonth}/${penaliteYear})`)
@@ -91,7 +100,70 @@ export async function POST(request: NextRequest) {
         } catch (createError) {
           console.error(`  ❌ Erreur création coût:`, createError.message)
         }
+      } else {
+        // Si un coût existe mais avec employe_id=null, mettre à jour employe_id
+        const existing = existingCout.rows[0]
+        if (existing.employe_id === null && penalite.employe_id) {
+          console.log(`🔧 Mise à jour employe_id pour ${penalite.employe_nom} ${penalite.employe_prenom} (${penaliteMonth}/${penaliteYear})`)
+          await query(`
+            UPDATE cout_par_salaire 
+            SET employe_id = $1, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = $2
+          `, [penalite.employe_id, existing.id])
+        }
       }
+    }
+    
+    // 3b. Nettoyer les doublons (fusionner les données, garder l'entrée avec les vraies données)
+    console.log('📋 3b. Nettoyage des doublons...')
+    
+    // D'abord, identifier les doublons et fusionner les données
+    const duplicatesInfo = await query(`
+      WITH duplicates AS (
+        SELECT id, nom, prenom, mois, annee, employe_id, salaire_net, prime,
+          ROW_NUMBER() OVER (
+            PARTITION BY LOWER(TRIM(nom)), LOWER(TRIM(prenom)), mois, annee 
+            -- Garder l'entrée avec les vraies données (pas les valeurs par défaut 1000.00)
+            ORDER BY 
+              CASE WHEN salaire_net = 1000.00 THEN 1 ELSE 0 END,  -- Éviter les valeurs par défaut
+              CASE WHEN employe_id IS NULL THEN 1 ELSE 0 END,     -- Préférer avec employe_id
+              id                                                   -- Plus ancien
+          ) as rn
+        FROM cout_par_salaire
+      )
+      SELECT * FROM duplicates WHERE rn <= 2
+      ORDER BY LOWER(TRIM(nom)), LOWER(TRIM(prenom)), mois, annee, rn
+    `)
+    
+    // Grouper par nom/prenom/mois/annee pour traiter les paires
+    const duplicateGroups: Record<string, any[]> = {}
+    for (const row of duplicatesInfo.rows) {
+      const key = `${row.nom.toLowerCase().trim()}_${row.prenom.toLowerCase().trim()}_${row.mois}_${row.annee}`
+      if (!duplicateGroups[key]) duplicateGroups[key] = []
+      duplicateGroups[key].push(row)
+    }
+    
+    let duplicatesDeleted = 0
+    for (const [key, rows] of Object.entries(duplicateGroups)) {
+      if (rows.length > 1) {
+        const toKeep = rows[0]  // Premier = meilleures données
+        const toDelete = rows[1]  // Second = à supprimer
+        
+        // Si le premier n'a pas d'employe_id mais le second oui, mettre à jour
+        if (toKeep.employe_id === null && toDelete.employe_id !== null) {
+          await query(`UPDATE cout_par_salaire SET employe_id = $1 WHERE id = $2`, [toDelete.employe_id, toKeep.id])
+          console.log(`  ✅ Fusionné employe_id=${toDelete.employe_id} vers ID ${toKeep.id}`)
+        }
+        
+        // Supprimer le doublon
+        await query(`DELETE FROM cout_par_salaire WHERE id = $1`, [toDelete.id])
+        console.log(`  🗑️ Supprimé doublon ID ${toDelete.id}: ${toDelete.prenom} ${toDelete.nom} (${toDelete.mois}/${toDelete.annee})`)
+        duplicatesDeleted++
+      }
+    }
+    
+    if (duplicatesDeleted > 0) {
+      console.log(`🗑️ ${duplicatesDeleted} doublons supprimés après fusion`)
     }
     
     // 4. Synchroniser tous les coûts (existants + nouveaux)

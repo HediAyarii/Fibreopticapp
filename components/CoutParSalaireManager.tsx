@@ -1326,6 +1326,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
             Export CSV
           </Button>
           
+          {/* Bouton Sync Pénalités désactivé - risque de création de doublons
           <Button 
             onClick={syncPenalites} 
             variant="outline" 
@@ -1344,6 +1345,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
               </>
             )}
           </Button>
+          */}
 
           <Button 
             onClick={syncNames} 
