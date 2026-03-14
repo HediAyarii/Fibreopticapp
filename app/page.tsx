@@ -61,6 +61,7 @@ import { RevenueCalculation } from "@/components/RevenueCalculation"
 import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
 import KPIProductionSection from "@/components/KPIProductionSection"
 import ReclamationsTechniques from "@/components/ReclamationsTechniques"
+import { AbsencesManager } from "@/components/AbsencesManager"
 import AutoSyncTotalGenere from "@/components/AutoSyncTotalGenere"
 import SyncButton from "@/components/SyncButton"
 import AutoDetectButton from "@/components/AutoDetectButton"
@@ -268,7 +269,7 @@ export default function EmployeeTracker() {
     'dashboard', 'employees', 'interventions', 'materials', 'recap-calcul', 
     'documents', 'penalties', 'statistics', 'costs', 'cout-par-salaire',
     'claims', 'reclamations-techniques', 'tarifs', 'recap-articles', 'vehicules',
-    'recette-generer', 'fuel-consumption', 'technicien-accounts', 'compte-admin', 'historique'
+    'recette-generer', 'fuel-consumption', 'technicien-accounts', 'absences', 'compte-admin', 'historique'
   ]
   
   // État pour l'ordre personnalisé des sections (persisté dans la BDD par utilisateur)
@@ -3764,6 +3765,7 @@ La page va se recharger automatiquement...`)
                     },
                     'fuel-consumption': { icon: <Fuel className="w-5 h-5" />, label: 'Consommation Carburant', permission: 'fuel-consumption' },
                     'technicien-accounts': { icon: <UserCog className="w-5 h-5" />, label: 'Comptes Techniciens', permission: 'technicien-accounts' },
+                    'absences': { icon: <Calendar className="w-5 h-5" />, label: 'Absences', permission: 'absences' },
                     'compte-admin': { icon: <UserPlus className="w-5 h-5" />, label: 'Compte Admin', adminOnly: true },
                     'historique': { icon: <History className="w-5 h-5" />, label: 'Historique', adminOnly: true },
                   }
@@ -8382,6 +8384,13 @@ La page va se recharger automatiquement...`)
           {activeTab === "reclamations-techniques" && (
             <div className="space-y-6">
               <ReclamationsTechniques />
+            </div>
+          )}
+
+          {/* Absences Section */}
+          {activeTab === "absences" && (
+            <div className="space-y-6">
+              <AbsencesManager />
             </div>
           )}
 

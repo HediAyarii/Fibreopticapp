@@ -89,7 +89,7 @@ export function useUserPermissions() {
         'fuel-consumption', 'penalties', 'statistics', 'costs',
         'cout-par-salarie', 'claims', 'documents', 'recap-calcul',
         'tarifs', 'recette-generer', 'technicien-accounts', 'compte-admin',
-        'vehicules', 'reclamations-techniques'
+        'vehicules', 'reclamations-techniques', 'absences'
       ]
     }
     

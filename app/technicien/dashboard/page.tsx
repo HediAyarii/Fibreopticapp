@@ -49,6 +49,7 @@ import { InterventionCategorieTable } from '@/components/InterventionCategorieTa
 import TechnicienReclamations from '@/components/TechnicienReclamations'
 import { MonVehicule } from '@/components/MonVehicule'
 import { MesAmendes } from '@/components/MesAmendes'
+import { CalendarOff } from 'lucide-react'
 // import { useEmployeeUpdates } from '@/hooks/useEmployeeUpdates' // Désactivé pour éviter les erreurs de build
 
 interface User {
@@ -115,6 +116,290 @@ interface Penalite {
   statut: string
   motif: string
   date_echeance: string
+}
+
+  montant: number
+  statut: string
+  motif: string
+  date_echeance: string
+}
+
+interface TechAbsence {
+  id: number
+  employe_id: number | null
+  nom: string
+  prenom: string
+  date_debut: string
+  date_fin: string
+  type_absence: string
+  motif: string | null
+  statut: string
+  commentaire_admin: string | null
+  demande_par: string
+  created_at: string
+}
+
+const TYPE_ABS_LABELS: Record<string, string> = {
+  'conge': 'Congé',
+  'maladie': 'Maladie',
+  'sans_solde': 'Sans solde',
+  'formation': 'Formation',
+  'autre': 'Autre'
+}
+
+const TYPE_ABS_COLORS: Record<string, string> = {
+  'conge': 'bg-blue-100 text-blue-700 border-blue-300',
+  'maladie': 'bg-red-100 text-red-700 border-red-300',
+  'sans_solde': 'bg-yellow-100 text-yellow-700 border-yellow-300',
+  'formation': 'bg-purple-100 text-purple-700 border-purple-300',
+  'autre': 'bg-gray-100 text-gray-700 border-gray-300'
+}
+
+const STATUT_ABS_CONFIG: Record<string, { label: string; className: string }> = {
+  'en_attente': { label: 'En attente', className: 'bg-yellow-100 text-yellow-700' },
+  'approuvee': { label: 'Approuvée', className: 'bg-green-100 text-green-700' },
+  'refusee': { label: 'Refusée', className: 'bg-red-100 text-red-700' },
+  'directe': { label: 'Directe', className: 'bg-blue-100 text-blue-700' }
+}
+
+function TechnicienAbsences({ user, fetchWithAuth }: { user: any, fetchWithAuth: (url: string, options?: any) => Promise<Response> }) {
+  const [absences, setAbsences] = useState<TechAbsence[]>([])
+  const [loadingAbs, setLoadingAbs] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [newDemande, setNewDemande] = useState({
+    date_debut: '',
+    date_fin: '',
+    type_absence: 'conge',
+    motif: ''
+  })
+
+  const loadAbsences = useCallback(async () => {
+    if (!user?.employe_id) return
+    setLoadingAbs(true)
+    try {
+      const res = await fetch(`/api/absences?employe_id=${user.employe_id}`)
+      if (res.ok) {
+        const data = await res.json()
+        setAbsences(data.absences || [])
+      }
+    } catch (err) {
+      console.error('Erreur chargement absences:', err)
+    } finally {
+      setLoadingAbs(false)
+    }
+  }, [user?.employe_id])
+
+  useEffect(() => {
+    loadAbsences()
+  }, [loadAbsences])
+
+  const handleSubmitDemande = async () => {
+    if (!newDemande.date_debut || !newDemande.date_fin) {
+      alert('Veuillez remplir les dates de début et de fin')
+      return
+    }
+    if (new Date(newDemande.date_fin) < new Date(newDemande.date_debut)) {
+      alert('La date de fin doit être après la date de début')
+      return
+    }
+    try {
+      const res = await fetch('/api/absences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employe_id: user.employe_id,
+          nom: user.nom,
+          prenom: user.prenom,
+          date_debut: newDemande.date_debut,
+          date_fin: newDemande.date_fin,
+          type_absence: newDemande.type_absence,
+          motif: newDemande.motif || null,
+          demande_par: 'technicien'
+        })
+      })
+      if (res.ok) {
+        alert('Demande d\'absence envoyée avec succès !')
+        setShowForm(false)
+        setNewDemande({ date_debut: '', date_fin: '', type_absence: 'conge', motif: '' })
+        loadAbsences()
+      } else {
+        const err = await res.json()
+        alert(err.error || 'Erreur lors de l\'envoi')
+      }
+    } catch (err) {
+      console.error('Erreur envoi demande:', err)
+      alert('Erreur lors de l\'envoi de la demande')
+    }
+  }
+
+  const enAttente = absences.filter(a => a.statut === 'en_attente').length
+  const approuvees = absences.filter(a => a.statut === 'approuvee' || a.statut === 'directe').length
+
+  return (
+    <div className="space-y-6">
+      {/* Stats rapides */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-yellow-600">{enAttente}</p>
+            <p className="text-xs text-gray-500">En attente</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-green-600">{approuvees}</p>
+            <p className="text-xs text-gray-500">Approuvées</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-red-600">{absences.filter(a => a.statut === 'refusee').length}</p>
+            <p className="text-xs text-gray-500">Refusées</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-blue-600">{absences.length}</p>
+            <p className="text-xs text-gray-500">Total</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Bouton nouvelle demande */}
+      <div className="flex justify-end">
+        <Button onClick={() => setShowForm(!showForm)} className="bg-blue-600 hover:bg-blue-700 text-white">
+          <Plus className="w-4 h-4 mr-2" />
+          Nouvelle demande d'absence
+        </Button>
+      </div>
+
+      {/* Formulaire de demande */}
+      {showForm && (
+        <Card className="border-blue-200 bg-blue-50/30">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <CalendarOff className="w-5 h-5 text-blue-600" />
+              Nouvelle demande d'absence
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Date début *</Label>
+                <Input
+                  type="date"
+                  value={newDemande.date_debut}
+                  onChange={(e) => setNewDemande({ ...newDemande, date_debut: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Date fin *</Label>
+                <Input
+                  type="date"
+                  value={newDemande.date_fin}
+                  onChange={(e) => setNewDemande({ ...newDemande, date_fin: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Type d'absence</Label>
+              <select
+                value={newDemande.type_absence}
+                onChange={(e) => setNewDemande({ ...newDemande, type_absence: e.target.value })}
+                className="w-full mt-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="conge">Congé</option>
+                <option value="maladie">Maladie</option>
+                <option value="sans_solde">Sans solde</option>
+                <option value="formation">Formation</option>
+                <option value="autre">Autre</option>
+              </select>
+            </div>
+            <div>
+              <Label>Motif (optionnel)</Label>
+              <textarea
+                value={newDemande.motif}
+                onChange={(e) => setNewDemande({ ...newDemande, motif: e.target.value })}
+                placeholder="Décrivez le motif de votre absence..."
+                rows={3}
+                className="w-full mt-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowForm(false)}>Annuler</Button>
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleSubmitDemande}>
+                Envoyer la demande
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Liste des absences */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Calendar className="w-5 h-5" />
+            Mes absences
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingAbs ? (
+            <div className="text-center py-8">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-gray-400" />
+              <p className="text-gray-500">Chargement...</p>
+            </div>
+          ) : absences.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <CalendarOff className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>Aucune absence enregistrée</p>
+              <p className="text-sm">Cliquez sur "Nouvelle demande" pour demander une absence</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {absences.map((absence) => {
+                const duree = Math.ceil((new Date(absence.date_fin).getTime() - new Date(absence.date_debut).getTime()) / (1000 * 60 * 60 * 24)) + 1
+                const statutConf = STATUT_ABS_CONFIG[absence.statut] || STATUT_ABS_CONFIG['en_attente']
+                const typeColor = TYPE_ABS_COLORS[absence.type_absence] || TYPE_ABS_COLORS['autre']
+                return (
+                  <div key={absence.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <Badge className={typeColor}>
+                        {TYPE_ABS_LABELS[absence.type_absence] || absence.type_absence}
+                      </Badge>
+                      <Badge className={statutConf.className}>
+                        {statutConf.label}
+                      </Badge>
+                      <span className="text-sm text-gray-500 ml-auto">
+                        {duree} jour{duree > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                      <div><span className="font-medium">Du:</span> {new Date(absence.date_debut).toLocaleDateString('fr-FR')}</div>
+                      <div><span className="font-medium">Au:</span> {new Date(absence.date_fin).toLocaleDateString('fr-FR')}</div>
+                    </div>
+                    {absence.motif && (
+                      <p className="text-sm text-gray-500 mt-2 bg-gray-50 p-2 rounded">
+                        <span className="font-medium">Motif:</span> {absence.motif}
+                      </p>
+                    )}
+                    {absence.commentaire_admin && (
+                      <p className="text-sm mt-2 bg-blue-50 p-2 rounded border border-blue-200">
+                        <span className="font-medium text-blue-700">💬 Commentaire admin:</span> {absence.commentaire_admin}
+                      </p>
+                    )}
+                    <div className="text-xs text-gray-400 mt-2">
+                      Demandé le {new Date(absence.created_at).toLocaleDateString('fr-FR')}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
 }
 
 export default function TechnicienDashboard() {
@@ -1250,6 +1535,17 @@ export default function TechnicienDashboard() {
           <FileText className="w-4 h-4 inline mr-2" />
           Documents Administratifs
         </button>
+        <button
+          onClick={() => handleTabChange('absences')}
+          className={`py-4 px-1 border-b-2 font-medium text-sm ${
+            activeTab === 'absences'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+          }`}
+        >
+          <CalendarOff className="w-4 h-4 inline mr-2" />
+          Absences
+        </button>
             </nav>
             
             {/* Indicateur de statut temps réel */}
@@ -1272,6 +1568,7 @@ export default function TechnicienDashboard() {
                 {activeTab === 'vehicule' && 'Mon Véhicule'}
                 {activeTab === 'donnees-personnelles' && 'Données Personnelles'}
             {activeTab === 'documents-administratifs' && 'Documents Administratifs'}
+                {activeTab === 'absences' && 'Absences'}
               </h2>
               <div className="flex items-center space-x-2 text-xs">
                 <div className={`w-2 h-2 rounded-full ${isUpdating ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
@@ -1359,6 +1656,17 @@ export default function TechnicienDashboard() {
         >
           <FileText className="w-4 h-4 inline mr-1" />
           Documents
+        </button>
+        <button
+          onClick={() => handleTabChange('absences')}
+          className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium ${
+            activeTab === 'absences'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          <CalendarOff className="w-4 h-4 inline mr-1" />
+          Absences
         </button>
             </div>
           </div>
@@ -2027,6 +2335,11 @@ export default function TechnicienDashboard() {
               onChange={(field, value) => setNewDocument({...newDocument, [field]: value})}
             />
           </>
+        )}
+
+        {/* Section Absences */}
+        {activeTab === 'absences' && (
+          <TechnicienAbsences user={user} fetchWithAuth={fetchWithAuth} />
         )}
       </main>
 
