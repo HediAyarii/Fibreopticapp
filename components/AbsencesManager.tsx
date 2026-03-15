@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
@@ -18,9 +18,7 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
-  MessageSquare,
   Trash2,
-  AlertCircle
 } from "lucide-react"
 
 interface Absence {
@@ -68,11 +66,11 @@ const TYPE_ABSENCE_COLORS: Record<string, string> = {
   'autre': '#6B7280'
 }
 
-const STATUT_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  'en_attente': { label: 'En attente', color: 'text-yellow-700', bg: 'bg-yellow-100 border-yellow-300' },
-  'approuvee': { label: 'Approuvée', color: 'text-green-700', bg: 'bg-green-100 border-green-300' },
-  'refusee': { label: 'Refusée', color: 'text-red-700', bg: 'bg-red-100 border-red-300' },
-  'directe': { label: 'Directe', color: 'text-blue-700', bg: 'bg-blue-100 border-blue-300' }
+const STATUT_CONFIG: Record<string, { label: string; bg: string }> = {
+  'en_attente': { label: 'En attente', bg: 'bg-yellow-100 border-yellow-300' },
+  'approuvee': { label: 'Approuvée', bg: 'bg-green-100 border-green-300' },
+  'refusee': { label: 'Refusée', bg: 'bg-red-100 border-red-300' },
+  'directe': { label: 'Directe', bg: 'bg-blue-100 border-blue-300' }
 }
 
 const MOIS_NOMS = [
@@ -81,7 +79,7 @@ const MOIS_NOMS = [
   'Mai', 'Juin', 'Juillet', 'Août'
 ]
 
-const JOURS_SEMAINE = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
+const JOURS_SEMAINE_LETTRES = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 
 export function AbsencesManager() {
   const [absences, setAbsences] = useState<Absence[]>([])
@@ -92,12 +90,10 @@ export function AbsencesManager() {
   const [showDecisionModal, setShowDecisionModal] = useState(false)
   const [selectedAbsence, setSelectedAbsence] = useState<Absence | null>(null)
   const [decisionComment, setDecisionComment] = useState('')
-  
-  // Année scolaire : Sept année N -> Août année N+1
+
   const currentDate = new Date()
-  const currentMonth = currentDate.getMonth() // 0-11
+  const currentMonth = currentDate.getMonth()
   const currentYear = currentDate.getFullYear()
-  // Si on est entre sept-dec, l'année de début est l'année courante, sinon c'est l'année précédente
   const [startYear, setStartYear] = useState(currentMonth >= 8 ? currentYear : currentYear - 1)
 
   const [newAbsence, setNewAbsence] = useState({
@@ -111,23 +107,32 @@ export function AbsencesManager() {
     commentaire_admin: ''
   })
 
-  // Charger les données
+  // Charger les données - fetch BOTH years for Sept-Aug range
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [absencesRes, employeesRes] = await Promise.all([
+      const [absRes1, absRes2, employeesRes] = await Promise.all([
         fetch(`/api/absences?annee=${startYear}`),
-        fetch('/api/employees?statut=actif')
+        fetch(`/api/absences?annee=${startYear + 1}`),
+        fetch('/api/employes')
       ])
-      
-      if (absencesRes.ok) {
-        const data = await absencesRes.json()
-        setAbsences(data.absences || [])
+
+      let allAbsences: Absence[] = []
+      if (absRes1.ok) {
+        const data = await absRes1.json()
+        allAbsences = [...(data.absences || [])]
       }
-      
+      if (absRes2.ok) {
+        const data = await absRes2.json()
+        const existing = new Set(allAbsences.map(a => a.id))
+        const newOnes = (data.absences || []).filter((a: Absence) => !existing.has(a.id))
+        allAbsences = [...allAbsences, ...newOnes]
+      }
+      setAbsences(allAbsences)
+
       if (employeesRes.ok) {
         const data = await employeesRes.json()
-        setEmployees(data.employees || data.data || [])
+        setEmployees(data.employes || data.employees || data.data || [])
       }
     } catch (error) {
       console.error('Erreur chargement absences:', error)
@@ -140,28 +145,23 @@ export function AbsencesManager() {
     loadData()
   }, [loadData])
 
-  // Créer une absence directe (par admin)
   const handleCreateAbsence = async () => {
     if (!newAbsence.date_debut || !newAbsence.date_fin) {
       alert('Les dates sont obligatoires')
       return
     }
 
-    // Récupérer nom/prénom depuis l'employé sélectionné
     let nom = newAbsence.nom
     let prenom = newAbsence.prenom
     let employe_id = newAbsence.employe_id ? parseInt(newAbsence.employe_id) : null
 
     if (employe_id) {
       const emp = employees.find(e => e.id === employe_id)
-      if (emp) {
-        nom = emp.nom
-        prenom = emp.prenom
-      }
+      if (emp) { nom = emp.nom; prenom = emp.prenom }
     }
 
     if (!nom || !prenom) {
-      alert('Veuillez sélectionner un employé ou remplir le nom et prénom')
+      alert('Veuillez sélectionner un employé')
       return
     }
 
@@ -170,11 +170,8 @@ export function AbsencesManager() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employe_id,
-          nom,
-          prenom,
-          date_debut: newAbsence.date_debut,
-          date_fin: newAbsence.date_fin,
+          employe_id, nom, prenom,
+          date_debut: newAbsence.date_debut, date_fin: newAbsence.date_fin,
           type_absence: newAbsence.type_absence,
           motif: newAbsence.motif || null,
           demande_par: 'admin',
@@ -197,10 +194,8 @@ export function AbsencesManager() {
     }
   }
 
-  // Approuver/Refuser une demande
   const handleDecision = async (action: 'approuver' | 'refuser') => {
     if (!selectedAbsence) return
-
     try {
       const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}')
       const response = await fetch('/api/absences', {
@@ -213,7 +208,6 @@ export function AbsencesManager() {
           approuve_par: currentUser.email || currentUser.name || 'Admin'
         })
       })
-
       if (response.ok) {
         alert(action === 'approuver' ? 'Demande approuvée !' : 'Demande refusée.')
         setShowDecisionModal(false)
@@ -226,78 +220,53 @@ export function AbsencesManager() {
       }
     } catch (error) {
       console.error('Erreur décision:', error)
-      alert('Erreur')
     }
   }
 
-  // Supprimer une absence
   const handleDelete = async (id: number) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette absence ?')) return
-
     try {
       const response = await fetch(`/api/absences?id=${id}`, { method: 'DELETE' })
-      if (response.ok) {
-        loadData()
-      }
+      if (response.ok) loadData()
     } catch (error) {
       console.error('Erreur suppression:', error)
     }
   }
 
-  // Compter les demandes en attente
   const demandesEnAttente = absences.filter(a => a.statut === 'en_attente').length
-
-  // Absences visibles dans le calendrier (approuvées + directes)
   const absencesCalendrier = absences.filter(a => a.statut === 'approuvee' || a.statut === 'directe')
 
-  // Obtenir les employés uniques qui ont des absences dans le calendrier
-  const employeesAvecAbsences = Array.from(
-    new Map(
-      absencesCalendrier.map(a => [`${a.nom}_${a.prenom}`, { nom: a.nom, prenom: a.prenom, employe_id: a.employe_id }])
-    ).values()
-  ).sort((a, b) => a.nom.localeCompare(b.nom))
-
-  // Vérifier si un jour donné est dans une absence pour un employé
-  const getAbsenceForDay = (nom: string, prenom: string, date: Date): Absence | null => {
-    return absencesCalendrier.find(a => {
+  // Vérifier les absences pour un employé à une date donnée (SANS muter la date)
+  const getAbsencesForDay = (nom: string, prenom: string, year: number, month: number, day: number): Absence[] => {
+    const dateTs = new Date(year, month, day, 12, 0, 0).getTime()
+    return absencesCalendrier.filter(a => {
       if (a.nom !== nom || a.prenom !== prenom) return false
       const debut = new Date(a.date_debut)
-      const fin = new Date(a.date_fin)
       debut.setHours(0, 0, 0, 0)
+      const fin = new Date(a.date_fin)
       fin.setHours(23, 59, 59, 999)
-      date.setHours(12, 0, 0, 0)
-      return date >= debut && date <= fin
-    }) || null
+      return dateTs >= debut.getTime() && dateTs <= fin.getTime()
+    })
   }
 
-  // Générer les mois du calendrier (Sept -> Août)
-  const getCalendrierMois = () => {
-    const mois = []
+  // Tous les employés pour le calendrier
+  const allEmployeesForCalendar = employees
+    .map(e => ({ nom: e.nom, prenom: e.prenom, employe_id: e.id }))
+    .sort((a, b) => a.nom.localeCompare(b.nom))
+
+  // Générer les données des 12 mois (Sept -> Août)
+  const getMoisData = () => {
+    const result = []
     for (let i = 0; i < 12; i++) {
-      const moisIndex = (8 + i) % 12 // Commence à septembre (8)
+      const moisIndex = (8 + i) % 12
       const annee = moisIndex >= 8 ? startYear : startYear + 1
       const nbJours = new Date(annee, moisIndex + 1, 0).getDate()
-      
-      const jours = []
-      for (let j = 1; j <= nbJours; j++) {
-        const date = new Date(annee, moisIndex, j)
-        const jourSemaine = date.getDay() // 0=dim, 1=lun...
-        const jourLettre = JOURS_SEMAINE[jourSemaine === 0 ? 6 : jourSemaine - 1]
-        const isWeekend = jourSemaine === 0 || jourSemaine === 6
-        jours.push({ jour: j, date, jourLettre, isWeekend })
-      }
-      
-      mois.push({
-        nom: MOIS_NOMS[i],
-        moisIndex,
-        annee,
-        jours
-      })
+      result.push({ nom: MOIS_NOMS[i], moisIndex, annee, nbJours })
     }
-    return mois
+    return result
   }
 
-  const calendrierMois = getCalendrierMois()
+  const moisData = getMoisData()
 
   return (
     <div className="space-y-6">
@@ -321,79 +290,41 @@ export function AbsencesManager() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <Clock className="w-8 h-8 text-yellow-500" />
-            <div>
-              <p className="text-sm text-gray-500">Demandes en attente</p>
-              <p className="text-2xl font-bold text-yellow-600">{demandesEnAttente}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <Check className="w-8 h-8 text-green-500" />
-            <div>
-              <p className="text-sm text-gray-500">Approuvées</p>
-              <p className="text-2xl font-bold text-green-600">{absences.filter(a => a.statut === 'approuvee').length}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <X className="w-8 h-8 text-red-500" />
-            <div>
-              <p className="text-sm text-gray-500">Refusées</p>
-              <p className="text-2xl font-bold text-red-600">{absences.filter(a => a.statut === 'refusee').length}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <Calendar className="w-8 h-8 text-blue-500" />
-            <div>
-              <p className="text-sm text-gray-500">Directes</p>
-              <p className="text-2xl font-bold text-blue-600">{absences.filter(a => a.statut === 'directe').length}</p>
-            </div>
-          </CardContent>
-        </Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <Clock className="w-8 h-8 text-yellow-500" />
+          <div><p className="text-sm text-gray-500">Demandes en attente</p><p className="text-2xl font-bold text-yellow-600">{demandesEnAttente}</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <Check className="w-8 h-8 text-green-500" />
+          <div><p className="text-sm text-gray-500">Approuvées</p><p className="text-2xl font-bold text-green-600">{absences.filter(a => a.statut === 'approuvee').length}</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <X className="w-8 h-8 text-red-500" />
+          <div><p className="text-sm text-gray-500">Refusées</p><p className="text-2xl font-bold text-red-600">{absences.filter(a => a.statut === 'refusee').length}</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <Calendar className="w-8 h-8 text-blue-500" />
+          <div><p className="text-sm text-gray-500">Directes</p><p className="text-2xl font-bold text-blue-600">{absences.filter(a => a.statut === 'directe').length}</p></div>
+        </CardContent></Card>
       </div>
 
-      {/* Vue tabs */}
+      {/* Tabs */}
       <div className="flex gap-2 border-b pb-2">
-        <Button
-          variant={activeView === 'calendrier' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setActiveView('calendrier')}
-        >
-          <Calendar className="w-4 h-4 mr-2" />
-          Calendrier
+        <Button variant={activeView === 'calendrier' ? 'default' : 'outline'} size="sm" onClick={() => setActiveView('calendrier')}>
+          <Calendar className="w-4 h-4 mr-2" />Calendrier
         </Button>
-        <Button
-          variant={activeView === 'demandes' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setActiveView('demandes')}
-          className="relative"
-        >
-          <Clock className="w-4 h-4 mr-2" />
-          Demandes
+        <Button variant={activeView === 'demandes' ? 'default' : 'outline'} size="sm" onClick={() => setActiveView('demandes')} className="relative">
+          <Clock className="w-4 h-4 mr-2" />Demandes
           {demandesEnAttente > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-              {demandesEnAttente}
-            </span>
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{demandesEnAttente}</span>
           )}
         </Button>
-        <Button
-          variant={activeView === 'liste' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setActiveView('liste')}
-        >
-          <Users className="w-4 h-4 mr-2" />
-          Toutes les absences
+        <Button variant={activeView === 'liste' ? 'default' : 'outline'} size="sm" onClick={() => setActiveView('liste')}>
+          <Users className="w-4 h-4 mr-2" />Toutes les absences
         </Button>
       </div>
 
-      {/* ========== VUE CALENDRIER ========== */}
+      {/* ===== CALENDRIER COMPACT - Mois en colonnes, Jours 1-31 en lignes ===== */}
       {activeView === 'calendrier' && (
         <Card>
           <CardHeader>
@@ -406,15 +337,12 @@ export function AbsencesManager() {
                 <Button variant="outline" size="sm" onClick={() => setStartYear(startYear - 1)}>
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <span className="font-semibold text-sm">
-                  Sept {startYear} — Août {startYear + 1}
-                </span>
+                <span className="font-semibold text-sm">Sept {startYear}  Août {startYear + 1}</span>
                 <Button variant="outline" size="sm" onClick={() => setStartYear(startYear + 1)}>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
             </div>
-            {/* Légende */}
             <div className="flex flex-wrap gap-3 mt-2">
               {Object.entries(TYPE_ABSENCE_LABELS).map(([key, label]) => (
                 <div key={key} className="flex items-center gap-1 text-xs">
@@ -428,78 +356,94 @@ export function AbsencesManager() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            {employeesAvecAbsences.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>Aucune absence enregistrée pour cette période</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-xs">
-                  <thead>
-                    <tr>
-                      <th className="sticky left-0 z-10 bg-white border p-1 min-w-[140px] text-left font-semibold">
-                        Employé
+          <CardContent className="p-2">
+            <div className="overflow-x-auto">
+              <table className="border-collapse text-[11px] w-full" style={{ tableLayout: 'fixed' }}>
+                <thead>
+                  <tr>
+                    {moisData.map((mois, idx) => (
+                      <th key={idx} colSpan={2} className="border border-gray-300 p-1 text-center font-bold bg-gray-50 text-xs">
+                        {mois.nom.substring(0, 4)}
                       </th>
-                      {calendrierMois.map((mois, idx) => (
-                        <th key={idx} colSpan={mois.jours.length} className="border p-1 text-center font-semibold bg-gray-50">
-                          {mois.nom}
-                        </th>
-                      ))}
-                    </tr>
-                    <tr>
-                      <th className="sticky left-0 z-10 bg-white border p-0 min-w-[140px]"></th>
-                      {calendrierMois.map((mois) =>
-                        mois.jours.map((jour) => (
-                          <th
-                            key={`${mois.moisIndex}-${jour.jour}`}
-                            className={`border p-0 text-center w-[18px] min-w-[18px] ${jour.isWeekend ? 'bg-gray-100' : ''}`}
-                          >
-                            <div className="text-[9px] text-gray-400">{jour.jour}</div>
-                            <div className="text-[8px] text-gray-300">{jour.jourLettre}</div>
-                          </th>
-                        ))
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {employeesAvecAbsences.map((emp, empIdx) => (
-                      <tr key={empIdx}>
-                        <td className="sticky left-0 z-10 bg-white border p-1 font-medium text-xs whitespace-nowrap">
-                          {emp.nom} {emp.prenom}
-                        </td>
-                        {calendrierMois.map((mois) =>
-                          mois.jours.map((jour) => {
-                            const absence = getAbsenceForDay(emp.nom, emp.prenom, new Date(jour.date))
-                            return (
-                              <td
-                                key={`${mois.moisIndex}-${jour.jour}`}
-                                className={`border p-0 w-[18px] min-w-[18px] h-[20px] ${jour.isWeekend && !absence ? 'bg-gray-100' : ''}`}
-                                style={absence ? { backgroundColor: absence.couleur } : undefined}
-                                title={absence ? `${TYPE_ABSENCE_LABELS[absence.type_absence] || absence.type_absence} - ${absence.motif || 'Pas de motif'}` : `${jour.jour} ${mois.nom}`}
-                              >
-                              </td>
-                            )
-                          })
-                        )}
-                      </tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 31 }, (_, dayIdx) => {
+                    const dayNum = dayIdx + 1
+                    return (
+                      <tr key={dayNum} className="h-[22px]">
+                        {moisData.map((mois, moisIdx) => {
+                          if (dayNum > mois.nbJours) {
+                            return (
+                              <td key={`${moisIdx}-n`} colSpan={2} className="border border-gray-200 bg-gray-50"></td>
+                            )
+                          }
+                          const date = new Date(mois.annee, mois.moisIndex, dayNum)
+                          const jourSemaine = date.getDay()
+                          const jourLettre = JOURS_SEMAINE_LETTRES[jourSemaine]
+                          const isWeekend = jourSemaine === 0 || jourSemaine === 6
+
+                          // Trouver toutes les absences de tous les employés pour ce jour
+                          const absencesDuJour: { absence: Absence; empName: string }[] = []
+                          for (const emp of allEmployeesForCalendar) {
+                            const abs = getAbsencesForDay(emp.nom, emp.prenom, mois.annee, mois.moisIndex, dayNum)
+                            abs.forEach(a => absencesDuJour.push({ absence: a, empName: `${emp.nom} ${emp.prenom}` }))
+                          }
+
+                          const bgColor = isWeekend ? '#E5E7EB' : '#FFFFFF'
+                          const hasAbsences = absencesDuJour.length > 0
+
+                          return (
+                            <React.Fragment key={`${moisIdx}-d`}>
+                              <td
+                                className="border-l border-t border-b border-gray-300 p-0 text-center"
+                                style={{ backgroundColor: bgColor, width: '28px' }}
+                              >
+                                <span className="text-[10px] font-medium text-gray-600">{dayNum}</span>
+                                <span className="text-[9px] text-gray-400 ml-[1px]">{jourLettre}</span>
+                              </td>
+                              <td
+                                className="border-r border-t border-b border-gray-300 p-0 relative"
+                                style={{ backgroundColor: bgColor, width: '22px' }}
+                                title={hasAbsences ? absencesDuJour.map(a => `${a.empName}: ${TYPE_ABSENCE_LABELS[a.absence.type_absence] || a.absence.type_absence}`).join('\n') : ''}
+                              >
+                                {hasAbsences && (
+                                  <div className="flex h-full gap-[1px] items-stretch" style={{ minHeight: '18px' }}>
+                                    {absencesDuJour.map((item, i) => (
+                                      <div
+                                        key={i}
+                                        className="flex-1 rounded-sm"
+                                        style={{
+                                          backgroundColor: item.absence.couleur || TYPE_ABSENCE_COLORS[item.absence.type_absence] || '#3B82F6',
+                                          minWidth: '3px',
+                                          maxWidth: '8px'
+                                        }}
+                                      ></div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                            </React.Fragment>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       )}
 
-      {/* ========== VUE DEMANDES ========== */}
+      {/* ===== DEMANDES ===== */}
       {activeView === 'demandes' && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-yellow-500" />
-              Demandes d'absence en attente ({demandesEnAttente})
+              Demandes en attente ({demandesEnAttente})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -516,57 +460,27 @@ export function AbsencesManager() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="font-semibold text-lg">{absence.nom} {absence.prenom}</span>
-                          <Badge className={STATUT_CONFIG['en_attente'].bg}>
-                            {STATUT_CONFIG['en_attente'].label}
-                          </Badge>
+                          <Badge className={STATUT_CONFIG['en_attente'].bg}>{STATUT_CONFIG['en_attente'].label}</Badge>
                           <Badge variant="outline" style={{ borderColor: TYPE_ABSENCE_COLORS[absence.type_absence], color: TYPE_ABSENCE_COLORS[absence.type_absence] }}>
                             {TYPE_ABSENCE_LABELS[absence.type_absence] || absence.type_absence}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 mb-2">
-                          <div>
-                            <span className="font-medium">Du:</span> {new Date(absence.date_debut).toLocaleDateString('fr-FR')}
-                          </div>
-                          <div>
-                            <span className="font-medium">Au:</span> {new Date(absence.date_fin).toLocaleDateString('fr-FR')}
-                          </div>
-                          <div>
-                            <span className="font-medium">Durée:</span> {Math.ceil((new Date(absence.date_fin).getTime() - new Date(absence.date_debut).getTime()) / (1000 * 60 * 60 * 24)) + 1} jour(s)
-                          </div>
-                          <div>
-                            <span className="font-medium">Demandé le:</span> {new Date(absence.created_at).toLocaleDateString('fr-FR')}
-                          </div>
+                          <div><span className="font-medium">Du:</span> {new Date(absence.date_debut).toLocaleDateString('fr-FR')}</div>
+                          <div><span className="font-medium">Au:</span> {new Date(absence.date_fin).toLocaleDateString('fr-FR')}</div>
+                          <div><span className="font-medium">Durée:</span> {Math.ceil((new Date(absence.date_fin).getTime() - new Date(absence.date_debut).getTime()) / (1000 * 60 * 60 * 24)) + 1} jour(s)</div>
+                          <div><span className="font-medium">Demandé le:</span> {new Date(absence.created_at).toLocaleDateString('fr-FR')}</div>
                         </div>
                         {absence.motif && (
-                          <div className="text-sm bg-gray-50 p-2 rounded mt-1">
-                            <span className="font-medium">Motif:</span> {absence.motif}
-                          </div>
+                          <div className="text-sm bg-gray-50 p-2 rounded mt-1"><span className="font-medium">Motif:</span> {absence.motif}</div>
                         )}
                       </div>
                       <div className="flex gap-2 ml-4">
-                        <Button
-                          size="sm"
-                          className="bg-green-600 hover:bg-green-700 text-white"
-                          onClick={() => {
-                            setSelectedAbsence(absence)
-                            setDecisionComment('')
-                            setShowDecisionModal(true)
-                          }}
-                        >
-                          <Check className="w-4 h-4 mr-1" />
-                          Approuver
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => { setSelectedAbsence(absence); setDecisionComment(''); setShowDecisionModal(true) }}>
+                          <Check className="w-4 h-4 mr-1" />Approuver
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            setSelectedAbsence(absence)
-                            setDecisionComment('')
-                            setShowDecisionModal(true)
-                          }}
-                        >
-                          <X className="w-4 h-4 mr-1" />
-                          Refuser
+                        <Button size="sm" variant="destructive" onClick={() => { setSelectedAbsence(absence); setDecisionComment(''); setShowDecisionModal(true) }}>
+                          <X className="w-4 h-4 mr-1" />Refuser
                         </Button>
                       </div>
                     </div>
@@ -578,14 +492,11 @@ export function AbsencesManager() {
         </Card>
       )}
 
-      {/* ========== VUE LISTE ========== */}
+      {/* ===== LISTE ===== */}
       {activeView === 'liste' && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Toutes les absences
-            </CardTitle>
+            <CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" />Toutes les absences</CardTitle>
           </CardHeader>
           <CardContent>
             {absences.length === 0 ? (
@@ -606,7 +517,6 @@ export function AbsencesManager() {
                       <th className="text-left p-3">Motif</th>
                       <th className="text-center p-3">Statut</th>
                       <th className="text-left p-3">Origine</th>
-                      <th className="text-left p-3">Commentaire</th>
                       <th className="text-center p-3">Actions</th>
                     </tr>
                   </thead>
@@ -617,70 +527,27 @@ export function AbsencesManager() {
                       return (
                         <tr key={absence.id} className="border-b hover:bg-gray-50">
                           <td className="p-3 font-medium">{absence.nom} {absence.prenom}</td>
-                          <td className="p-3">
-                            <Badge variant="outline" style={{ borderColor: TYPE_ABSENCE_COLORS[absence.type_absence], color: TYPE_ABSENCE_COLORS[absence.type_absence] }}>
-                              {TYPE_ABSENCE_LABELS[absence.type_absence] || absence.type_absence}
-                            </Badge>
-                          </td>
+                          <td className="p-3"><Badge variant="outline" style={{ borderColor: TYPE_ABSENCE_COLORS[absence.type_absence], color: TYPE_ABSENCE_COLORS[absence.type_absence] }}>{TYPE_ABSENCE_LABELS[absence.type_absence] || absence.type_absence}</Badge></td>
                           <td className="p-3">{new Date(absence.date_debut).toLocaleDateString('fr-FR')}</td>
                           <td className="p-3">{new Date(absence.date_fin).toLocaleDateString('fr-FR')}</td>
-                          <td className="p-3 text-center">
-                            <Badge variant="outline">{duree}j</Badge>
-                          </td>
+                          <td className="p-3 text-center"><Badge variant="outline">{duree}j</Badge></td>
                           <td className="p-3 max-w-[200px] truncate">{absence.motif || '-'}</td>
-                          <td className="p-3 text-center">
-                            <Badge className={statutConfig.bg}>
-                              {statutConfig.label}
-                            </Badge>
-                          </td>
+                          <td className="p-3 text-center"><Badge className={statutConfig.bg}>{statutConfig.label}</Badge></td>
                           <td className="p-3 text-xs text-gray-500">
-                            {absence.demande_par === 'technicien' ? '🔧 Technicien' : '👤 Admin'}
-                            {absence.approuve_par && (
-                              <div className="text-xs mt-1">par {absence.approuve_par}</div>
-                            )}
+                            {absence.demande_par === 'technicien' ? 'Technicien' : 'Admin'}
+                            {absence.approuve_par && <div className="text-xs mt-1">par {absence.approuve_par}</div>}
                           </td>
-                          <td className="p-3 max-w-[200px] truncate text-xs text-gray-500">{absence.commentaire_admin || '-'}</td>
                           <td className="p-3 text-center">
                             <div className="flex gap-1 justify-center">
                               {absence.statut === 'en_attente' && (
                                 <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 px-2 text-xs bg-green-100 hover:bg-green-200 border-green-300 text-green-800"
-                                    onClick={() => {
-                                      setSelectedAbsence(absence)
-                                      setDecisionComment('')
-                                      setShowDecisionModal(true)
-                                    }}
-                                    title="Approuver"
-                                  >
-                                    <Check className="w-3 h-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 px-2 text-xs bg-red-100 hover:bg-red-200 border-red-300 text-red-800"
-                                    onClick={() => {
-                                      setSelectedAbsence(absence)
-                                      setDecisionComment('')
-                                      setShowDecisionModal(true)
-                                    }}
-                                    title="Refuser"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs bg-green-100 hover:bg-green-200 border-green-300 text-green-800"
+                                    onClick={() => { setSelectedAbsence(absence); setDecisionComment(''); setShowDecisionModal(true) }} title="Approuver"><Check className="w-3 h-3" /></Button>
+                                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs bg-red-100 hover:bg-red-200 border-red-300 text-red-800"
+                                    onClick={() => { setSelectedAbsence(absence); setDecisionComment(''); setShowDecisionModal(true) }} title="Refuser"><X className="w-3 h-3" /></Button>
                                 </>
                               )}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => handleDelete(absence.id)}
-                                title="Supprimer"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => handleDelete(absence.id)} title="Supprimer"><Trash2 className="w-3 h-3" /></Button>
                             </div>
                           </td>
                         </tr>
@@ -694,73 +561,37 @@ export function AbsencesManager() {
         </Card>
       )}
 
-      {/* ========== MODAL CRÉATION ========== */}
+      {/* ===== MODAL CRÉATION ===== */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">Nouvelle Absence</h3>
-              <Button variant="ghost" size="sm" onClick={() => setShowCreateModal(false)}>
-                <X className="w-4 h-4" />
-              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowCreateModal(false)}><X className="w-4 h-4" /></Button>
             </div>
-
             <div className="space-y-4">
               <div>
                 <Label>Employé *</Label>
-                <Select
-                  value={newAbsence.employe_id}
-                  onValueChange={(value) => {
-                    const emp = employees.find(e => e.id === parseInt(value))
-                    setNewAbsence({
-                      ...newAbsence,
-                      employe_id: value,
-                      nom: emp?.nom || '',
-                      prenom: emp?.prenom || ''
-                    })
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un employé" />
-                  </SelectTrigger>
+                <Select value={newAbsence.employe_id} onValueChange={(value) => {
+                  const emp = employees.find(e => e.id === parseInt(value))
+                  setNewAbsence({ ...newAbsence, employe_id: value, nom: emp?.nom || '', prenom: emp?.prenom || '' })
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Sélectionner un employé" /></SelectTrigger>
                   <SelectContent>
                     {employees.map((emp) => (
-                      <SelectItem key={emp.id} value={String(emp.id)}>
-                        {emp.nom} {emp.prenom} {emp.matricule ? `(${emp.matricule})` : ''}
-                      </SelectItem>
+                      <SelectItem key={emp.id} value={String(emp.id)}>{emp.nom} {emp.prenom} {emp.matricule ? `(${emp.matricule})` : ''}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Date début *</Label>
-                  <Input
-                    type="date"
-                    value={newAbsence.date_debut}
-                    onChange={(e) => setNewAbsence({ ...newAbsence, date_debut: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label>Date fin *</Label>
-                  <Input
-                    type="date"
-                    value={newAbsence.date_fin}
-                    onChange={(e) => setNewAbsence({ ...newAbsence, date_fin: e.target.value })}
-                  />
-                </div>
+                <div><Label>Date début *</Label><Input type="date" value={newAbsence.date_debut} onChange={(e) => setNewAbsence({ ...newAbsence, date_debut: e.target.value })} /></div>
+                <div><Label>Date fin *</Label><Input type="date" value={newAbsence.date_fin} onChange={(e) => setNewAbsence({ ...newAbsence, date_fin: e.target.value })} /></div>
               </div>
-
               <div>
-                <Label>Type d'absence</Label>
-                <Select
-                  value={newAbsence.type_absence}
-                  onValueChange={(value) => setNewAbsence({ ...newAbsence, type_absence: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                <Label>Type d&apos;absence</Label>
+                <Select value={newAbsence.type_absence} onValueChange={(value) => setNewAbsence({ ...newAbsence, type_absence: value })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="conge">Congé</SelectItem>
                     <SelectItem value="maladie">Maladie</SelectItem>
@@ -770,91 +601,38 @@ export function AbsencesManager() {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div>
-                <Label>Motif</Label>
-                <Textarea
-                  value={newAbsence.motif}
-                  onChange={(e) => setNewAbsence({ ...newAbsence, motif: e.target.value })}
-                  placeholder="Motif de l'absence..."
-                  rows={2}
-                />
-              </div>
-
-              <div>
-                <Label>Commentaire</Label>
-                <Textarea
-                  value={newAbsence.commentaire_admin}
-                  onChange={(e) => setNewAbsence({ ...newAbsence, commentaire_admin: e.target.value })}
-                  placeholder="Commentaire optionnel..."
-                  rows={2}
-                />
-              </div>
-
+              <div><Label>Motif</Label><Textarea value={newAbsence.motif} onChange={(e) => setNewAbsence({ ...newAbsence, motif: e.target.value })} placeholder="Motif de l'absence..." rows={2} /></div>
+              <div><Label>Commentaire</Label><Textarea value={newAbsence.commentaire_admin} onChange={(e) => setNewAbsence({ ...newAbsence, commentaire_admin: e.target.value })} placeholder="Commentaire optionnel..." rows={2} /></div>
               <div className="flex gap-2 justify-end pt-4 border-t">
-                <Button variant="outline" onClick={() => setShowCreateModal(false)}>
-                  Annuler
-                </Button>
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleCreateAbsence}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Créer l'absence
-                </Button>
+                <Button variant="outline" onClick={() => setShowCreateModal(false)}>Annuler</Button>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleCreateAbsence}><Plus className="w-4 h-4 mr-2" />Créer</Button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ========== MODAL DÉCISION (Approuver/Refuser) ========== */}
+      {/* ===== MODAL DÉCISION ===== */}
       {showDecisionModal && selectedAbsence && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">Traiter la demande</h3>
-              <Button variant="ghost" size="sm" onClick={() => setShowDecisionModal(false)}>
-                <X className="w-4 h-4" />
-              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowDecisionModal(false)}><X className="w-4 h-4" /></Button>
             </div>
-
             <div className="space-y-4">
               <div className="bg-gray-50 p-3 rounded-lg">
                 <p className="font-semibold">{selectedAbsence.nom} {selectedAbsence.prenom}</p>
                 <p className="text-sm text-gray-600">
-                  {TYPE_ABSENCE_LABELS[selectedAbsence.type_absence]} — Du {new Date(selectedAbsence.date_debut).toLocaleDateString('fr-FR')} au {new Date(selectedAbsence.date_fin).toLocaleDateString('fr-FR')}
+                  {TYPE_ABSENCE_LABELS[selectedAbsence.type_absence]}  Du {new Date(selectedAbsence.date_debut).toLocaleDateString('fr-FR')} au {new Date(selectedAbsence.date_fin).toLocaleDateString('fr-FR')}
                 </p>
-                {selectedAbsence.motif && (
-                  <p className="text-sm text-gray-500 mt-1">Motif: {selectedAbsence.motif}</p>
-                )}
+                {selectedAbsence.motif && <p className="text-sm text-gray-500 mt-1">Motif: {selectedAbsence.motif}</p>}
               </div>
-
-              <div>
-                <Label>Commentaire (optionnel)</Label>
-                <Textarea
-                  value={decisionComment}
-                  onChange={(e) => setDecisionComment(e.target.value)}
-                  placeholder="Ajouter un commentaire..."
-                  rows={3}
-                />
-              </div>
-
+              <div><Label>Commentaire (optionnel)</Label><Textarea value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)} placeholder="Ajouter un commentaire..." rows={3} /></div>
               <div className="flex gap-2 justify-end pt-4 border-t">
-                <Button variant="outline" onClick={() => setShowDecisionModal(false)}>
-                  Annuler
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => handleDecision('refuser')}
-                >
-                  <X className="w-4 h-4 mr-2" />
-                  Refuser
-                </Button>
-                <Button
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                  onClick={() => handleDecision('approuver')}
-                >
-                  <Check className="w-4 h-4 mr-2" />
-                  Approuver
-                </Button>
+                <Button variant="outline" onClick={() => setShowDecisionModal(false)}>Annuler</Button>
+                <Button variant="destructive" onClick={() => handleDecision('refuser')}><X className="w-4 h-4 mr-2" />Refuser</Button>
+                <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleDecision('approuver')}><Check className="w-4 h-4 mr-2" />Approuver</Button>
               </div>
             </div>
           </div>
