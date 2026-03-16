@@ -118,12 +118,6 @@ interface Penalite {
   date_echeance: string
 }
 
-  montant: number
-  statut: string
-  motif: string
-  date_echeance: string
-}
-
 interface TechAbsence {
   id: number
   employe_id: number | null
@@ -174,10 +168,10 @@ function TechnicienAbsences({ user, fetchWithAuth }: { user: any, fetchWithAuth:
   })
 
   const loadAbsences = useCallback(async () => {
-    if (!user?.employe_id) return
+    if (!user?.id) return
     setLoadingAbs(true)
     try {
-      const res = await fetch(`/api/absences?employe_id=${user.employe_id}`)
+      const res = await fetch(`/api/absences?employe_id=${user.id}`)
       if (res.ok) {
         const data = await res.json()
         setAbsences(data.absences || [])
@@ -187,7 +181,7 @@ function TechnicienAbsences({ user, fetchWithAuth }: { user: any, fetchWithAuth:
     } finally {
       setLoadingAbs(false)
     }
-  }, [user?.employe_id])
+  }, [user?.id])
 
   useEffect(() => {
     loadAbsences()
@@ -207,7 +201,7 @@ function TechnicienAbsences({ user, fetchWithAuth }: { user: any, fetchWithAuth:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employe_id: user.employe_id,
+          employe_id: user.id,
           nom: user.nom,
           prenom: user.prenom,
           date_debut: newDemande.date_debut,

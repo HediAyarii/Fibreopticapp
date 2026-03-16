@@ -139,6 +139,10 @@ BEGIN
     UNION ALL
     SELECT 'reclamations-techniques'::VARCHAR(50), 'Réclamations Techniques'::VARCHAR(100)
     UNION ALL
+    SELECT 'absences'::VARCHAR(50), 'Absences'::VARCHAR(100)
+    UNION ALL
+    SELECT 'historique'::VARCHAR(50), 'Historique'::VARCHAR(100)
+    UNION ALL
     SELECT 'compte-admin'::VARCHAR(50), 'Compte Admin'::VARCHAR(100);
 END;
 $$ LANGUAGE plpgsql;

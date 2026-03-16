@@ -125,7 +125,9 @@ export default function UserManagement() {
           { section_key: 'recette-generer', section_name: 'BENEFICE BRUTE' },
           { section_key: 'vehicules', section_name: 'Véhicules' },
           { section_key: 'reclamations-techniques', section_name: 'Réclamations Techniques' },
-          { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' }
+          { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' },
+          { section_key: 'absences', section_name: 'Absences' },
+          { section_key: 'historique', section_name: 'Historique' }
         ])
       }
     } catch (error) {
@@ -149,7 +151,9 @@ export default function UserManagement() {
         { section_key: 'recette-generer', section_name: 'BENEFICE BRUTE' },
         { section_key: 'vehicules', section_name: 'Véhicules' },
         { section_key: 'reclamations-techniques', section_name: 'Réclamations Techniques' },
-        { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' }
+        { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' },
+        { section_key: 'absences', section_name: 'Absences' },
+        { section_key: 'historique', section_name: 'Historique' }
       ])
     }
   }

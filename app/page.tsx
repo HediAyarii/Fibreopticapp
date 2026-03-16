@@ -293,7 +293,10 @@ export default function EmployeeTracker() {
         const data = await response.json()
         
         if (data.success && data.navOrder) {
-          setNavOrder(data.navOrder)
+          // Fusionner avec defaultNavOrder : ajouter les nouvelles sections manquantes à la fin
+          const savedOrder = data.navOrder as string[]
+          const missingItems = defaultNavOrder.filter(item => !savedOrder.includes(item))
+          setNavOrder([...savedOrder, ...missingItems])
         }
         setNavOrderLoaded(true)
       } catch (error) {
