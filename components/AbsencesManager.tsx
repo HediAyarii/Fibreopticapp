@@ -81,7 +81,7 @@ const MOIS_NOMS = [
   'Mai', 'Juin', 'Juillet', 'Août'
 ]
 
-const JOURS_SEMAINE_LETTRES = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
+const JOURS_SEMAINE_LETTRES = ['DIM', 'LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM']
 
 export function AbsencesManager() {
   const { isAdmin } = useUserPermissions()
