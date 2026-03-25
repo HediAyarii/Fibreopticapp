@@ -107,6 +107,14 @@ export function AbsencesManager() {
   const currentMonth = currentDate.getMonth()
   const currentYear = currentDate.getFullYear()
   const [startYear, setStartYear] = useState(currentMonth >= 8 ? currentYear : currentYear - 1)
+  
+  // Mois sélectionné pour le calendrier (0-11 = Sept-Août dans l'année scolaire)
+  const [calendarMonthIndex, setCalendarMonthIndex] = useState(() => {
+    // Par défaut, sélectionner le mois courant dans la grille Sept-Août
+    const cm = currentDate.getMonth() // 0=Jan, ..., 7=Aug, 8=Sept
+    if (cm >= 8) return cm - 8  // Sept=0, Oct=1, Nov=2, Dec=3
+    return cm + 4               // Jan=4, Feb=5, Mar=6, Apr=7, May=8, Jun=9, Jul=10, Aug=11
+  })
 
   const [newAbsence, setNewAbsence] = useState({
     employe_id: '',
@@ -383,108 +391,157 @@ export function AbsencesManager() {
         </Button>
       </div>
 
-      {/* ===== CALENDRIER COMPACT - Mois en colonnes, Jours 1-31 en lignes ===== */}
-      {activeView === 'calendrier' && (
+      {/* ===== CALENDRIER MENSUEL ===== */}
+      {activeView === 'calendrier' && (() => {
+        // Données du mois sélectionné
+        const selectedMois = moisData[calendarMonthIndex]
+        const nbJours = selectedMois.nbJours
+        const moisAnnee = selectedMois.annee
+        const moisIndex = selectedMois.moisIndex
+
+        // Jours du mois avec infos
+        const jours = Array.from({ length: nbJours }, (_, i) => {
+          const dayNum = i + 1
+          const date = new Date(moisAnnee, moisIndex, dayNum)
+          const jourSemaine = date.getDay()
+          return {
+            num: dayNum,
+            nom: JOURS_SEMAINE_LETTRES[jourSemaine],
+            isWeekend: jourSemaine === 0 || jourSemaine === 6,
+            isDimanche: jourSemaine === 0
+          }
+        })
+
+        // Employés avec absences ce mois
+        const employeesThisMonth = allEmployeesForCalendar.filter(emp =>
+          absencesCalendrier.some(a => {
+            if (a.nom !== emp.nom || a.prenom !== emp.prenom) return false
+            const debut = new Date(a.date_debut)
+            const fin = new Date(a.date_fin)
+            const moisDebut = new Date(moisAnnee, moisIndex, 1)
+            const moisFin = new Date(moisAnnee, moisIndex, nbJours, 23, 59, 59)
+            return debut <= moisFin && fin >= moisDebut
+          })
+        )
+
+        return (
         <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="w-5 h-5" />
+          <CardHeader className="pb-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Calendar className="w-5 h-5 text-blue-600" />
                 Calendrier des Absences
               </CardTitle>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => setStartYear(startYear - 1)}>
+                <Button variant="outline" size="sm" onClick={() => setStartYear(startYear - 1)} title="Année précédente">
+                  <ChevronLeft className="w-4 h-4" /><ChevronLeft className="w-4 h-4 -ml-2" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setCalendarMonthIndex(Math.max(0, calendarMonthIndex - 1))} disabled={calendarMonthIndex === 0}>
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <span className="font-semibold text-sm">Sept {startYear} → Août {startYear + 1}</span>
-                <Button variant="outline" size="sm" onClick={() => setStartYear(startYear + 1)}>
+                <span className="font-semibold text-sm min-w-[160px] text-center">
+                  {selectedMois.nom} {moisAnnee}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => setCalendarMonthIndex(Math.min(11, calendarMonthIndex + 1))} disabled={calendarMonthIndex === 11}>
                   <ChevronRight className="w-4 h-4" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setStartYear(startYear + 1)} title="Année suivante">
+                  <ChevronRight className="w-4 h-4" /><ChevronRight className="w-4 h-4 -ml-2" />
                 </Button>
               </div>
             </div>
+            {/* Navigation mois rapide */}
+            <div className="flex flex-wrap gap-1 mt-2">
+              {moisData.map((m, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setCalendarMonthIndex(idx)}
+                  className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                    idx === calendarMonthIndex
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {m.nom.substring(0, 3)}
+                </button>
+              ))}
+            </div>
           </CardHeader>
-          <CardContent className="p-2">
+          <CardContent className="p-3">
             <div className="overflow-x-auto">
-              <table className="border-collapse w-full" style={{ minWidth: '1200px' }}>
+              <table className="border-collapse w-full">
                 <thead>
-                  {/* Header mois */}
+                  {/* Numéros des jours */}
                   <tr>
-                    <th className="sticky left-0 z-10 bg-white border border-gray-300 p-1 text-xs min-w-[140px]"></th>
-                    {moisData.map((mois, idx) => (
-                      <th key={idx} colSpan={mois.nbJours} className="border border-gray-300 p-1 text-center font-bold bg-gray-100 text-xs">
-                        {mois.nom}
+                    <th className="sticky left-0 z-10 bg-white border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600" style={{ minWidth: '170px' }}>
+                      Technicien
+                    </th>
+                    {jours.map((jour) => (
+                      <th
+                        key={jour.num}
+                        className={`border border-gray-200 px-0 py-1 text-center font-bold text-xs ${
+                          jour.isWeekend ? 'bg-gray-100 text-gray-400' : 'bg-white text-gray-700'
+                        }`}
+                        style={{ minWidth: '38px' }}
+                      >
+                        {jour.num}
                       </th>
                     ))}
                   </tr>
-                  {/* Header jours - numéro */}
+                  {/* Noms des jours */}
                   <tr>
-                    <th className="sticky left-0 z-10 bg-white border border-gray-300 p-0 text-[10px]">Technicien</th>
-                    {moisData.map((mois, moisIdx) =>
-                      Array.from({ length: mois.nbJours }, (_, dayIdx) => {
-                        const dayNum = dayIdx + 1
-                        const date = new Date(mois.annee, mois.moisIndex, dayNum)
-                        const isWeekend = date.getDay() === 0 || date.getDay() === 6
-                        return (
-                          <th key={`${moisIdx}-${dayNum}`} className={`border border-gray-200 p-0 text-center text-[10px] font-semibold ${isWeekend ? 'bg-gray-200 text-gray-400' : 'bg-gray-50 text-gray-700'}`} style={{ minWidth: '28px', maxWidth: '32px' }}>
-                            {dayNum}
-                          </th>
-                        )
-                      })
-                    )}
-                  </tr>
-                  {/* Header jours - nom jour */}
-                  <tr>
-                    <th className="sticky left-0 z-10 bg-white border border-gray-300 p-0 text-[9px] text-gray-400"></th>
-                    {moisData.map((mois, moisIdx) =>
-                      Array.from({ length: mois.nbJours }, (_, dayIdx) => {
-                        const dayNum = dayIdx + 1
-                        const date = new Date(mois.annee, mois.moisIndex, dayNum)
-                        const jourSemaine = date.getDay()
-                        const jourLettre = JOURS_SEMAINE_LETTRES[jourSemaine]
-                        const isWeekend = jourSemaine === 0 || jourSemaine === 6
-                        const isDimanche = jourSemaine === 0
-                        return (
-                          <th key={`${moisIdx}-j-${dayNum}`} className={`border border-gray-200 p-0 text-center text-[8px] font-medium ${isWeekend ? 'bg-gray-200' : 'bg-gray-50'} ${isDimanche ? 'text-red-400' : 'text-gray-400'}`} style={{ minWidth: '28px', maxWidth: '32px' }}>
-                            {jourLettre}
-                          </th>
-                        )
-                      })
-                    )}
+                    <th className="sticky left-0 z-10 bg-white border border-gray-300 px-3 py-1 text-left text-[10px] text-gray-400"></th>
+                    {jours.map((jour) => (
+                      <th
+                        key={`n-${jour.num}`}
+                        className={`border border-gray-200 px-0 py-0.5 text-center text-[10px] font-semibold ${
+                          jour.isDimanche ? 'bg-red-50 text-red-400' : jour.isWeekend ? 'bg-gray-100 text-gray-400' : 'bg-white text-gray-500'
+                        }`}
+                      >
+                        {jour.nom}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {allEmployeesForCalendar.map((emp, empIdx) => {
-                    const hasAnyAbsence = absencesCalendrier.some(a => a.nom === emp.nom && a.prenom === emp.prenom)
+                    const hasAbsenceThisMonth = employeesThisMonth.some(e => e.nom === emp.nom && e.prenom === emp.prenom)
                     return (
-                      <tr key={empIdx} className={`h-[26px] ${hasAnyAbsence ? '' : 'opacity-40'}`}>
-                        <td className="sticky left-0 z-10 bg-white border border-gray-300 p-1 text-[11px] font-medium whitespace-nowrap" style={{ minWidth: '140px' }}>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: emp.color }}></div>
-                            <span className="truncate">{emp.nom} {emp.prenom}</span>
+                      <tr key={empIdx} className={`group transition-colors ${hasAbsenceThisMonth ? 'hover:bg-blue-50/30' : 'opacity-30 hover:opacity-60'}`}>
+                        <td className="sticky left-0 z-10 bg-white group-hover:bg-blue-50/30 border border-gray-200 px-2 py-1.5 text-xs font-medium whitespace-nowrap" style={{ minWidth: '170px' }}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full flex-shrink-0 border border-white shadow-sm" style={{ backgroundColor: emp.color }}></div>
+                            <span>{emp.nom} {emp.prenom}</span>
                           </div>
                         </td>
-                        {moisData.map((mois, moisIdx) =>
-                          Array.from({ length: mois.nbJours }, (_, dayIdx) => {
-                            const dayNum = dayIdx + 1
-                            const date = new Date(mois.annee, mois.moisIndex, dayNum)
-                            const isWeekend = date.getDay() === 0 || date.getDay() === 6
-                            const absence = isAbsentOnDay(emp.nom, emp.prenom, mois.annee, mois.moisIndex, dayNum)
-
-                            return (
-                              <td
-                                key={`${moisIdx}-${dayNum}`}
-                                className={`border border-gray-100 p-0 ${isWeekend && !absence ? 'bg-gray-100' : ''}`}
-                                style={{
-                                  backgroundColor: absence ? emp.color : undefined,
-                                  minWidth: '28px',
-                                  maxWidth: '32px'
-                                }}
-                                title={absence ? `${emp.nom} ${emp.prenom} - ${TYPE_ABSENCE_LABELS[absence.type_absence] || absence.type_absence}\nDu ${new Date(absence.date_debut).toLocaleDateString('fr-FR')} au ${new Date(absence.date_fin).toLocaleDateString('fr-FR')}` : ''}
-                              >
-                              </td>
-                            )
-                          })
-                        )}
+                        {jours.map((jour) => {
+                          const absence = isAbsentOnDay(emp.nom, emp.prenom, moisAnnee, moisIndex, jour.num)
+                          return (
+                            <td
+                              key={jour.num}
+                              className={`border border-gray-100 p-0 text-center ${
+                                jour.isWeekend && !absence ? 'bg-gray-50' : ''
+                              }`}
+                              style={{
+                                backgroundColor: absence ? emp.color : undefined,
+                                minWidth: '38px',
+                                height: '28px'
+                              }}
+                              title={absence
+                                ? `${emp.prenom} ${emp.nom}\n${TYPE_ABSENCE_LABELS[absence.type_absence] || absence.type_absence}\nDu ${new Date(absence.date_debut).toLocaleDateString('fr-FR')} au ${new Date(absence.date_fin).toLocaleDateString('fr-FR')}${absence.motif ? '\nMotif: ' + absence.motif : ''}`
+                                : ''
+                              }
+                            >
+                              {absence && (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <span className="text-white text-[9px] font-bold opacity-80">
+                                    {TYPE_ABSENCE_LABELS[absence.type_absence]?.charAt(0) || ''}
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                          )
+                        })}
                       </tr>
                     )
                   })}
@@ -492,23 +549,29 @@ export function AbsencesManager() {
               </table>
             </div>
 
-            {/* Légende - Sam. / Dim. */}
-            <div className="flex items-center gap-4 mt-3 pt-3 border-t flex-wrap">
-              <span className="text-xs font-semibold text-gray-500">Légende :</span>
-              <div className="flex items-center gap-1 text-xs">
-                <div className="w-4 h-3 rounded bg-gray-200 border border-gray-300"></div>
-                <span className="text-gray-500">Sam. / Dim.</span>
-              </div>
-              {allEmployeesForCalendar.filter(emp => absencesCalendrier.some(a => a.nom === emp.nom && a.prenom === emp.prenom)).map((emp, i) => (
-                <div key={i} className="flex items-center gap-1 text-xs">
-                  <div className="w-4 h-3 rounded" style={{ backgroundColor: emp.color }}></div>
-                  <span className="text-gray-700">{emp.prenom} {emp.nom}</span>
+            {/* Légende */}
+            <div className="mt-4 pt-3 border-t">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs font-semibold text-gray-500">Légende :</span>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <div className="w-4 h-3 rounded bg-gray-100 border border-gray-300"></div>
+                  <span className="text-gray-500">Weekend</span>
                 </div>
-              ))}
+                {employeesThisMonth.map((emp, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs">
+                    <div className="w-4 h-3 rounded" style={{ backgroundColor: emp.color }}></div>
+                    <span className="text-gray-700 font-medium">{emp.prenom} {emp.nom}</span>
+                  </div>
+                ))}
+              </div>
+              {employeesThisMonth.length === 0 && (
+                <p className="text-xs text-gray-400 mt-2">Aucune absence approuvée ce mois</p>
+              )}
             </div>
           </CardContent>
         </Card>
-      )}
+        )
+      })()}
 
       {/* ===== DEMANDES ===== */}
       {activeView === 'demandes' && (
