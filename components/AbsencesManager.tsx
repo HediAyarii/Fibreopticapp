@@ -248,22 +248,40 @@ export function AbsencesManager() {
   const demandesEnAttente = absences.filter(a => a.statut === 'en_attente').length
   const absencesCalendrier = absences.filter(a => a.statut === 'approuvee' || a.statut === 'directe')
 
-  // Vérifier les absences pour un employé à une date donnée (SANS muter la date)
-  const getAbsencesForDay = (nom: string, prenom: string, year: number, month: number, day: number): Absence[] => {
+  // Palette de couleurs uniques pour chaque technicien
+  const EMPLOYEE_COLORS = [
+    '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
+    '#EC4899', '#06B6D4', '#F97316', '#14B8A6', '#6366F1',
+    '#D946EF', '#0EA5E9', '#84CC16', '#E11D48', '#7C3AED',
+    '#059669', '#DC2626', '#2563EB', '#CA8A04', '#9333EA',
+    '#DB2777', '#0891B2', '#EA580C', '#65A30D', '#4F46E5',
+    '#BE185D', '#0D9488', '#C2410C', '#4338CA', '#A21CAF',
+  ]
+
+  const getEmployeeColor = (index: number) => EMPLOYEE_COLORS[index % EMPLOYEE_COLORS.length]
+
+  // Vérifier si un employé est absent à une date donnée
+  const isAbsentOnDay = (nom: string, prenom: string, year: number, month: number, day: number): Absence | null => {
     const dateTs = new Date(year, month, day, 12, 0, 0).getTime()
-    return absencesCalendrier.filter(a => {
+    return absencesCalendrier.find(a => {
       if (a.nom !== nom || a.prenom !== prenom) return false
       const debut = new Date(a.date_debut)
       debut.setHours(0, 0, 0, 0)
       const fin = new Date(a.date_fin)
       fin.setHours(23, 59, 59, 999)
       return dateTs >= debut.getTime() && dateTs <= fin.getTime()
-    })
+    }) || null
   }
 
-  // Tous les employés pour le calendrier
+  // Employés ayant au moins une absence sur la période affichée
+  const employeesWithAbsences = employees
+    .map((e, idx) => ({ nom: e.nom, prenom: e.prenom, employe_id: e.id, color: getEmployeeColor(idx) }))
+    .filter(emp => absencesCalendrier.some(a => a.nom === emp.nom && a.prenom === emp.prenom))
+    .sort((a, b) => a.nom.localeCompare(b.nom))
+
+  // Tous les employés pour le calendrier (pour la légende des couleurs)
   const allEmployeesForCalendar = employees
-    .map(e => ({ nom: e.nom, prenom: e.prenom, employe_id: e.id }))
+    .map((e, idx) => ({ nom: e.nom, prenom: e.prenom, employe_id: e.id, color: getEmployeeColor(idx) }))
     .sort((a, b) => a.nom.localeCompare(b.nom))
 
   // Générer les données des 12 mois (Sept -> Août)
@@ -378,101 +396,115 @@ export function AbsencesManager() {
                 <Button variant="outline" size="sm" onClick={() => setStartYear(startYear - 1)}>
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <span className="font-semibold text-sm">Sept {startYear}  Août {startYear + 1}</span>
+                <span className="font-semibold text-sm">Sept {startYear} → Août {startYear + 1}</span>
                 <Button variant="outline" size="sm" onClick={() => setStartYear(startYear + 1)}>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-3 mt-2">
-              {Object.entries(TYPE_ABSENCE_LABELS).map(([key, label]) => (
-                <div key={key} className="flex items-center gap-1 text-xs">
-                  <div className="w-3 h-3 rounded" style={{ backgroundColor: TYPE_ABSENCE_COLORS[key] }}></div>
-                  <span>{label}</span>
-                </div>
-              ))}
-              <div className="flex items-center gap-1 text-xs">
-                <div className="w-3 h-3 rounded bg-gray-200"></div>
-                <span>Weekend</span>
-              </div>
-            </div>
           </CardHeader>
           <CardContent className="p-2">
             <div className="overflow-x-auto">
-              <table className="border-collapse text-[11px] w-full" style={{ tableLayout: 'fixed' }}>
+              <table className="border-collapse w-full" style={{ minWidth: '1200px' }}>
                 <thead>
+                  {/* Header mois */}
                   <tr>
+                    <th className="sticky left-0 z-10 bg-white border border-gray-300 p-1 text-xs min-w-[140px]"></th>
                     {moisData.map((mois, idx) => (
-                      <th key={idx} colSpan={2} className="border border-gray-300 p-1 text-center font-bold bg-gray-50 text-xs">
-                        {mois.nom.substring(0, 4)}
+                      <th key={idx} colSpan={mois.nbJours} className="border border-gray-300 p-1 text-center font-bold bg-gray-100 text-xs">
+                        {mois.nom}
                       </th>
                     ))}
                   </tr>
+                  {/* Header jours - numéro */}
+                  <tr>
+                    <th className="sticky left-0 z-10 bg-white border border-gray-300 p-0 text-[10px]">Technicien</th>
+                    {moisData.map((mois, moisIdx) =>
+                      Array.from({ length: mois.nbJours }, (_, dayIdx) => {
+                        const dayNum = dayIdx + 1
+                        const date = new Date(mois.annee, mois.moisIndex, dayNum)
+                        const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                        return (
+                          <th key={`${moisIdx}-${dayNum}`} className={`border border-gray-200 p-0 text-center text-[10px] font-semibold ${isWeekend ? 'bg-gray-200 text-gray-400' : 'bg-gray-50 text-gray-700'}`} style={{ minWidth: '28px', maxWidth: '32px' }}>
+                            {dayNum}
+                          </th>
+                        )
+                      })
+                    )}
+                  </tr>
+                  {/* Header jours - nom jour */}
+                  <tr>
+                    <th className="sticky left-0 z-10 bg-white border border-gray-300 p-0 text-[9px] text-gray-400"></th>
+                    {moisData.map((mois, moisIdx) =>
+                      Array.from({ length: mois.nbJours }, (_, dayIdx) => {
+                        const dayNum = dayIdx + 1
+                        const date = new Date(mois.annee, mois.moisIndex, dayNum)
+                        const jourSemaine = date.getDay()
+                        const jourLettre = JOURS_SEMAINE_LETTRES[jourSemaine]
+                        const isWeekend = jourSemaine === 0 || jourSemaine === 6
+                        const isDimanche = jourSemaine === 0
+                        return (
+                          <th key={`${moisIdx}-j-${dayNum}`} className={`border border-gray-200 p-0 text-center text-[8px] font-medium ${isWeekend ? 'bg-gray-200' : 'bg-gray-50'} ${isDimanche ? 'text-red-400' : 'text-gray-400'}`} style={{ minWidth: '28px', maxWidth: '32px' }}>
+                            {jourLettre}
+                          </th>
+                        )
+                      })
+                    )}
+                  </tr>
                 </thead>
                 <tbody>
-                  {Array.from({ length: 31 }, (_, dayIdx) => {
-                    const dayNum = dayIdx + 1
+                  {allEmployeesForCalendar.map((emp, empIdx) => {
+                    const hasAnyAbsence = absencesCalendrier.some(a => a.nom === emp.nom && a.prenom === emp.prenom)
                     return (
-                      <tr key={dayNum} className="h-[22px]">
-                        {moisData.map((mois, moisIdx) => {
-                          if (dayNum > mois.nbJours) {
+                      <tr key={empIdx} className={`h-[26px] ${hasAnyAbsence ? '' : 'opacity-40'}`}>
+                        <td className="sticky left-0 z-10 bg-white border border-gray-300 p-1 text-[11px] font-medium whitespace-nowrap" style={{ minWidth: '140px' }}>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: emp.color }}></div>
+                            <span className="truncate">{emp.nom} {emp.prenom}</span>
+                          </div>
+                        </td>
+                        {moisData.map((mois, moisIdx) =>
+                          Array.from({ length: mois.nbJours }, (_, dayIdx) => {
+                            const dayNum = dayIdx + 1
+                            const date = new Date(mois.annee, mois.moisIndex, dayNum)
+                            const isWeekend = date.getDay() === 0 || date.getDay() === 6
+                            const absence = isAbsentOnDay(emp.nom, emp.prenom, mois.annee, mois.moisIndex, dayNum)
+
                             return (
-                              <td key={`${moisIdx}-n`} colSpan={2} className="border border-gray-200 bg-gray-50"></td>
+                              <td
+                                key={`${moisIdx}-${dayNum}`}
+                                className={`border border-gray-100 p-0 ${isWeekend && !absence ? 'bg-gray-100' : ''}`}
+                                style={{
+                                  backgroundColor: absence ? emp.color : undefined,
+                                  minWidth: '28px',
+                                  maxWidth: '32px'
+                                }}
+                                title={absence ? `${emp.nom} ${emp.prenom} - ${TYPE_ABSENCE_LABELS[absence.type_absence] || absence.type_absence}\nDu ${new Date(absence.date_debut).toLocaleDateString('fr-FR')} au ${new Date(absence.date_fin).toLocaleDateString('fr-FR')}` : ''}
+                              >
+                              </td>
                             )
-                          }
-                          const date = new Date(mois.annee, mois.moisIndex, dayNum)
-                          const jourSemaine = date.getDay()
-                          const jourLettre = JOURS_SEMAINE_LETTRES[jourSemaine]
-                          const isWeekend = jourSemaine === 0 || jourSemaine === 6
-
-                          // Trouver toutes les absences de tous les employés pour ce jour
-                          const absencesDuJour: { absence: Absence; empName: string }[] = []
-                          for (const emp of allEmployeesForCalendar) {
-                            const abs = getAbsencesForDay(emp.nom, emp.prenom, mois.annee, mois.moisIndex, dayNum)
-                            abs.forEach(a => absencesDuJour.push({ absence: a, empName: `${emp.nom} ${emp.prenom}` }))
-                          }
-
-                          const bgColor = isWeekend ? '#E5E7EB' : '#FFFFFF'
-                          const hasAbsences = absencesDuJour.length > 0
-
-                          return (
-                            <React.Fragment key={`${moisIdx}-d`}>
-                              <td
-                                className="border-l border-t border-b border-gray-300 p-0 text-center"
-                                style={{ backgroundColor: bgColor, width: '28px' }}
-                              >
-                                <span className="text-[10px] font-medium text-gray-600">{dayNum}</span>
-                                <span className="text-[9px] text-gray-400 ml-[1px]">{jourLettre}</span>
-                              </td>
-                              <td
-                                className="border-r border-t border-b border-gray-300 p-0 relative"
-                                style={{ backgroundColor: bgColor, width: '22px' }}
-                                title={hasAbsences ? absencesDuJour.map(a => `${a.empName}: ${TYPE_ABSENCE_LABELS[a.absence.type_absence] || a.absence.type_absence}`).join('\n') : ''}
-                              >
-                                {hasAbsences && (
-                                  <div className="flex h-full gap-[1px] items-stretch" style={{ minHeight: '18px' }}>
-                                    {absencesDuJour.map((item, i) => (
-                                      <div
-                                        key={i}
-                                        className="flex-1 rounded-sm"
-                                        style={{
-                                          backgroundColor: item.absence.couleur || TYPE_ABSENCE_COLORS[item.absence.type_absence] || '#3B82F6',
-                                          minWidth: '3px',
-                                          maxWidth: '8px'
-                                        }}
-                                      ></div>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-                            </React.Fragment>
-                          )
-                        })}
+                          })
+                        )}
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Légende - Sam. / Dim. */}
+            <div className="flex items-center gap-4 mt-3 pt-3 border-t flex-wrap">
+              <span className="text-xs font-semibold text-gray-500">Légende :</span>
+              <div className="flex items-center gap-1 text-xs">
+                <div className="w-4 h-3 rounded bg-gray-200 border border-gray-300"></div>
+                <span className="text-gray-500">Sam. / Dim.</span>
+              </div>
+              {allEmployeesForCalendar.filter(emp => absencesCalendrier.some(a => a.nom === emp.nom && a.prenom === emp.prenom)).map((emp, i) => (
+                <div key={i} className="flex items-center gap-1 text-xs">
+                  <div className="w-4 h-3 rounded" style={{ backgroundColor: emp.color }}></div>
+                  <span className="text-gray-700">{emp.prenom} {emp.nom}</span>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
