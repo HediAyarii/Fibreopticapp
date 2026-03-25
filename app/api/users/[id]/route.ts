@@ -93,13 +93,30 @@ export async function PUT(
 
     await query(updateQuery, updateParams)
 
-    // Si c'est un employé, mettre à jour les permissions dans la table roles
-    if (role_id === 2 && permissions && permissions.length > 0) {
-      await query(`
-        UPDATE roles 
-        SET permissions = $1 
-        WHERE id = 2
-      `, [JSON.stringify({ sections: permissions })])
+    // Mettre à jour les permissions du rôle de l'utilisateur
+    if (permissions && permissions.length > 0) {
+      // Récupérer le role_id de l'utilisateur
+      const userResult = await query('SELECT role_id FROM users WHERE id = $1', [userId])
+      if (userResult.rows.length > 0) {
+        const userRoleId = userResult.rows[0].role_id
+        // Vérifier combien d'utilisateurs partagent ce rôle
+        const roleUsersCount = await query('SELECT COUNT(*) as count FROM users WHERE role_id = $1', [userRoleId])
+        if (parseInt(roleUsersCount.rows[0].count) > 1) {
+          // Créer un nouveau rôle dédié pour cet utilisateur
+          const roleName = `custom_${username}_${Date.now()}`
+          const newRole = await query(
+            'INSERT INTO roles (name, description, permissions) VALUES ($1, $2, $3) RETURNING id',
+            [roleName, `Rôle personnalisé pour ${username}`, JSON.stringify({ sections: permissions })]
+          )
+          await query('UPDATE users SET role_id = $1 WHERE id = $2', [newRole.rows[0].id, userId])
+        } else {
+          // Seul utilisateur avec ce rôle, on peut le modifier directement
+          await query(
+            'UPDATE roles SET permissions = $1 WHERE id = $2',
+            [JSON.stringify({ sections: permissions }), userRoleId]
+          )
+        }
+      }
     }
 
     return NextResponse.json({ message: 'Utilisateur modifié avec succès' })

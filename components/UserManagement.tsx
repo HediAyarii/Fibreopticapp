@@ -31,6 +31,7 @@ interface User {
   first_name?: string
   last_name?: string
   is_active: boolean
+  permissions?: { sections?: string[] } | null
   last_login?: string
   created_at: string
   updated_at: string
@@ -253,6 +254,8 @@ export default function UserManagement() {
 
   const openEditDialog = (user: User) => {
     setSelectedUser(user)
+    // Charger les permissions existantes de l'utilisateur
+    const existingPermissions = user.permissions?.sections || []
     setFormData({
       username: user.username,
       email: user.email,
@@ -260,7 +263,7 @@ export default function UserManagement() {
       role_id: user.role_id,
       first_name: user.first_name || '',
       last_name: user.last_name || '',
-      permissions: [] // TODO: Récupérer les permissions depuis la base
+      permissions: existingPermissions
     })
     setShowEditDialog(true)
   }
@@ -555,9 +558,9 @@ export default function UserManagement() {
                   <input
                     type="radio"
                     name="edit-role"
-                    value="employee"
-                    checked={formData.role === 'employee'}
-                    onChange={(e) => setFormData(prev => ({...prev, role: e.target.value as 'employee'}))}
+                    value="2"
+                    checked={formData.role_id === 2}
+                    onChange={() => setFormData(prev => ({...prev, role_id: 2}))}
                   />
                   <span>Employé</span>
                 </label>
@@ -565,15 +568,15 @@ export default function UserManagement() {
                   <input
                     type="radio"
                     name="edit-role"
-                    value="admin"
-                    checked={formData.role === 'admin'}
-                    onChange={(e) => setFormData(prev => ({...prev, role: e.target.value as 'admin'}))}
+                    value="1"
+                    checked={formData.role_id === 1}
+                    onChange={() => setFormData(prev => ({...prev, role_id: 1}))}
                   />
                   <span>Administrateur</span>
                 </label>
               </div>
             </div>
-            {formData.role === 'employee' && (
+            {formData.role_id === 2 && (
               <div>
                 <Label>Permissions - Sections accessibles</Label>
                 <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto">

@@ -32,6 +32,7 @@ export async function GET() {
         u.first_name,
         u.last_name,
         u.is_active,
+        r.permissions,
         u.last_login,
         u.created_at,
         u.updated_at
@@ -92,13 +93,26 @@ export async function POST(request: NextRequest) {
       last_name || null
     ])
 
-    // Si c'est un employé, mettre à jour les permissions dans la table roles
-    if (role_id === 2 && permissions && permissions.length > 0) {
-      await query(`
-        UPDATE roles 
-        SET permissions = $1 
-        WHERE id = 2
-      `, [JSON.stringify({ sections: permissions })])
+    // Sauvegarder les permissions dans le rôle de l'utilisateur
+    if (permissions && permissions.length > 0) {
+      // Créer un rôle personnalisé pour cet utilisateur
+      const roleName = role_id === 1 ? 'admin' : `employee_${result.rows[0].id}`
+      const existingRole = await query('SELECT id FROM roles WHERE name = $1', [roleName])
+      
+      if (existingRole.rows.length > 0) {
+        // Mettre à jour le rôle existant
+        await query(
+          'UPDATE roles SET permissions = $1 WHERE name = $2',
+          [JSON.stringify({ sections: permissions }), roleName]
+        )
+      } else {
+        // Créer un nouveau rôle dédié
+        const newRole = await query(
+          'INSERT INTO roles (name, description, permissions) VALUES ($1, $2, $3) RETURNING id',
+          [roleName, `Rôle personnalisé`, JSON.stringify({ sections: permissions })]
+        )
+        await query('UPDATE users SET role_id = $1 WHERE id = $2', [newRole.rows[0].id, result.rows[0].id])
+      }
     }
 
     return NextResponse.json({ 
