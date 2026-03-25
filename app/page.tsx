@@ -131,6 +131,8 @@ import {
   UserCheck,
   Clock,
   Shield,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react"
 
 // User authentication data
@@ -263,6 +265,7 @@ export default function EmployeeTracker() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState("dashboard")
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Configuration des items de navigation pour la sidebar
   const defaultNavOrder = [
@@ -3707,25 +3710,38 @@ La page va se recharger automatiquement...`)
       </header>
 
       <div className="flex">
-        <aside className="w-80 glass-sidebar h-[calc(100vh-5rem)] sticky top-20">
+        <aside className={`${sidebarCollapsed ? 'w-16' : 'w-80'} glass-sidebar h-[calc(100vh-5rem)] sticky top-20 transition-all duration-300`}>
           <nav className="h-full flex flex-col">
-            <div className="p-6 pb-4">
+            <div className={`${sidebarCollapsed ? 'p-2 pb-2' : 'p-6 pb-4'}`}>
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-muted-foreground">Navigation</h2>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetNavOrder}
-                  className="text-xs text-muted-foreground hover:text-primary"
-                  title="Réinitialiser l'ordre"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                </Button>
+                {!sidebarCollapsed && <h2 className="text-lg font-semibold text-muted-foreground">Navigation</h2>}
+                <div className={`flex items-center gap-1 ${sidebarCollapsed ? 'w-full justify-center' : ''}`}>
+                  {!sidebarCollapsed && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetNavOrder}
+                      className="text-xs text-muted-foreground hover:text-primary"
+                      title="Réinitialiser l'ordre"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                    className="text-muted-foreground hover:text-primary"
+                    title={sidebarCollapsed ? 'Agrandir le menu' : 'Réduire le menu'}
+                  >
+                    {sidebarCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+                  </Button>
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Glissez pour réordonner</p>
+              {!sidebarCollapsed && <p className="text-xs text-muted-foreground mt-1">Glissez pour réordonner</p>}
             </div>
-            <div className="flex-1 overflow-y-auto px-6 pb-6 sidebar-scrollable">
-              <div className="space-y-3">
+            <div className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-1.5' : 'px-6'} pb-6 sidebar-scrollable`}>
+              <div className={`${sidebarCollapsed ? 'space-y-1' : 'space-y-3'}`}>
                 {navOrder.map((itemId) => {
                   // Configuration des items de navigation
                   
@@ -3796,24 +3812,33 @@ La page va se recharger automatiquement...`)
                     >
                       <Button
                         variant="ghost"
-                        className={`w-full justify-start gap-3 h-12 rounded-2xl transition-all duration-300 ${
+                        className={`w-full ${sidebarCollapsed ? 'justify-center p-2 h-10 rounded-xl' : 'justify-start gap-3 h-12 rounded-2xl'} transition-all duration-300 ${
                           isActive
                             ? "gradient-primary text-white shadow-lg animate-pulse-glow"
                             : "glass-card border border-white/20 hover:bg-primary/5"
                         } ${isDragOver ? 'border-primary border-2' : ''}`}
                         onClick={() => config.onClick ? config.onClick() : setActiveTab(itemId)}
+                        title={sidebarCollapsed ? config.label : undefined}
                       >
-                        <GripVertical className="w-4 h-4 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing transition-opacity" />
+                        {!sidebarCollapsed && <GripVertical className="w-4 h-4 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing transition-opacity" />}
                         {config.icon}
-                        <span className="flex-1 text-left flex items-center gap-2">
-                          {config.label}
-                          {config.hasNotification && (
-                            <span className="relative flex h-3 w-3">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                            </span>
-                          )}
-                        </span>
+                        {!sidebarCollapsed && (
+                          <span className="flex-1 text-left flex items-center gap-2">
+                            {config.label}
+                            {config.hasNotification && (
+                              <span className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                              </span>
+                            )}
+                          </span>
+                        )}
+                        {sidebarCollapsed && config.hasNotification && (
+                          <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                          </span>
+                        )}
                       </Button>
                     </div>
                   )
