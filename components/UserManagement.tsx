@@ -475,7 +475,7 @@ export default function UserManagement() {
                       )}
                     </div>
                     <Badge variant={user.role_id === 1 ? 'default' : 'secondary'}>
-                      {user.role_name}
+                      {user.role_id === 1 ? 'admin' : 'employee'}
                     </Badge>
                     <Badge variant={user.is_active ? 'default' : 'destructive'}>
                       {user.is_active ? 'Actif' : 'Inactif'}
