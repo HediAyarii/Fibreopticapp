@@ -95,6 +95,26 @@ export async function PUT(
 
     // Mettre à jour les permissions du rôle de l'utilisateur
     if (permissions && permissions.length > 0) {
+      // Corriger la contrainte FK si elle référence la mauvaise table
+      await query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.table_constraints tc
+            JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+            WHERE tc.constraint_name = 'users_role_id_fkey'
+              AND tc.table_name = 'users'
+              AND ccu.table_name != 'roles'
+          ) THEN
+            ALTER TABLE users DROP CONSTRAINT users_role_id_fkey;
+            ALTER TABLE users ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES roles(id);
+          END IF;
+        EXCEPTION WHEN OTHERS THEN
+          NULL;
+        END;
+        $$;
+      `)
+
       // Récupérer le role_id de l'utilisateur
       const userResult = await query('SELECT role_id FROM users WHERE id = $1', [userId])
       if (userResult.rows.length > 0) {
