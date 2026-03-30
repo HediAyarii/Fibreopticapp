@@ -54,11 +54,13 @@ export async function POST(request: NextRequest) {
     )
 
     // Préparer les données utilisateur pour le frontend
+    // Normaliser le rôle: role_id=1 → admin, sinon → employee
+    const normalizedRole = user.role_id === 1 ? 'admin' : 'employee'
     const userData = {
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role_name,
+      role: normalizedRole,
       role_id: user.role_id,
       name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username,
       permissions: user.permissions || { sections: [] }

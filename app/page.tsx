@@ -146,11 +146,14 @@ const users = {
 const getRoleColor = (role: string) => {
   switch (role) {
     case "superadmin":
+    case "admin":
       return "bg-gradient-to-r from-red-500 to-pink-500 text-gray-900"
     case "teamlead":
       return "bg-gradient-to-r from-blue-500 to-cyan-500 text-gray-900"
     case "activity":
       return "bg-gradient-to-r from-green-500 to-emerald-500 text-gray-900"
+    case "employee":
+      return "bg-gradient-to-r from-blue-400 to-indigo-500 text-white"
     default:
       return "bg-gray-500 text-gray-900"
   }
@@ -160,12 +163,16 @@ const getRoleLabel = (role: string) => {
   switch (role) {
     case "superadmin":
       return "Super Admin"
+    case "admin":
+      return "Administrateur"
     case "teamlead":
       return "Chef Équipe"
     case "activity":
       return "Conduite Activité"
+    case "employee":
+      return "Employé"
     default:
-      return role
+      return "Employé"
   }
 }
 
