@@ -21,13 +21,15 @@ export async function POST(request: NextRequest) {
         u.username,
         u.email,
         u.password_hash,
-        u.role,
-        u.permissions,
+        u.role_id,
+        CASE WHEN u.role_id = 1 THEN 'admin' ELSE 'employee' END as role,
+        COALESCE(r.permissions, u.permissions) as permissions,
         u.is_active,
         u.is_locked,
         u.login_attempts,
         u.last_login
       FROM users u
+      LEFT JOIN roles r ON u.role_id = r.id
       WHERE u.username = $1 AND u.is_active = true
     `, [username])
 
@@ -134,11 +136,13 @@ export async function GET(request: NextRequest) {
         us.is_active,
         u.username,
         u.email,
-        u.role,
-        u.permissions,
+        u.role_id,
+        CASE WHEN u.role_id = 1 THEN 'admin' ELSE 'employee' END as role,
+        COALESCE(r.permissions, u.permissions) as permissions,
         u.is_active as user_is_active
       FROM user_sessions us
       JOIN users u ON us.user_id = u.id
+      LEFT JOIN roles r ON u.role_id = r.id
       WHERE us.session_token = $1 AND us.is_active = true AND us.expires_at > CURRENT_TIMESTAMP
     `, [token])
 

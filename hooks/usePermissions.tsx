@@ -91,12 +91,8 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     // Les admins ont accès à tout
     if (user.role === 'admin') return true
     
-    // Pour les employés, vérifier les permissions spécifiques
-    if (user.role === 'employee') {
-      return user.permissions?.sections?.includes(section) || false
-    }
-    
-    return false
+    // Pour les employés (ou tout rôle non-admin), vérifier les permissions spécifiques
+    return user.permissions?.sections?.includes(section) || false
   }
 
   const isAdmin = (): boolean => {
