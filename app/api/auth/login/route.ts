@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 import bcrypt from 'bcryptjs'
+import { SignJWT } from 'jose'
 
 export async function POST(request: NextRequest) {
   try {
@@ -66,10 +67,44 @@ export async function POST(request: NextRequest) {
       permissions: user.permissions || { sections: [] }
     }
 
-    return NextResponse.json({ 
+    // Créer le token JWT
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'finalfibre-super-secret-jwt-key-2025-user-auth')
+    const token = await new SignJWT({ 
+      userId: user.id, 
+      username: user.username, 
+      role: normalizedRole 
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime('24h')
+      .sign(secret)
+
+    // Créer la session en base de données
+    await query(`
+      INSERT INTO user_sessions (user_id, session_token, ip_address, user_agent, expires_at)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [
+      user.id,
+      token,
+      request.ip || null,
+      request.headers.get('user-agent') || 'unknown',
+      new Date(Date.now() + 24 * 60 * 60 * 1000) // 24h
+    ])
+
+    const response = NextResponse.json({ 
       message: 'Connexion réussie',
       user: userData
     })
+
+    // Définir le cookie httpOnly pour persister la session
+    response.cookies.set('user_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 // 24h
+    })
+
+    return response
   } catch (error) {
     console.error('❌ Erreur lors de la connexion:', error)
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

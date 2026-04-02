@@ -52,6 +52,11 @@ export function getPool(): Pool {
     pool.on('error', (err) => {
       console.error('❌ Erreur inattendue sur le client PostgreSQL:', err)
     })
+
+    // Forcer le format de date européen (DD/MM/YYYY) sur toutes les connexions
+    pool.on('connect', (client) => {
+      client.query("SET datestyle = 'ISO, DMY'")
+    })
     
     // Test de connexion au démarrage
     pool.connect()

@@ -251,6 +251,7 @@ export default function EmployeeTracker() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [user, setUser] = useState<any>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   
   // Polling automatique DÉSACTIVÉ pour meilleures performances
   // Les données se rechargent quand nécessaire (changement d'onglet, actions utilisateur)
@@ -870,6 +871,27 @@ export default function EmployeeTracker() {
   // Load data from database on component mount
   useEffect(() => {
     setMounted(true)
+    
+    // Restaurer la session utilisateur via le cookie httpOnly
+    const restoreSession = async () => {
+      try {
+        const response = await fetch('/api/auth/user')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.user) {
+            setUser(data.user)
+            setIsLoggedIn(true)
+            localStorage.setItem('currentUser', JSON.stringify(data.user))
+            console.log('✅ Session restaurée pour:', data.user.username)
+          }
+        }
+      } catch (error) {
+        console.log('Pas de session active')
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+    restoreSession()
   }, [])
 
   useEffect(() => {
@@ -2217,7 +2239,14 @@ La page va se recharger automatiquement...`)
     }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      // Supprimer la session côté serveur et le cookie
+      await fetch('/api/auth/user', { method: 'DELETE' })
+    } catch (error) {
+      console.error('Erreur lors de la déconnexion:', error)
+    }
+    localStorage.removeItem('currentUser')
     setUser(null)
     setIsLoggedIn(false)
     setActiveTab("dashboard")
@@ -3566,6 +3595,14 @@ La page va se recharger automatiquement...`)
       console.error('Erreur désassignation carte:', error)
       alert(`Erreur lors de la désassignation de la carte: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary"></div>
+      </div>
+    )
   }
 
   if (!isLoggedIn) {

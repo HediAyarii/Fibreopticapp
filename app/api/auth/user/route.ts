@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
         u.password_hash,
         u.role_id,
         CASE WHEN u.role_id = 1 THEN 'admin' ELSE 'employee' END as role,
-        COALESCE(r.permissions, u.permissions) as permissions,
+        r.permissions,
         u.is_active,
         u.is_locked,
         u.login_attempts,
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     `, [
       user.id,
       token,
-      request.ip || 'unknown',
+      request.ip || null,
       request.headers.get('user-agent') || 'unknown',
       new Date(Date.now() + 24 * 60 * 60 * 1000) // 24h
     ])
@@ -137,8 +137,10 @@ export async function GET(request: NextRequest) {
         u.username,
         u.email,
         u.role_id,
+        u.first_name,
+        u.last_name,
         CASE WHEN u.role_id = 1 THEN 'admin' ELSE 'employee' END as role,
-        COALESCE(r.permissions, u.permissions) as permissions,
+        r.permissions,
         u.is_active as user_is_active
       FROM user_sessions us
       JOIN users u ON us.user_id = u.id
@@ -162,6 +164,8 @@ export async function GET(request: NextRequest) {
       username: session.username,
       email: session.email,
       role: session.role,
+      role_id: session.role_id,
+      name: `${session.first_name || ''} ${session.last_name || ''}`.trim() || session.username,
       permissions: session.permissions
     }
 
