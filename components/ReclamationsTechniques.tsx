@@ -896,6 +896,22 @@ export default function ReclamationsTechniques() {
                 </div>
               </div>
 
+              {(selectedReclamation as any).articles && (
+                <div>
+                  <label className="text-sm font-medium text-gray-600 block mb-2">Articles de l'intervention</label>
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex flex-wrap gap-2">
+                      {(selectedReclamation as any).articles.split(',').map((article: string, idx: number) => (
+                        <Badge key={idx} variant="secondary" className="text-sm px-3 py-1 bg-white border border-blue-200 text-blue-800">
+                          <Package className="w-3 h-3 mr-1" />
+                          {article.trim()}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-medium text-gray-600 block mb-2">
                   Réponse de l'Admin
@@ -927,6 +943,20 @@ export default function ReclamationsTechniques() {
             >
               Annuler
             </Button>
+            {selectedReclamation && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDialogOpen(false)
+                  handleOpenArticlesModal(selectedReclamation)
+                }}
+                disabled={updating}
+                className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+              >
+                <Package className="h-4 w-4 mr-2" />
+                Articles
+              </Button>
+            )}
             {selectedReclamation && selectedReclamation.statut !== 'resolu' && (
               <>
                 <Button
