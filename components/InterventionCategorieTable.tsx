@@ -285,7 +285,19 @@ export function InterventionCategorieTable({
             case 'En cours':
               return articles === 'nan' || articles === '' || !articles
             default:
-              return false
+              // Autre = tout ce qui ne correspond à aucune autre catégorie
+              return !(
+                articles.includes('RACPAV') ||
+                articles.includes('RACPRO_S') ||
+                articles.includes('RACIH') ||
+                articles.includes('REFRAC') ||
+                articles.includes('DEP_OFFE') ||
+                articles.includes('SAV') ||
+                articles.includes('RECOIP') ||
+                articles === 'nan' ||
+                articles === '' ||
+                !articles
+              )
           }
         })
         .map((inter: Intervention) => ({
