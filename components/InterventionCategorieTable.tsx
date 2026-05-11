@@ -273,7 +273,7 @@ export function InterventionCategorieTable({
           
           switch (categorie) {
             case 'Pavillon':
-              return articles.includes('RACPAV') || articles.includes('RACPRO_S')
+              return articles.includes('RACPAV') || articles.includes('RACPRO_S') || articles.includes('RAC_PBO_AERIEN') || articles.includes('RAC_PBO_FACADE') || articles.includes('RAC_PBO_SOUT')
             case 'Intérieur':
               return articles.includes('RACIH')
             case 'Refrac':
@@ -289,6 +289,9 @@ export function InterventionCategorieTable({
               return !(
                 articles.includes('RACPAV') ||
                 articles.includes('RACPRO_S') ||
+                articles.includes('RAC_PBO_AERIEN') ||
+                articles.includes('RAC_PBO_FACADE') ||
+                articles.includes('RAC_PBO_SOUT') ||
                 articles.includes('RACIH') ||
                 articles.includes('REFRAC') ||
                 articles.includes('DEP_OFFE') ||

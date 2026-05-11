@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       )
       SELECT 
         CASE 
-          WHEN articles LIKE '%RACPAV%' OR articles LIKE '%RACPRO_S%' THEN 'Pavillon'
+          WHEN articles LIKE '%RACPAV%' OR articles LIKE '%RACPRO_S%' OR articles LIKE '%RAC_PBO_AERIEN%' OR articles LIKE '%RAC_PBO_FACADE%' OR articles LIKE '%RAC_PBO_SOUT%' THEN 'Pavillon'
           WHEN articles LIKE '%RACIH%' THEN 'Intérieur'
           WHEN articles LIKE '%REFRAC%' THEN 'Refrac'
           WHEN articles LIKE '%DEP_OFFE%' OR articles LIKE '%SAV%' THEN 'SAV'
@@ -81,8 +81,8 @@ export async function GET(request: NextRequest) {
           ELSE 'Autre'
         END as categorie,
         COUNT(*) as nombre,
-        SUM(CASE WHEN articles LIKE '%REPFOU_PRI%' OR articles LIKE '%REPFOU_PUB%' THEN 1 ELSE 0 END) as f8,
-        SUM(CASE WHEN articles LIKE '%REPFOU_ASPHA%' THEN 1 ELSE 0 END) as t8,
+        SUM(CASE WHEN articles LIKE '%REPFOU_PRI%' OR articles LIKE '%REPFOU_PUB%' OR articles LIKE '%FOURREAU_CASSE_PRIVE%' THEN 1 ELSE 0 END) as f8,
+        SUM(CASE WHEN articles LIKE '%REPFOU_ASPHA%' OR articles LIKE '%FOURREAU_CASSE_BETON%' THEN 1 ELSE 0 END) as t8,
         COALESCE(SUM(recette_technicien), 0) as montant_total
       FROM intervention_prices
       GROUP BY categorie
