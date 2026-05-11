@@ -191,71 +191,13 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const loadData = async () => {
     setLoading(true)
     try {
-      console.log('🔄 Chargement des données avec synchronisation automatique...')
-      
-      // 1. D'abord, synchroniser automatiquement les totaux générés
-      console.log('🔄 Synchronisation automatique des totaux générés...')
-      try {
-        const syncResponse = await fetch('/api/sync/total-genere', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
-        
-        if (syncResponse.ok) {
-          const syncData = await syncResponse.json()
-          if (syncData.success) {
-            console.log(`✅ Synchronisation terminée: ${syncData.updated} employés mis à jour`)
-          }
-        }
-      } catch (syncError) {
-        console.warn('⚠️ Erreur synchronisation (non bloquante):', syncError)
-      }
-      
-      // 2. Synchroniser automatiquement les taxes
-      console.log('🔄 Synchronisation automatique des taxes...')
-      try {
-        const taxSyncResponse = await fetch('/api/sync/taxes', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
-        
-        if (taxSyncResponse.ok) {
-          const taxSyncData = await taxSyncResponse.json()
-          if (taxSyncData.success) {
-            console.log(`✅ Synchronisation taxes terminée: ${taxSyncData.updated} employés mis à jour`)
-          }
-        }
-      } catch (taxSyncError) {
-        console.warn('⚠️ Erreur synchronisation taxes (non bloquante):', taxSyncError)
-      }
-      
-      // NOTE: Les techniciens manquants ne sont PAS synchronisés automatiquement
-      // L'admin doit d'abord faire l'import du mois, puis cliquer sur "Corriger Noms"
-      // La synchro des techniciens manquants se fait après la correction des noms
-      
-      // 3. Charger les données mises à jour
-      console.log('📊 Chargement des données mises à jour...')
+      // Charger directement les données (tout est calculé en temps réel côté API)
       const response = await fetch(`/api/cout-par-salaire?mois=${selectedMonth}&annee=${selectedYear}`)
       const data = await response.json()
       
       if (data.success) {
         setCouts(data.couts || [])
-        console.log(`✅ ${data.couts.length} enregistrements chargés avec totaux générés`)
-        
-        // Afficher les statistiques des totaux générés
-        const withRevenue = data.couts.filter((cout: any) => cout.total_genere && cout.total_genere > 0)
-        const withoutRevenue = data.couts.filter((cout: any) => !cout.total_genere || cout.total_genere === 0)
-        
-        console.log(`📊 Statistiques: ${withRevenue.length} avec recettes, ${withoutRevenue.length} sans recettes`)
-        
-        // Afficher un message si des totaux ont été synchronisés
-        if (withRevenue.length > 0) {
-          console.log(`🎯 Total Généré synchronisé pour ${withRevenue.length} employés`)
-        }
+        console.log(`✅ ${data.couts.length} enregistrements chargés`)
       } else {
         console.error('❌ Erreur chargement données:', data.error)
         alert(`Erreur lors du chargement: ${data.error}`)
@@ -846,7 +788,16 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       })
 
       if (response.ok) {
-        await loadData()
+        // Pour les champs qui affectent le calcul (salaire, charge, penalite, prime), recharger les données
+        const fieldsNeedingReload = ['salaire_net', 'salaire_brut', 'cout_total', 'charge', 'penalite', 'prime', 'matricule']
+        if (fieldsNeedingReload.includes(editingField.field)) {
+          await loadData()
+        } else {
+          // Pour les autres champs (nom, prenom), mise à jour locale
+          setCouts(prev => prev.map(c => 
+            c.id === editingField.id ? { ...c, [editingField.field]: valueToSend } : c
+          ))
+        }
         setEditingField(null)
         setEditValue('')
       }

@@ -3,7 +3,34 @@ import { query } from "@/lib/database"
 
 export const dynamic = 'force-dynamic'
 
-// GET - Récupérer les coûts par salarié avec filtres
+// Helper: build date filter for matching intervention dates to a month/year
+function buildDateFilter(moisParam: string, anneeParam: string): string {
+  return `
+    (
+      (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
+       i.cloture_tech ~ '^[0-9]' AND (
+         (i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.cloture_tech::date >= DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') AND i.cloture_tech::date <= (DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
+         OR
+         (i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') >= DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') AND TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') <= (DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
+       )) OR
+      (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
+       i.cloture_hotline ~ '^[0-9]' AND (
+         (i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.cloture_hotline::date >= DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') AND i.cloture_hotline::date <= (DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
+         OR
+         (i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') >= DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') AND TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') <= (DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
+       )) OR
+      (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
+       i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
+       i.date_rdv ~ '^[0-9]' AND (
+         (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') AND i.date_rdv::date <= (DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
+         OR
+         (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= (DATE(${anneeParam} || '-' || LPAD(${moisParam}::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
+       ))
+    )
+  `
+}
+
+// GET - Récupérer les coûts par salarié avec filtres (OPTIMISÉ - 1 seule requête)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -12,21 +39,121 @@ export async function GET(request: NextRequest) {
     
     let whereClause = ''
     const params: any[] = []
-    let paramIndex = 1
     
     if (mois && annee) {
-      whereClause = 'WHERE mois = $1 AND annee = $2'
+      whereClause = 'WHERE cps.mois = $1 AND cps.annee = $2'
       params.push(parseInt(mois), parseInt(annee))
     } else if (mois) {
-      whereClause = 'WHERE mois = $1'
+      whereClause = 'WHERE cps.mois = $1'
       params.push(parseInt(mois))
     } else if (annee) {
-      whereClause = 'WHERE annee = $1'
+      whereClause = 'WHERE cps.annee = $1'
       params.push(parseInt(annee))
     }
+
+    const dateFilter = buildDateFilter('cps.mois', 'cps.annee')
     
-    // Récupérer les données de base avec synchronisation automatique des taxes via MATRICULE
-    const result = await query(`
+    // UNE SEULE requête qui calcule tout : revenu, paiements, amendes, primes, RAP
+    const sqlQuery = `
+      WITH 
+      -- Pré-calculer le revenu par matricule/mois/année
+      revenue_by_matricule AS (
+        SELECT 
+          CONCAT('TECH_', UPPER(SUBSTRING(SPLIT_PART(i.nom_technicien, ' ', 1), 1, 3)), UPPER(SUBSTRING(SPLIT_PART(i.prenom_technicien, ' ', 1), 1, 2))) as matricule_calc,
+          i.mois_cloture,
+          i.annee_cloture,
+          COALESCE(SUM(
+            COALESCE(
+              (SELECT SUM(
+                CASE 
+                  WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
+                       AND i.articles LIKE '%SAV%' THEN 0
+                  WHEN cp.prix_tech IS NOT NULL THEN 
+                    cp.prix_tech * COALESCE(NULLIF(TRIM(SPLIT_PART(article_item, 'x', 2)), '')::INTEGER, 1)
+                  ELSE 0
+                END
+              )
+              FROM unnest(string_to_array(i.articles, ',')) as article_item
+              LEFT JOIN company_pricing cp ON 
+                TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
+                AND cp.company_name = CASE 
+                  WHEN i.grille LIKE '%AXECOM%' THEN 'AXECOM'
+                  ELSE 'ERT OUEST'
+                END
+                AND cp.category = CASE 
+                  WHEN i.type_intervention IN ('RACC', 'RECO', 'RECC') THEN 'RACC'
+                  ELSE 'SAV'
+                END
+              WHERE article_item != 'nan' 
+                AND TRIM(article_item) != ''
+              ), 0
+            )
+          ), 0) as total_genere
+        FROM (
+          SELECT i.*,
+            -- Extraire mois/année de la date de clôture
+            CASE
+              WHEN i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                THEN EXTRACT(MONTH FROM i.cloture_tech::date)::int
+              WHEN i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                THEN EXTRACT(MONTH FROM TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY'))::int
+              WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                THEN EXTRACT(MONTH FROM i.cloture_hotline::date)::int
+              WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                THEN EXTRACT(MONTH FROM TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY'))::int
+              WHEN i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                THEN EXTRACT(MONTH FROM i.date_rdv::date)::int
+              WHEN i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                THEN EXTRACT(MONTH FROM TO_DATE(i.date_rdv, 'DD/MM/YYYY'))::int
+              ELSE NULL
+            END as mois_cloture,
+            CASE
+              WHEN i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                THEN EXTRACT(YEAR FROM i.cloture_tech::date)::int
+              WHEN i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                THEN EXTRACT(YEAR FROM TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY'))::int
+              WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                THEN EXTRACT(YEAR FROM i.cloture_hotline::date)::int
+              WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                THEN EXTRACT(YEAR FROM TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY'))::int
+              WHEN i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                THEN EXTRACT(YEAR FROM i.date_rdv::date)::int
+              WHEN i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                THEN EXTRACT(YEAR FROM TO_DATE(i.date_rdv, 'DD/MM/YYYY'))::int
+              ELSE NULL
+            END as annee_cloture
+          FROM interventions i
+          WHERE i.statut = 'CLOTURE TERMINEE'
+            AND i.articles IS NOT NULL 
+            AND i.articles != ''
+        ) i
+        WHERE i.mois_cloture IS NOT NULL AND i.annee_cloture IS NOT NULL
+        GROUP BY matricule_calc, i.mois_cloture, i.annee_cloture
+      ),
+      -- Pré-calculer les paiements par cout_par_salaire_id
+      paiements_totaux AS (
+        SELECT cout_par_salaire_id, COALESCE(SUM(montant_verse), 0) as total_paiements
+        FROM paiements_employes
+        GROUP BY cout_par_salaire_id
+      ),
+      -- Pré-calculer les primes par cout_par_salaire_id
+      primes_totaux AS (
+        SELECT cout_par_salaire_id, COALESCE(SUM(montant), 0) as total_primes
+        FROM primes_employes
+        GROUP BY cout_par_salaire_id
+      ),
+      -- Pré-calculer les amendes par matricule/mois/année
+      amendes_totaux AS (
+        SELECT 
+          e.matricule,
+          EXTRACT(MONTH FROM av.date_amende)::int as mois,
+          EXTRACT(YEAR FROM av.date_amende)::int as annee,
+          COALESCE(SUM(av.montant), 0) as total_amendes
+        FROM amendes_vehicules av
+        JOIN employes e ON av.employe_id = e.id
+        WHERE e.matricule IS NOT NULL
+        GROUP BY e.matricule, EXTRACT(MONTH FROM av.date_amende), EXTRACT(YEAR FROM av.date_amende)
+      )
       SELECT 
         cps.id,
         cps.nom,
@@ -38,12 +165,11 @@ export async function GET(request: NextRequest) {
         cps.mois,
         cps.annee,
         cps.matricule,
-        -- Synchroniser automatiquement avec la table employes via MATRICULE
+        -- Taxe synchronisée via employes
         COALESCE(e.pourcentage_taxe, 50) as taxe,
-        -- Récupérer nom/prénom de la table employes si correspondance matricule
         COALESCE(e.nom, cps.nom) as nom_employe,
         COALESCE(e.prenom, cps.prenom) as prenom_employe,
-        -- Recalculer l'impôt basé sur la taxe synchronisée
+        -- Impôt recalculé
         CASE 
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
@@ -52,162 +178,47 @@ export async function GET(request: NextRequest) {
         END as impot,
         cps.penalite,
         cps.prime,
-        -- Total des primes (toutes les primes s'ajoutent au RAP)
-        COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id), 0) as total_primes,
-        cps.total_genere,
-        -- Calculer automatiquement le RAP avec la formule correcte
-        -- RAP = Total Généré - Salaire Net - Impôt + Primes - Pénalités
-        (cps.total_genere - cps.salaire_net - 
-         CASE 
-           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
-           WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
-           WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
-           ELSE cps.charge * (COALESCE(e.pourcentage_taxe, 50) / 100)
-         END + COALESCE((SELECT SUM(montant) FROM primes_employes WHERE cout_par_salaire_id = cps.id), 0)
-         - COALESCE(cps.penalite, 0)) as rap,
+        -- Primes
+        COALESCE(pt.total_primes, 0) as total_primes,
+        -- Total généré (recalculé en temps réel)
+        COALESCE(rev.total_genere, 0) as total_genere,
+        -- Paiements
+        COALESCE(pai.total_paiements, 0) as total_paiements,
+        -- Amendes
+        COALESCE(am.total_amendes, 0) as total_amendes,
+        -- RAP = Total Généré - Salaire Net - Impôt + Primes - Pénalités - Paiements - Amendes
+        (
+          COALESCE(rev.total_genere, 0) 
+          - cps.salaire_net 
+          - CASE 
+              WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
+              WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 50) < 0.01 THEN cps.charge / 2
+              WHEN ABS(COALESCE(e.pourcentage_taxe, 50)) < 0.01 THEN cps.charge
+              ELSE cps.charge * (COALESCE(e.pourcentage_taxe, 50) / 100)
+            END
+          + COALESCE(pt.total_primes, 0) 
+          - COALESCE(cps.penalite, 0) 
+          - COALESCE(pai.total_paiements, 0)
+          - COALESCE(am.total_amendes, 0)
+        ) as rap,
         cps.created_at,
         cps.updated_at
       FROM cout_par_salaire cps
       LEFT JOIN employes e ON cps.matricule IS NOT NULL AND cps.matricule = e.matricule AND e.statut = 'actif'
+      LEFT JOIN revenue_by_matricule rev ON cps.matricule IS NOT NULL AND rev.matricule_calc = cps.matricule AND rev.mois_cloture = cps.mois AND rev.annee_cloture = cps.annee
+      LEFT JOIN paiements_totaux pai ON pai.cout_par_salaire_id = cps.id
+      LEFT JOIN primes_totaux pt ON pt.cout_par_salaire_id = cps.id
+      LEFT JOIN amendes_totaux am ON cps.matricule IS NOT NULL AND am.matricule = cps.matricule AND am.mois = cps.mois AND am.annee = cps.annee
       ${whereClause}
       ORDER BY cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
-    `, params)
-    
-    // Calculer le total des paiements et le RAP final pour chaque employé
-    const coutsWithRevenue = await Promise.all(
-      result.rows.map(async (cout: any) => {
-        try {
-          // Calculer le total_genere en temps réel via MATRICULE
-          // Utiliser le matricule pour trouver TOUTES les interventions liées à cet employé
-          // même si les noms sont écrits différemment dans les interventions
-          
-          let totalGenereCalcule = 0
-          
-          if (cout.matricule) {
-            // Chercher les interventions où le matricule généré correspond au matricule de l'employé
-            // Le matricule est généré comme: TECH_ + 3 premières lettres du nom + 2 premières lettres du prénom
-            const revenueResult = await query(`
-              SELECT COALESCE(SUM(
-                CASE 
-                  WHEN i.statut = 'CLOTURE TERMINEE' THEN
-                    COALESCE(
-                      (SELECT SUM(
-                        CASE 
-                          WHEN TRIM(SPLIT_PART(article_item, 'x', 1)) = 'DEP_OFFE' 
-                               AND i.articles LIKE '%SAV%' THEN 0
-                          WHEN cp.prix_tech IS NOT NULL THEN 
-                            cp.prix_tech * COALESCE(NULLIF(TRIM(SPLIT_PART(article_item, 'x', 2)), '')::INTEGER, 1)
-                          ELSE 0
-                        END
-                      )
-                      FROM unnest(string_to_array(i.articles, ',')) as article_item
-                      LEFT JOIN company_pricing cp ON 
-                        TRIM(SPLIT_PART(article_item, 'x', 1)) = cp.service_code
-                        AND cp.company_name = CASE 
-                          WHEN i.grille LIKE '%AXECOM%' THEN 'AXECOM'
-                          ELSE 'ERT OUEST'
-                        END
-                        AND cp.category = CASE 
-                          WHEN i.type_intervention IN ('RACC', 'RECO', 'RECC') THEN 'RACC'
-                          ELSE 'SAV'
-                        END
-                      WHERE article_item != 'nan' 
-                        AND TRIM(article_item) != ''
-                      ), 0
-                    )
-                  ELSE 0
-                END
-              ), 0) as total_genere
-              FROM interventions i
-              WHERE i.statut = 'CLOTURE TERMINEE'
-                AND i.articles IS NOT NULL 
-                AND i.articles != ''
-                AND CONCAT('TECH_', UPPER(SUBSTRING(SPLIT_PART(i.nom_technicien, ' ', 1), 1, 3)), UPPER(SUBSTRING(SPLIT_PART(i.prenom_technicien, ' ', 1), 1, 2))) = $1
-                AND (
-                  (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND 
-                   i.cloture_tech ~ '^[0-9]' AND (
-                     (i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.cloture_tech::date >= DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') AND i.cloture_tech::date <= (DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
-                     OR
-                     (i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') >= DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') AND TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') <= (DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
-                   )) OR
-                  (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND 
-                   i.cloture_hotline ~ '^[0-9]' AND (
-                     (i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.cloture_hotline::date >= DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') AND i.cloture_hotline::date <= (DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
-                     OR
-                     (i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') >= DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') AND TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') <= (DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
-                   )) OR
-                  (i.cloture_tech IS NULL AND i.cloture_hotline IS NULL AND 
-                   i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND 
-                   i.date_rdv ~ '^[0-9]' AND (
-                     (i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND i.date_rdv::date >= DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') AND i.date_rdv::date <= (DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
-                     OR
-                     (i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') >= DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') AND TO_DATE(i.date_rdv, 'DD/MM/YYYY') <= (DATE($2 || '-' || LPAD($3::text, 2, '0') || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))
-                   ))
-                )
-            `, [cout.matricule, cout.annee, cout.mois])
-            
-            totalGenereCalcule = parseFloat(revenueResult.rows[0]?.total_genere || 0)
-            console.log(`📍 Matricule ${cout.matricule} → Total Généré: ${totalGenereCalcule}€`)
-          }
-          
-          // Récupérer le total des paiements
-          const paiementsResult = await query(`
-            SELECT calculer_total_paiements($1) as total_paiements
-          `, [cout.id])
-          
-          const totalPaiements = parseFloat(paiementsResult.rows[0].total_paiements) || 0
-          
-          // Récupérer le total des amendes pour cet employé ce mois via MATRICULE
-          let totalAmendes = 0
-          try {
-            if (cout.matricule) {
-              const amendesResult = await query(`
-                SELECT COALESCE(SUM(av.montant), 0) as total_amendes
-                FROM amendes_vehicules av
-                JOIN employes e ON av.employe_id = e.id
-                WHERE e.matricule = $1
-                  AND EXTRACT(MONTH FROM av.date_amende) = $2
-                  AND EXTRACT(YEAR FROM av.date_amende) = $3
-              `, [cout.matricule, cout.mois, cout.annee])
-              totalAmendes = parseFloat(amendesResult.rows[0]?.total_amendes) || 0
-            }
-          } catch (amendesError) {
-            console.warn(`⚠️ Erreur calcul amendes pour matricule ${cout.matricule}:`, amendesError)
-          }
-          
-          // Recalculer le RAP avec le nouveau total_genere
-          // RAP = Total Généré - Salaire Net - Impôt + Primes - Pénalités - Paiements - Amendes
-          // Les primes S'AJOUTENT au reste à payer (bonus pour l'employé)
-          // Les pénalités SE DÉDUISENT du reste à payer
-          const totalPrimes = parseFloat(cout.total_primes || 0)
-          const totalPenalite = parseFloat(cout.penalite || 0)
-          const rapRecalcule = totalGenereCalcule - parseFloat(cout.salaire_net) - parseFloat(cout.impot) + totalPrimes - totalPenalite
-          const rapFinal = rapRecalcule - totalPaiements - totalAmendes
-          
-          return {
-            ...cout,
-            total_genere: totalGenereCalcule, // Valeur recalculée en temps réel
-            rap: rapFinal, // RAP recalculé avec primes ajoutées
-            total_paiements: totalPaiements,
-            total_amendes: totalAmendes,
-            total_primes: totalPrimes
-          }
-        } catch (error) {
-          console.error(`Erreur calcul paiements pour ${cout.nom} ${cout.prenom}:`, error)
-          return {
-            ...cout,
-            total_paiements: 0,
-            total_amendes: 0,
-            rap: parseFloat(cout.rap)  // RAP de base si erreur
-          }
-        }
-      })
-    )
+    `
+
+    const result = await query(sqlQuery, params)
     
     return NextResponse.json({
       success: true,
-      couts: coutsWithRevenue,
-      total: coutsWithRevenue.length
+      couts: result.rows,
+      total: result.rows.length
     })
     
   } catch (error) {
