@@ -84,7 +84,7 @@ const MOIS_NOMS = [
 const JOURS_SEMAINE_LETTRES = ['DIM', 'LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM']
 
 export function AbsencesManager() {
-  const { isAdmin } = useUserPermissions()
+  const { isAdmin, hasPermission } = useUserPermissions()
   const [absences, setAbsences] = useState<Absence[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
@@ -729,7 +729,7 @@ export function AbsencesManager() {
                                     onClick={() => { setSelectedAbsence(absence); setDecisionComment(''); setShowDecisionModal(true) }} title="Refuser"><X className="w-3 h-3" /></Button>
                                 </>
                               )}
-                              {isAdmin && (
+                              {hasPermission('absences') && (
                                 <>
                                   <Button size="sm" variant="outline" className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700"
                                     onClick={() => { setEditAbsence(absence); setShowEditModal(true) }} title="Modifier"><Pencil className="w-3 h-3" /></Button>
