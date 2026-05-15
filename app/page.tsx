@@ -4423,23 +4423,23 @@ La page va se recharger automatiquement...`)
           {activeTab === "tarifs" && (
             <div className="space-y-4">
               {/* Sous-onglets Tarifs */}
-              <div className="flex gap-2 border-b border-white/10 pb-0">
+              <div className="flex gap-1 bg-gray-100 dark:bg-white/10 p-1 rounded-xl w-fit">
                 <button
                   onClick={() => setActiveTarifsSubTab('ert-axecom')}
-                  className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+                  className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${
                     activeTarifsSubTab === 'ert-axecom'
-                      ? 'bg-white/10 border border-b-0 border-white/20 text-white'
-                      : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                      ? 'bg-white dark:bg-white/20 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
                   }`}
                 >
                   Tarifs ERT / AXECOM
                 </button>
                 <button
                   onClick={() => setActiveTarifsSubTab('ftto')}
-                  className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+                  className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${
                     activeTarifsSubTab === 'ftto'
-                      ? 'bg-white/10 border border-b-0 border-white/20 text-white'
-                      : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                      ? 'bg-white dark:bg-white/20 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
                   }`}
                 >
                   Tarifs FTTO
