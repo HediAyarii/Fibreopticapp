@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
+import { ensureReclaFreeTable } from "@/lib/ensure-recla-free-table"
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,7 @@ function buildDateFilter(moisParam: string, anneeParam: string): string {
 // GET - Récupérer les coûts par salarié avec filtres (OPTIMISÉ - 1 seule requête)
 export async function GET(request: NextRequest) {
   try {
+    await ensureReclaFreeTable()
     const { searchParams } = new URL(request.url)
     const mois = searchParams.get('mois')
     const annee = searchParams.get('annee')
@@ -153,6 +155,18 @@ export async function GET(request: NextRequest) {
         JOIN employes e ON av.employe_id = e.id
         WHERE e.matricule IS NOT NULL
         GROUP BY e.matricule, EXTRACT(MONTH FROM av.date_amende), EXTRACT(YEAR FROM av.date_amende)
+      ),
+      -- Pré-calculer les recla free confirmées par matricule/mois/année
+      recla_free_totaux AS (
+        SELECT
+          e.matricule,
+          EXTRACT(MONTH FROM COALESCE(rf.date, rf.created_at::date))::int as mois,
+          EXTRACT(YEAR FROM COALESCE(rf.date, rf.created_at::date))::int as annee,
+          COALESCE(SUM(rf.montant_technicien), 0) as total_recla_free
+        FROM recla_free rf
+        JOIN employes e ON rf.employe_id = e.id
+        WHERE rf.confirmer = TRUE
+        GROUP BY e.matricule, EXTRACT(MONTH FROM COALESCE(rf.date, rf.created_at::date)), EXTRACT(YEAR FROM COALESCE(rf.date, rf.created_at::date))
       )
       SELECT 
         cps.id,
@@ -180,15 +194,17 @@ export async function GET(request: NextRequest) {
         cps.prime,
         -- Primes
         COALESCE(pt.total_primes, 0) as total_primes,
-        -- Total généré (recalculé en temps réel)
-        COALESCE(rev.total_genere, 0) as total_genere,
+        -- Total généré (recalculé en temps réel + recla free confirmées)
+        COALESCE(rev.total_genere, 0) + COALESCE(rft.total_recla_free, 0) as total_genere,
         -- Paiements
         COALESCE(pai.total_paiements, 0) as total_paiements,
         -- Amendes
         COALESCE(am.total_amendes, 0) as total_amendes,
-        -- RAP = Total Généré - Salaire Net - Impôt + Primes - Pénalités - Paiements - Amendes
+        -- Recla Free confirmées
+        COALESCE(rft.total_recla_free, 0) as total_recla_free,
+        -- RAP = Total Généré (incl. recla free) - Salaire Net - Impôt + Primes - Pénalités - Paiements - Amendes
         (
-          COALESCE(rev.total_genere, 0) 
+          COALESCE(rev.total_genere, 0) + COALESCE(rft.total_recla_free, 0)
           - cps.salaire_net 
           - CASE 
               WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
@@ -209,12 +225,13 @@ export async function GET(request: NextRequest) {
       LEFT JOIN paiements_totaux pai ON pai.cout_par_salaire_id = cps.id
       LEFT JOIN primes_totaux pt ON pt.cout_par_salaire_id = cps.id
       LEFT JOIN amendes_totaux am ON cps.matricule IS NOT NULL AND am.matricule = cps.matricule AND am.mois = cps.mois AND am.annee = cps.annee
+      LEFT JOIN recla_free_totaux rft ON cps.matricule IS NOT NULL AND rft.matricule = cps.matricule AND rft.mois = cps.mois AND rft.annee = cps.annee
       ${whereClause}
       ORDER BY cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
     `
 
     const result = await query(sqlQuery, params)
-    
+
     return NextResponse.json({
       success: true,
       couts: result.rows,

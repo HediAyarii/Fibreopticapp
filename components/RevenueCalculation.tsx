@@ -15,7 +15,8 @@ import {
   Calendar,
   Search,
   Download,
-  RefreshCw
+  RefreshCw,
+  AlertCircle
 } from "lucide-react"
 
 interface RevenueData {
@@ -27,6 +28,7 @@ interface RevenueData {
   total_recette_technicien: number
   total_recette_entreprise: number
   total_recette_generale: number
+  total_recla_free_confirmee?: number
   interventions_detail: Array<{
     intervention_id: number
     num_inter: string
@@ -99,6 +101,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
   const [dateTo, setDateTo] = useState(defaultDates.end)
   const [selectedGrille, setSelectedGrille] = useState<string>("all")
   const [expandedEmployee, setExpandedEmployee] = useState<number | null>(null)
+  const [reclaFreeDetails, setReclaFreeDetails] = useState<Record<number, any[]>>({})
 
   const loadRevenueData = async () => {
     setLoading(true)
@@ -222,8 +225,21 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
     )
   }
 
-  const toggleEmployeeDetails = (employeeId: number) => {
-    setExpandedEmployee(expandedEmployee === employeeId ? null : employeeId)
+  const toggleEmployeeDetails = async (employeeId: number) => {
+    const next = expandedEmployee === employeeId ? null : employeeId
+    setExpandedEmployee(next)
+    if (next !== null && !reclaFreeDetails[next]) {
+      try {
+        const p = new URLSearchParams({ employe_id: String(next), confirmer: 'true' })
+        if (dateFrom) p.append('date_debut', dateFrom)
+        if (dateTo) p.append('date_fin', dateTo)
+        const res = await fetch(`/api/recla-free?${p.toString()}`)
+        const data = await res.json()
+        setReclaFreeDetails(prev => ({ ...prev, [next]: data.reclaFree || [] }))
+      } catch {
+        setReclaFreeDetails(prev => ({ ...prev, [next]: [] }))
+      }
+    }
   }
 
   return (
@@ -413,6 +429,11 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                           <Badge variant="secondary" className="glass-card border border-white/20">
                             {employee.nombre_interventions}
                           </Badge>
+                          {(employee.total_recla_free_confirmee ?? 0) > 0 && (
+                            <Badge variant="outline" className="ml-1 border-orange-500/50 text-orange-400 text-xs">
+                              +{formatCurrency(employee.total_recla_free_confirmee!)} RF
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-medium text-green-600">
                           <div className="flex items-center justify-end gap-1">
@@ -485,6 +506,54 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                                       </div>
                                     </div>
                                   ))}
+
+                                  {/* Section Recla Free */}
+                                  {(reclaFreeDetails[employee.employe_id] ?? []).length > 0 && (
+                                    <div className="mt-2">
+                                      <div className="flex items-center gap-2 mb-3 pt-3 border-t border-orange-500/20">
+                                        <AlertCircle className="w-4 h-4 text-orange-400" />
+                                        <span className="font-semibold text-orange-400">Recla Free confirmées</span>
+                                        <Badge variant="outline" className="border-orange-500/50 text-orange-400 text-xs">
+                                          {(reclaFreeDetails[employee.employe_id] ?? []).length} entrée(s)
+                                        </Badge>
+                                      </div>
+                                      {(reclaFreeDetails[employee.employe_id] ?? []).map((rf: any) => (
+                                        <div key={rf.id} className="p-3 border border-orange-500/20 bg-orange-500/5 rounded-lg mb-2">
+                                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-center">
+                                            <div>
+                                              <div className="text-xs text-gray-500 mb-1">Type litige</div>
+                                              <Badge variant="outline" className="border-orange-500/40 text-orange-400 text-xs">
+                                                {rf.type_litige === 'client' ? 'Client' : 'Contrôleur'}
+                                              </Badge>
+                                            </div>
+                                            <div>
+                                              <div className="text-xs text-gray-500">Réf. client</div>
+                                              <div className="font-medium text-sm">{rf.reference_client || '—'}</div>
+                                            </div>
+                                            <div>
+                                              <div className="text-xs text-gray-500">Agence</div>
+                                              <div className="font-medium text-sm">{rf.agence || '—'}</div>
+                                            </div>
+                                            <div>
+                                              <div className="text-xs text-gray-500">Date · Nature</div>
+                                              <div className="font-medium text-sm">
+                                                {rf.date ? new Date(rf.date).toLocaleDateString('fr-FR') : '—'}
+                                                {' · '}
+                                                <span className="text-xs text-gray-400">{rf.nature_travaux}{rf.nature_travaux === 'AUTRE' && rf.nature_travaux_detail ? ` (${rf.nature_travaux_detail})` : ''}</span>
+                                              </div>
+                                            </div>
+                                            <div className="text-right">
+                                              <div className="text-xs text-gray-500">Montant</div>
+                                              <div className="font-bold text-orange-400 text-base">{formatCurrency(Number(rf.montant) || 0)}</div>
+                                            </div>
+                                          </div>
+                                          {rf.commentaire && (
+                                            <div className="mt-1 text-xs text-gray-500 italic">{rf.commentaire}</div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </CardContent>
                             </Card>

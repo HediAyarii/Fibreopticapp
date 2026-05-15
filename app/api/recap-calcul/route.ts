@@ -1,11 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
+import { ensureReclaFreeTable } from "@/lib/ensure-recla-free-table"
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureReclaFreeTable()
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
@@ -313,15 +315,33 @@ export async function GET(request: NextRequest) {
           AND am.date_affectation::date >= $1::date 
           AND am.date_affectation::date <= $2::date
         GROUP BY e.nom, e.prenom, e.matricule
+      ),
+      recla_free_data AS (
+        SELECT
+          e.matricule,
+          e.id as employe_id,
+          e.nom as employe_nom,
+          e.prenom as employe_prenom,
+          COALESCE(SUM(rf.montant_technicien), 0) as total_recla_free_confirmee,
+          COALESCE(SUM(rf.montant_entreprise), 0) as total_recla_free_entreprise
+        FROM recla_free rf
+        JOIN employes e ON rf.employe_id = e.id
+        WHERE rf.confirmer = TRUE
+          AND COALESCE(rf.date, rf.created_at::date) >= $1::date
+          AND COALESCE(rf.date, rf.created_at::date) <= $2::date
+          ${selectedEmployee ? `AND e.matricule = '${selectedEmployee.matricule}'` : ''}
+        GROUP BY e.matricule, e.id, e.nom, e.prenom
       )
       SELECT 
-        COALESCE(id.employe_nom, cd.employe_nom, md.employe_nom) as employe_nom,
-        COALESCE(id.employe_prenom, cd.employe_prenom, md.employe_prenom) as employe_prenom,
-        COALESCE(id.matricule, cd.matricule, md.matricule) as matricule,
-        COALESCE(id.employe_id, -1) as employe_id,
+        COALESCE(id.employe_nom, cd.employe_nom, md.employe_nom, rfd.employe_nom) as employe_nom,
+        COALESCE(id.employe_prenom, cd.employe_prenom, md.employe_prenom, rfd.employe_prenom) as employe_prenom,
+        COALESCE(id.matricule, cd.matricule, md.matricule, rfd.matricule) as matricule,
+        COALESCE(id.employe_id, rfd.employe_id, -1) as employe_id,
         COALESCE(id.nombre_interventions, 0) as nombre_interventions,
-        COALESCE(id.total_recette_technicien, 0) as total_recette_technicien,
-        COALESCE(id.total_recette_entreprise, 0) as total_recette_entreprise,
+        COALESCE(id.total_recette_technicien, 0) + COALESCE(rfd.total_recla_free_confirmee, 0) as total_recette_technicien,
+        COALESCE(id.total_recette_entreprise, 0) + COALESCE(rfd.total_recla_free_entreprise, 0) as total_recette_entreprise,
+        COALESCE(rfd.total_recla_free_confirmee, 0) as total_recla_free_confirmee,
+        COALESCE(rfd.total_recla_free_entreprise, 0) as total_recla_free_entreprise,
         COALESCE(cd.nombre_transactions_carburant, 0) as nombre_transactions_carburant,
         COALESCE(cd.consommation_totale_carburant, 0) as consommation_totale_carburant,
         COALESCE(cd.consommation_moyenne_carburant, 0) as consommation_moyenne_carburant,
@@ -334,9 +354,10 @@ export async function GET(request: NextRequest) {
       FROM interventions_data id
       FULL OUTER JOIN carburant_data cd ON id.matricule = cd.matricule
       FULL OUTER JOIN materiel_data md ON COALESCE(id.matricule, cd.matricule) = md.matricule
-      LEFT JOIN employee_labels el ON COALESCE(id.matricule, cd.matricule, md.matricule) = el.matricule
-      ${selectedEmployee ? `WHERE id.matricule = '${selectedEmployee.matricule}' OR cd.matricule = '${selectedEmployee.matricule}' OR md.matricule = '${selectedEmployee.matricule}'` : ''}
-      ORDER BY COALESCE(id.total_recette_technicien, 0) DESC
+      FULL OUTER JOIN recla_free_data rfd ON COALESCE(id.matricule, cd.matricule, md.matricule) = rfd.matricule
+      LEFT JOIN employee_labels el ON COALESCE(id.matricule, cd.matricule, md.matricule, rfd.matricule) = el.matricule
+      ${selectedEmployee ? `WHERE id.matricule = '${selectedEmployee.matricule}' OR cd.matricule = '${selectedEmployee.matricule}' OR md.matricule = '${selectedEmployee.matricule}' OR rfd.matricule = '${selectedEmployee.matricule}'` : ''}
+      ORDER BY (COALESCE(id.total_recette_technicien, 0) + COALESCE(rfd.total_recla_free_confirmee, 0)) DESC
     `
 
     // Exécuter la requête avec les filtres
@@ -357,6 +378,8 @@ export async function GET(request: NextRequest) {
         nombre_interventions: Number(row.nombre_interventions) || 0,
         total_recette_technicien: Number(row.total_recette_technicien) || 0,
         total_recette_entreprise: Number(row.total_recette_entreprise) || 0,
+        total_recla_free_confirmee: Number(row.total_recla_free_confirmee) || 0,
+        total_recla_free_entreprise: Number(row.total_recla_free_entreprise) || 0,
         nombre_transactions_carburant: Number(row.nombre_transactions_carburant) || 0,
         consommation_totale_carburant: Number(row.consommation_totale_carburant) || 0,
         consommation_moyenne_carburant: Number(row.consommation_moyenne_carburant) || 0,

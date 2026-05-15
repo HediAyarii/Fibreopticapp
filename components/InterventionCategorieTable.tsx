@@ -125,6 +125,10 @@ export function InterventionCategorieTable({
   const [submittingConfirmation, setSubmittingConfirmation] = useState(false)
   const [canConfirm, setCanConfirm] = useState(false)
 
+  // ReclaFree
+  const [reclaFreeData, setReclaFreeData] = useState<any[]>([])
+  const [showReclaFreeDialog, setShowReclaFreeDialog] = useState(false)
+
   // Socket.IO pour notifications temps réel
   const socket = useSocket()
 
@@ -171,6 +175,26 @@ export function InterventionCategorieTable({
       fetchCategories()
     }
   }, [nomTechnicien, prenomTechnicien, dateDebut, dateFin])
+
+  // Charger les recla free confirmées du technicien
+  useEffect(() => {
+    const fetchReclaFree = async () => {
+      if (!employeId) return
+      try {
+        const params = new URLSearchParams({ employe_id: String(employeId), confirmer: 'true' })
+        if (dateDebut) params.append('date_debut', dateDebut)
+        if (dateFin) params.append('date_fin', dateFin)
+        const res = await fetch(`/api/recla-free?${params.toString()}`)
+        if (res.ok) {
+          const data = await res.json()
+          setReclaFreeData(data.reclaFree || [])
+        }
+      } catch (e) {
+        console.warn('recla_free fetch error:', e)
+      }
+    }
+    fetchReclaFree()
+  }, [employeId, dateDebut, dateFin])
 
   // Vérifier le statut de confirmation et si le bouton peut être activé
   useEffect(() => {
@@ -493,54 +517,78 @@ export function InterventionCategorieTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {categories.length === 0 ? (
+              {categories.length === 0 && reclaFreeData.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-gray-500">
                     Aucune intervention trouvée
                   </TableCell>
                 </TableRow>
               ) : (
-                categories.map((cat) => (
-                  <TableRow 
-                    key={cat.categorie} 
-                    className={`${getCategorieColor(cat.categorie)} cursor-pointer hover:opacity-80 transition-opacity`}
-                    onClick={() => handleCategorieClick(cat.categorie)}
-                  >
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {getCategorieIcon(cat.categorie)}
-                        <span>{cat.categorie}</span>
-                        <ChevronRight className="h-4 w-4 text-gray-400 ml-auto" />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {cat.nombre}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {cat.f8 > 0 ? (
-                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
-                          {cat.f8}
+                <>
+                  {categories.map((cat) => (
+                    <TableRow 
+                      key={cat.categorie} 
+                      className={`${getCategorieColor(cat.categorie)} cursor-pointer hover:opacity-80 transition-opacity`}
+                      onClick={() => handleCategorieClick(cat.categorie)}
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {getCategorieIcon(cat.categorie)}
+                          <span>{cat.categorie}</span>
+                          <ChevronRight className="h-4 w-4 text-gray-400 ml-auto" />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {cat.nombre}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {cat.f8 > 0 ? (
+                          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+                            {cat.f8}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {cat.t8 > 0 ? (
+                          <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-700">
+                            {cat.t8}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className="font-semibold text-green-600">
+                          {(cat.montant_total || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€
                         </span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {cat.t8 > 0 ? (
-                        <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-700">
-                          {cat.t8}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {reclaFreeData.length > 0 && (
+                    <TableRow
+                      className="bg-orange-50 border-t-2 border-orange-300 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setShowReclaFreeDialog(true)}
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-orange-600" />
+                          <span className="text-orange-800 font-semibold">ReclaFree</span>
+                          <ChevronRight className="h-4 w-4 text-orange-400 ml-auto" />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-orange-700">{reclaFreeData.length}</TableCell>
+                      <TableCell className="text-right"><span className="text-gray-400">-</span></TableCell>
+                      <TableCell className="text-right"><span className="text-gray-400">-</span></TableCell>
+                      <TableCell className="text-right">
+                        <span className="font-semibold text-orange-600">
+                          +{reclaFreeData.reduce((s, rf) => s + parseFloat(rf.montant_technicien || 0), 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€
                         </span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className="font-semibold text-green-600">
-                        {(cat.montant_total || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
               )}
             </TableBody>
           </Table>
@@ -670,6 +718,61 @@ export function InterventionCategorieTable({
         </DialogContent>
       </Dialog>
       
+      {/* Dialog ReclaFree */}
+      <Dialog open={showReclaFreeDialog} onOpenChange={setShowReclaFreeDialog}>
+        <DialogContent className="!max-w-[95vw] !w-[95vw] max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-600" />
+              Recla Free confirmées
+              <Badge variant="secondary" className="ml-auto bg-orange-100 text-orange-800">
+                {reclaFreeData.length} entrée{reclaFreeData.length !== 1 ? 's' : ''} — votre part: +{reclaFreeData.reduce((s, rf) => s + parseFloat(rf.montant_technicien || 0), 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
+              </Badge>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1 space-y-3 pr-2">
+            {reclaFreeData.map((rf) => (
+              <div key={rf.id} className="border border-orange-200 rounded-lg p-4 bg-orange-50">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {rf.type_litige && (
+                      <span className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs font-semibold">
+                        {rf.type_litige === 'controleur' ? 'Contrôleur' : 'Client'}
+                      </span>
+                    )}
+                    {rf.status_ticket && (
+                      <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full text-xs">{rf.status_ticket}</span>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-orange-600 whitespace-nowrap">
+                      +{parseFloat(rf.montant_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ <span className="text-xs font-normal text-gray-500">votre part</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 mb-2">
+                  {rf.reference_client && <div><span className="font-medium text-gray-500">Réf. client:</span> {rf.reference_client}</div>}
+                  {rf.agence && <div><span className="font-medium text-gray-500">Agence:</span> {rf.agence}</div>}
+                  {rf.region && <div><span className="font-medium text-gray-500">Région:</span> {rf.region}</div>}
+                  {rf.code_postal && <div><span className="font-medium text-gray-500">CP:</span> {rf.code_postal}</div>}
+                  {(rf.date || rf.created_at) && <div><span className="font-medium text-gray-500">Date:</span> {new Date(rf.date || rf.created_at).toLocaleDateString('fr-FR')}</div>}
+                  {rf.nature_travaux && <div><span className="font-medium text-gray-500">Nature:</span> {rf.nature_travaux}</div>}
+                </div>
+                {rf.nature_travaux_detail && (
+                  <p className="text-xs text-gray-600 mb-1"><span className="font-medium">Détail:</span> {rf.nature_travaux_detail}</p>
+                )}
+                {rf.commentaire && (
+                  <p className="text-xs text-gray-500 italic border-t border-orange-200 pt-1 mt-1">{rf.commentaire}</p>
+                )}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowReclaFreeDialog(false)}>Fermer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Dialog pour créer une réclamation */}
       <Dialog open={reclamationDialogOpen} onOpenChange={setReclamationDialogOpen}>
         <DialogContent className="max-w-2xl">

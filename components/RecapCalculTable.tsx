@@ -18,6 +18,8 @@ interface RecapCalculData {
   nombre_interventions: number
   total_recette_technicien: number
   total_recette_entreprise: number
+  total_recla_free_confirmee?: number
+  total_recla_free_entreprise?: number
   nombre_transactions_carburant: number
   consommation_totale_carburant: number
   consommation_moyenne_carburant: number
@@ -356,6 +358,14 @@ export function RecapCalculTable() {
     return recapData.reduce((sum, item: any) => sum + (item.total_recette_entreprise || 0), 0)
   }
 
+  const getTotalReclaFree = () => {
+    return recapData.reduce((sum, item: any) => sum + (item.total_recla_free_confirmee || 0), 0)
+  }
+
+  const getTotalReclaFreeEntreprise = () => {
+    return recapData.reduce((sum, item: any) => sum + (item.total_recla_free_entreprise || 0), 0)
+  }
+
   const getBeneficeBrut = () => {
     // BÉNÉFICE NET = Recettes Entreprise - Recettes Technicien - Consommation Carburant - Valeur Matériel - Charges Totales - Total Impôt - Total Entretiens
     const recetteEntreprise = recapData.reduce((sum: number, item: any) => sum + (item.total_recette_entreprise || 0), 0)
@@ -641,6 +651,28 @@ export function RecapCalculTable() {
           </Card>
         </div>
 
+        {/* Carte Recla Free si > 0 */}
+        {getTotalReclaFree() > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <Card className="glass-card border border-orange-500/30">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-500/10 rounded-lg">
+                    <Calculator className="w-5 h-5 text-orange-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Recla Free (part entreprise)</p>
+                    <p className="text-2xl font-bold text-orange-500">
+                      +{formatCurrency(getTotalReclaFreeEntreprise())}
+                    </p>
+                    <p className="text-xs text-muted-foreground">inclus dans Recettes Entreprise</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card className="glass-card border border-white/20">
             <CardContent className="p-4">
@@ -795,9 +827,16 @@ export function RecapCalculTable() {
                         </div>
                       </td>
                       <td className="p-3 text-right">
-                        <span className="text-sm font-medium text-blue-600">
-                          {employee.nombre_interventions}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-sm font-medium text-blue-600">
+                            {employee.nombre_interventions}
+                          </span>
+                          {(employee.total_recla_free_confirmee || 0) > 0 && (
+                            <span className="text-xs font-semibold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded">
+                              +{formatCurrency(employee.total_recla_free_confirmee)} RF
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3 text-right">
                         <span className="text-sm font-medium text-green-600">

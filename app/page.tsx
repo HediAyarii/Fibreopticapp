@@ -57,11 +57,13 @@ import { MonVehicule } from "@/components/MonVehicule"
 import { TestKmAlerts } from "@/components/TestKmAlerts"
 import { PricingTable } from "@/components/PricingTable"
 import { TarifsManager } from "@/components/TarifsManager"
+import { TarifsFttoManager } from "@/components/TarifsFttoManager"
 import { RevenueCalculation } from "@/components/RevenueCalculation"
 import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
 import KPIProductionSection from "@/components/KPIProductionSection"
 import ReclamationsTechniques from "@/components/ReclamationsTechniques"
 import { AbsencesManager } from "@/components/AbsencesManager"
+import ReclaFreeManager from "@/components/ReclaFreeManager"
 import AutoSyncTotalGenere from "@/components/AutoSyncTotalGenere"
 import SyncButton from "@/components/SyncButton"
 import AutoDetectButton from "@/components/AutoDetectButton"
@@ -280,7 +282,8 @@ export default function EmployeeTracker() {
     'dashboard', 'employees', 'interventions', 'materials', 'recap-calcul', 
     'documents', 'penalties', 'statistics', 'costs', 'cout-par-salaire',
     'claims', 'reclamations-techniques', 'tarifs', 'recap-articles', 'vehicules',
-    'recette-generer', 'fuel-consumption', 'technicien-accounts', 'absences', 'compte-admin', 'historique'
+    'recette-generer', 'fuel-consumption', 'technicien-accounts', 'absences',
+    'recla-free', 'compte-admin', 'historique'
   ]
   
   // État pour l'ordre personnalisé des sections (persisté dans la BDD par utilisateur)
@@ -706,6 +709,10 @@ export default function EmployeeTracker() {
   const [showTarifsModal, setShowTarifsModal] = useState(false)
   const [editingTarif, setEditingTarif] = useState<any>(null)
 
+  // Tarifs FTTO data
+  const [tarifsFtto, setTarifsFtto] = useState<any[]>([])
+  const [activeTarifsSubTab, setActiveTarifsSubTab] = useState<'ert-axecom' | 'ftto'>('ert-axecom')
+
   // Assignation data
   const [assignationData, setAssignationData] = useState({
     numero_carte: '',
@@ -933,6 +940,9 @@ export default function EmployeeTracker() {
       case 'tarifs':
         if (tarifs.length === 0) {
           loadTarifsFromDatabase()
+        }
+        if (tarifsFtto.length === 0) {
+          loadTarifsFttoFromDatabase()
         }
         break
       case 'vehicules':
@@ -1966,6 +1976,19 @@ La page va se recharger automatiquement...`)
     }
   }
 
+  // Fonction de chargement des tarifs FTTO
+  const loadTarifsFttoFromDatabase = async () => {
+    try {
+      const response = await fetch("/api/ftto-tarifs")
+      if (!response.ok) throw new Error("Erreur lors du chargement des tarifs FTTO")
+      const data = await response.json()
+      setTarifsFtto(data.success ? data.tarifs : [])
+    } catch (error) {
+      console.error("[v0] Erreur chargement tarifs FTTO:", error)
+      setTarifsFtto([])
+    }
+  }
+
 
   // Generic delete function for all entities
   const handleDelete = async (entityType: string, id: number) => {
@@ -2770,6 +2793,60 @@ La page va se recharger automatiquement...`)
       alert("Tarif supprimé avec succès")
     } catch (error) {
       console.error("Erreur suppression tarif:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
+    }
+  }
+
+  // Fonctions de gestion des tarifs FTTO
+  const handleSaveTarifFtto = async (tarifData: any) => {
+    try {
+      const response = await fetch("/api/ftto-tarifs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tarifData)
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la sauvegarde")
+      }
+      await loadTarifsFttoFromDatabase()
+      alert("Tarif FTTO ajouté avec succès")
+    } catch (error) {
+      console.error("Erreur sauvegarde tarif FTTO:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
+    }
+  }
+
+  const handleUpdateTarifFtto = async (tarifData: any) => {
+    try {
+      const response = await fetch("/api/ftto-tarifs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tarifData)
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la modification")
+      }
+      await loadTarifsFttoFromDatabase()
+      alert("Tarif FTTO modifié avec succès")
+    } catch (error) {
+      console.error("Erreur modification tarif FTTO:", error)
+      alert(error instanceof Error ? error.message : "Erreur lors de la modification")
+    }
+  }
+
+  const handleDeleteTarifFtto = async (id: number) => {
+    try {
+      const response = await fetch(`/api/ftto-tarifs?id=${id}`, { method: "DELETE" })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Erreur lors de la suppression")
+      }
+      await loadTarifsFttoFromDatabase()
+      alert("Tarif FTTO supprimé avec succès")
+    } catch (error) {
+      console.error("Erreur suppression tarif FTTO:", error)
       alert(error instanceof Error ? error.message : "Erreur lors de la suppression")
     }
   }
@@ -3829,6 +3906,7 @@ La page va se recharger automatiquement...`)
                     'fuel-consumption': { icon: <Fuel className="w-5 h-5" />, label: 'Consommation Carburant', permission: 'fuel-consumption' },
                     'technicien-accounts': { icon: <UserCog className="w-5 h-5" />, label: 'Comptes Techniciens', permission: 'technicien-accounts' },
                     'absences': { icon: <Calendar className="w-5 h-5" />, label: 'Absences', permission: 'absences' },
+                    'recla-free': { icon: <AlertCircle className="w-5 h-5" />, label: 'Recla Free', permission: 'recla-free' },
                     'compte-admin': { icon: <UserPlus className="w-5 h-5" />, label: 'Compte Admin', adminOnly: true },
                     'historique': { icon: <History className="w-5 h-5" />, label: 'Historique', adminOnly: true },
                   }
@@ -4343,12 +4421,49 @@ La page va se recharger automatiquement...`)
 
           {/* Tarifs Tab */}
           {activeTab === "tarifs" && (
-            <TarifsManager
-              tarifs={tarifs}
-              onSave={handleSaveTarif}
-              onUpdate={handleUpdateTarif}
-              onDelete={handleDeleteTarif}
-            />
+            <div className="space-y-4">
+              {/* Sous-onglets Tarifs */}
+              <div className="flex gap-2 border-b border-white/10 pb-0">
+                <button
+                  onClick={() => setActiveTarifsSubTab('ert-axecom')}
+                  className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+                    activeTarifsSubTab === 'ert-axecom'
+                      ? 'bg-white/10 border border-b-0 border-white/20 text-white'
+                      : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  Tarifs ERT / AXECOM
+                </button>
+                <button
+                  onClick={() => setActiveTarifsSubTab('ftto')}
+                  className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+                    activeTarifsSubTab === 'ftto'
+                      ? 'bg-white/10 border border-b-0 border-white/20 text-white'
+                      : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  Tarifs FTTO
+                </button>
+              </div>
+
+              {activeTarifsSubTab === 'ert-axecom' && (
+                <TarifsManager
+                  tarifs={tarifs}
+                  onSave={handleSaveTarif}
+                  onUpdate={handleUpdateTarif}
+                  onDelete={handleDeleteTarif}
+                />
+              )}
+
+              {activeTarifsSubTab === 'ftto' && (
+                <TarifsFttoManager
+                  tarifs={tarifsFtto}
+                  onSave={handleSaveTarifFtto}
+                  onUpdate={handleUpdateTarifFtto}
+                  onDelete={handleDeleteTarifFtto}
+                />
+              )}
+            </div>
           )}
 
           {/* Recap Articles Tab */}
@@ -8463,6 +8578,13 @@ La page va se recharger automatiquement...`)
           {activeTab === "absences" && (
             <div className="space-y-6">
               <AbsencesManager />
+            </div>
+          )}
+
+          {/* Recla Free Section */}
+          {activeTab === "recla-free" && (
+            <div className="space-y-6">
+              <ReclaFreeManager />
             </div>
           )}
 

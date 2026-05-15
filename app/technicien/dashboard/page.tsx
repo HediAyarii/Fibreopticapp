@@ -412,7 +412,8 @@ export default function TechnicienDashboard() {
   })
   const [recetteGeneree, setRecetteGeneree] = useState({
     total_recette_technicien: 0,
-    nombre_interventions: 0
+    nombre_interventions: 0,
+    total_recla_free_confirmee: 0
   })
   
   // État pour les amendes du mois
@@ -430,6 +431,8 @@ export default function TechnicienDashboard() {
     primes: [] as any[]
   })
   const [showPrimesModal, setShowPrimesModal] = useState(false)
+  const [reclaFreeData, setReclaFreeData] = useState<any[]>([])
+  const [showReclaFreeModal, setShowReclaFreeModal] = useState(false)
   
   // États pour le véhicule
   const [vehiculeData, setVehiculeData] = useState<any>(null)
@@ -719,12 +722,14 @@ export default function TechnicienDashboard() {
         
         setRecetteGeneree({
           total_recette_technicien: parseFloat(technicienRevenue.total_recette_technicien || 0),
-          nombre_interventions: parseInt(technicienRevenue.nombre_interventions || 0)
+          nombre_interventions: parseInt(technicienRevenue.nombre_interventions || 0),
+          total_recla_free_confirmee: parseFloat(technicienRevenue.total_recla_free_confirmee || 0)
         })
       } else {
         setRecetteGeneree({
           total_recette_technicien: 0,
-          nombre_interventions: 0
+          nombre_interventions: 0,
+          total_recla_free_confirmee: 0
         })
       }
 
@@ -749,6 +754,23 @@ export default function TechnicienDashboard() {
             total_amendes: totalAmendesMontant,
             nombre_amendes: amendesFiltrees.length
           })
+        }
+      }
+
+      // Charger les recla free confirmées du technicien
+      if (user?.id) {
+        try {
+          const rfParams = new URLSearchParams({ employe_id: String(user.id), confirmer: 'true' })
+          if (dateDebut) rfParams.append('date_debut', dateDebut)
+          if (dateFin) rfParams.append('date_fin', dateFin)
+          const rfRes = await fetchWithAuth(`/api/recla-free?${rfParams.toString()}`)
+          if (rfRes.ok) {
+            const rfData = await rfRes.json()
+            setReclaFreeData(rfData.reclaFree || [])
+          }
+        } catch (e) {
+          console.warn('recla_free load error:', e)
+          setReclaFreeData([])
         }
       }
 
@@ -1201,7 +1223,8 @@ export default function TechnicienDashboard() {
               const technicienRevenue = revenueData.revenue_data.find((rev: any) => rev.employe_id === user.id) || revenueData.revenue_data[0]
               setRecetteGeneree({
                 total_recette_technicien: parseFloat(technicienRevenue.total_recette_technicien || 0),
-                nombre_interventions: parseInt(technicienRevenue.nombre_interventions || 0)
+                nombre_interventions: parseInt(technicienRevenue.nombre_interventions || 0),
+                total_recla_free_confirmee: parseFloat(technicienRevenue.total_recla_free_confirmee || 0)
               })
             }
           }
@@ -1846,6 +1869,34 @@ export default function TechnicienDashboard() {
                 </CardContent>
               </Card>
 
+              {/* Carte Recla Free */}
+              {recetteGeneree.total_recla_free_confirmee > 0 && (
+                <Card
+                  className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-orange-500 cursor-pointer"
+                  onClick={() => setShowReclaFreeModal(true)}
+                >
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="p-3 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-md">
+                        <AlertCircle className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-orange-600">
+                          +{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {reclaFreeData.length} recla free
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-600">Recla Free</p>
+                      <Eye className="w-4 h-4 text-gray-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-purple-500 lg:col-span-2">
                 <CardContent className="p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -1861,7 +1912,7 @@ export default function TechnicienDashboard() {
                         {(recetteGeneree.total_recette_technicien + primesData.total_primes - totalPenalites - amendesData.total_amendes).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        = {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR')}€ + {primesData.total_primes.toLocaleString('fr-FR')}€ - {totalPenalites.toLocaleString('fr-FR')}€ - {amendesData.total_amendes.toLocaleString('fr-FR')}€
+                        = {recetteGeneree.total_recette_technicien.toLocaleString('fr-FR')}€ + {primesData.total_primes.toLocaleString('fr-FR')}€ - {totalPenalites.toLocaleString('fr-FR')}€ - {amendesData.total_amendes.toLocaleString('fr-FR')}€{recetteGeneree.total_recla_free_confirmee > 0 ? ` (incl. +${recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR')}€ recla free)` : ''}
                       </p>
                     </div>
                   </div>
@@ -2444,6 +2495,70 @@ export default function TechnicienDashboard() {
                 variant="outline"
                 onClick={() => setShowPrimesModal(false)}
               >
+                Fermer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal des recla free */}
+      {showReclaFreeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowReclaFreeModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Recla Free confirmées</h3>
+                  <p className="text-sm text-gray-500">{reclaFreeData.length} entrée{reclaFreeData.length !== 1 ? 's' : ''} — Total: <span className="font-semibold text-orange-600">+{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€</span></p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowReclaFreeModal(false)}>
+                <XIcon className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-4 space-y-3">
+              {reclaFreeData.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Aucune recla free pour cette période</p>
+              ) : (
+                reclaFreeData.map((rf: any) => (
+                  <div key={rf.id} className="border border-orange-200 rounded-lg p-4 bg-orange-50">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {rf.type_litige && (
+                          <span className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs font-semibold">
+                            {rf.type_litige === 'controleur' ? 'Contrôleur' : 'Client'}
+                          </span>
+                        )}
+                        {rf.status_ticket && (
+                          <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full text-xs">{rf.status_ticket}</span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-orange-600 whitespace-nowrap">+{parseFloat(rf.montant_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ <span className="text-xs font-normal text-gray-500">votre part</span></div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 mb-2">
+                      {rf.reference_client && <div><span className="font-medium text-gray-500">Réf. client:</span> {rf.reference_client}</div>}
+                      {rf.agence && <div><span className="font-medium text-gray-500">Agence:</span> {rf.agence}</div>}
+                      {rf.region && <div><span className="font-medium text-gray-500">Région:</span> {rf.region}</div>}
+                      {rf.code_postal && <div><span className="font-medium text-gray-500">CP:</span> {rf.code_postal}</div>}
+                      {(rf.date || rf.created_at) && <div><span className="font-medium text-gray-500">Date:</span> {new Date(rf.date || rf.created_at).toLocaleDateString('fr-FR')}</div>}
+                      {rf.nature_travaux && <div><span className="font-medium text-gray-500">Nature:</span> {rf.nature_travaux}</div>}
+                    </div>
+                    {rf.nature_travaux_detail && <p className="text-xs text-gray-600 mb-1"><span className="font-medium">Détail:</span> {rf.nature_travaux_detail}</p>}
+                    {rf.commentaire && <p className="text-xs text-gray-500 italic border-t border-orange-200 pt-1 mt-1">{rf.commentaire}</p>}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 border-t bg-gray-50">
+              <Button className="w-full" variant="outline" onClick={() => setShowReclaFreeModal(false)}>
                 Fermer
               </Button>
             </div>

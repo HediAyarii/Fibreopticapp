@@ -205,17 +205,99 @@ export async function GET(request: NextRequest) {
     console.log("📊 Calcul des recettes générées...")
     const result = await query(queryText, params)
 
-    // Calculer les totaux globaux
+    // Récupérer les recla free confirmées par employe_id dans la même période
+    let reclaFreeByEmployee: Record<number, number> = {}
+    let reclaFreeEntByEmployee: Record<number, number> = {}
+    try {
+      const rfConditions: string[] = ['rf.confirmer = TRUE', 'e.id IS NOT NULL']
+      const rfParams: any[] = []
+      let rfIdx = 1
+      if (employeId) {
+        rfConditions.push(`e.id = $${rfIdx++}`)
+        rfParams.push(parseInt(employeId))
+      }
+      if (dateFrom) {
+        rfConditions.push(`COALESCE(rf.date, rf.created_at::date) >= $${rfIdx++}::date`)
+        rfParams.push(dateFrom)
+      }
+      if (dateTo) {
+        rfConditions.push(`COALESCE(rf.date, rf.created_at::date) <= $${rfIdx++}::date`)
+        rfParams.push(dateTo)
+      }
+      const rfResult = await query(`
+        SELECT e.id as employe_id,
+          COALESCE(SUM(rf.montant_technicien), 0) as total_recla_free_tech,
+          COALESCE(SUM(rf.montant_entreprise), 0) as total_recla_free_ent
+        FROM recla_free rf
+        JOIN employes e ON rf.employe_id = e.id
+        WHERE ${rfConditions.join(' AND ')}
+        GROUP BY e.id
+      `, rfParams)
+      for (const row of rfResult.rows) {
+        reclaFreeByEmployee[Number(row.employe_id)] = parseFloat(row.total_recla_free_tech) || 0
+        reclaFreeEntByEmployee[Number(row.employe_id)] = parseFloat(row.total_recla_free_ent) || 0
+      }
+    } catch (rfErr) {
+      // Si la table n'existe pas encore, on ignore
+      console.warn("recla_free table not ready yet:", rfErr)
+    }
+
+    const revenue_data = result.rows.map((row: any) => {
+      const reclaFreeTech = reclaFreeByEmployee[Number(row.employe_id)] || 0
+      const reclaFreeEnt = reclaFreeEntByEmployee[Number(row.employe_id)] || 0
+      const origTech = parseFloat(row.total_recette_technicien || 0)
+      const origEnt = parseFloat(row.total_recette_entreprise || 0)
+      const origGen = parseFloat(row.total_recette_generale || 0)
+      return {
+        ...row,
+        total_recette_technicien: origTech + reclaFreeTech,
+        total_recette_entreprise: origEnt + reclaFreeEnt,
+        total_recette_generale: origGen + reclaFreeTech + reclaFreeEnt,
+        total_recla_free_confirmee: reclaFreeTech,
+      }
+    })
+
+    // Ajouter les techniciens qui ont des recla_free mais aucune intervention dans la période
+    const existingEmployeeIds = new Set(result.rows.map((r: any) => Number(r.employe_id)))
+    for (const [empIdStr, reclaFreeTechAmount] of Object.entries(reclaFreeByEmployee)) {
+      const empId = Number(empIdStr)
+      if (!existingEmployeeIds.has(empId) && reclaFreeTechAmount > 0) {
+        const reclaFreeEntAmount = reclaFreeEntByEmployee[empId] || 0
+        try {
+          const empResult = await query(
+            `SELECT id, nom, prenom, matricule FROM employes WHERE id = $1`,
+            [empId]
+          )
+          if (empResult.rows.length > 0) {
+            const emp = empResult.rows[0]
+            revenue_data.push({
+              employe_id: emp.id,
+              employe_nom: emp.nom,
+              employe_prenom: emp.prenom,
+              matricule: emp.matricule,
+              nombre_interventions: 0,
+              total_recette_technicien: reclaFreeTechAmount,
+              total_recette_entreprise: reclaFreeEntAmount,
+              total_recette_generale: reclaFreeTechAmount + reclaFreeEntAmount,
+              total_recla_free_confirmee: reclaFreeTechAmount,
+              interventions_detail: [],
+            })
+          }
+        } catch (e) { /* ignore */ }
+      }
+    }
+
+    // Calculer les totaux globaux APRÈS revenue_data complet (inclut les lignes recla_free virtuelles)
     const totalStats = {
-      total_interventions: result.rows.reduce((sum: number, row: any) => sum + parseInt(row.nombre_interventions), 0),
-      total_recette_technicien: result.rows.reduce((sum: number, row: any) => sum + parseFloat(row.total_recette_technicien || 0), 0),
-      total_recette_entreprise: result.rows.reduce((sum: number, row: any) => sum + parseFloat(row.total_recette_entreprise || 0), 0),
-      total_recette_generale: result.rows.reduce((sum: number, row: any) => sum + parseFloat(row.total_recette_generale || 0), 0)
+      total_interventions: revenue_data.reduce((sum: number, row: any) => sum + (parseInt(row.nombre_interventions) || 0), 0),
+      total_recette_technicien: revenue_data.reduce((sum: number, row: any) => sum + (parseFloat(row.total_recette_technicien) || 0), 0),
+      total_recette_entreprise: revenue_data.reduce((sum: number, row: any) => sum + (parseFloat(row.total_recette_entreprise) || 0), 0),
+      total_recette_generale: revenue_data.reduce((sum: number, row: any) => sum + (parseFloat(row.total_recette_generale) || 0), 0),
     }
 
     return NextResponse.json({
       success: true,
-      revenue_data: result.rows,
+      revenue_data,
       total_stats: totalStats,
       filters: {
         employe_id: employeId,
