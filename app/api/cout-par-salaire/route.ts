@@ -157,16 +157,18 @@ export async function GET(request: NextRequest) {
         GROUP BY e.matricule, EXTRACT(MONTH FROM av.date_amende), EXTRACT(YEAR FROM av.date_amende)
       ),
       -- Pré-calculer les recla free confirmées par matricule/mois/année
+      -- IMPORTANT: Utilise date_confirmation pour déterminer la période de facturation
       recla_free_totaux AS (
         SELECT
           e.matricule,
-          EXTRACT(MONTH FROM COALESCE(rf.date, rf.created_at::date))::int as mois,
-          EXTRACT(YEAR FROM COALESCE(rf.date, rf.created_at::date))::int as annee,
+          EXTRACT(MONTH FROM rf.date_confirmation)::int as mois,
+          EXTRACT(YEAR FROM rf.date_confirmation)::int as annee,
           COALESCE(SUM(rf.montant_technicien), 0) as total_recla_free
         FROM recla_free rf
         JOIN employes e ON rf.employe_id = e.id
         WHERE rf.confirmer = TRUE
-        GROUP BY e.matricule, EXTRACT(MONTH FROM COALESCE(rf.date, rf.created_at::date)), EXTRACT(YEAR FROM COALESCE(rf.date, rf.created_at::date))
+          AND rf.date_confirmation IS NOT NULL
+        GROUP BY e.matricule, EXTRACT(MONTH FROM rf.date_confirmation), EXTRACT(YEAR FROM rf.date_confirmation)
       )
       SELECT 
         cps.id,

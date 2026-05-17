@@ -212,10 +212,11 @@ export async function GET(request: NextRequest) {
     const result = await query(queryText, params)
 
     // Récupérer les recla free confirmées par employe_id dans la même période
+    // IMPORTANT: Utilise date_confirmation pour déterminer la période de facturation
     let reclaFreeByEmployee: Record<number, number> = {}
     let reclaFreeEntByEmployee: Record<number, number> = {}
     try {
-      const rfConditions: string[] = ['rf.confirmer = TRUE', 'e.id IS NOT NULL']
+      const rfConditions: string[] = ['rf.confirmer = TRUE', 'e.id IS NOT NULL', 'rf.date_confirmation IS NOT NULL']
       const rfParams: any[] = []
       let rfIdx = 1
       if (employeId) {
@@ -223,11 +224,13 @@ export async function GET(request: NextRequest) {
         rfParams.push(parseInt(employeId))
       }
       if (dateFrom) {
-        rfConditions.push(`COALESCE(rf.date, rf.created_at::date) >= $${rfIdx++}::date`)
+        // Utiliser date_confirmation pour déterminer la période
+        rfConditions.push(`DATE(rf.date_confirmation) >= $${rfIdx++}::date`)
         rfParams.push(dateFrom)
       }
       if (dateTo) {
-        rfConditions.push(`COALESCE(rf.date, rf.created_at::date) <= $${rfIdx++}::date`)
+        // Utiliser date_confirmation pour déterminer la période
+        rfConditions.push(`DATE(rf.date_confirmation) <= $${rfIdx++}::date`)
         rfParams.push(dateTo)
       }
       const rfResult = await query(`
