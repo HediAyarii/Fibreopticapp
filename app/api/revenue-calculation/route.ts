@@ -118,43 +118,49 @@ export async function GET(request: NextRequest) {
     }
 
     if (dateFrom) {
-      // Utiliser cloture_tech ou cloture_hotline (cohérence avec Coût par Salaire)
+      // PRIORITÉ: cloture_tech en priorité, sinon cloture_hotline (évite la double comptabilisation)
       conditions.push(`(
-        (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]' AND
-          CASE
-            WHEN i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_tech::date >= $${params.length + 1}::date
-            WHEN i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') >= $${params.length + 1}::date
-            ELSE FALSE
-          END
-        ) OR
-        (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]' AND
-          CASE
-            WHEN i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_hotline::date >= $${params.length + 1}::date
-            WHEN i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') >= $${params.length + 1}::date
-            ELSE FALSE
-          END
-        )
+        CASE 
+          -- Si cloture_tech est valide, l'utiliser en priorité
+          WHEN i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]' THEN
+            CASE
+              WHEN i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_tech::date >= $${params.length + 1}::date
+              WHEN i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') >= $${params.length + 1}::date
+              ELSE FALSE
+            END
+          -- Sinon, utiliser cloture_hotline
+          WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]' THEN
+            CASE
+              WHEN i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_hotline::date >= $${params.length + 1}::date
+              WHEN i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') >= $${params.length + 1}::date
+              ELSE FALSE
+            END
+          ELSE FALSE
+        END
       )`)
       params.push(dateFrom)
     }
 
     if (dateTo) {
-      // Utiliser cloture_tech ou cloture_hotline (cohérence avec Coût par Salaire)
+      // PRIORITÉ: cloture_tech en priorité, sinon cloture_hotline (évite la double comptabilisation)
       conditions.push(`(
-        (i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]' AND
-          CASE
-            WHEN i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_tech::date <= $${params.length + 1}::date
-            WHEN i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') <= $${params.length + 1}::date
-            ELSE FALSE
-          END
-        ) OR
-        (i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]' AND
-          CASE
-            WHEN i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_hotline::date <= $${params.length + 1}::date
-            WHEN i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') <= $${params.length + 1}::date
-            ELSE FALSE
-          END
-        )
+        CASE 
+          -- Si cloture_tech est valide, l'utiliser en priorité
+          WHEN i.cloture_tech IS NOT NULL AND i.cloture_tech != '' AND i.cloture_tech != 'nan' AND i.cloture_tech ~ '^[0-9]' THEN
+            CASE
+              WHEN i.cloture_tech ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_tech::date <= $${params.length + 1}::date
+              WHEN i.cloture_tech ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_tech FROM 1 FOR 10), 'DD/MM/YYYY') <= $${params.length + 1}::date
+              ELSE FALSE
+            END
+          -- Sinon, utiliser cloture_hotline
+          WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]' THEN
+            CASE
+              WHEN i.cloture_hotline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN i.cloture_hotline::date <= $${params.length + 1}::date
+              WHEN i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' THEN TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY') <= $${params.length + 1}::date
+              ELSE FALSE
+            END
+          ELSE FALSE
+        END
       )`)
       params.push(dateTo)
     }
