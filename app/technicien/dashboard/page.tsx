@@ -2622,7 +2622,6 @@ export default function TechnicienDashboard() {
                       <div className="text-right">
                         <div className={`text-lg font-bold whitespace-nowrap ${rf.confirmer ? 'text-orange-600' : 'text-yellow-700'}`}>
                           +{parseFloat(rf.montant_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
-                          <span className="text-xs font-normal text-gray-500 ml-1">votre part</span>
                         </div>
                       </div>
                     </div>
