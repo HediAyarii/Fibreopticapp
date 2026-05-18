@@ -29,6 +29,7 @@ interface RevenueData {
   total_recette_entreprise: number
   total_recette_generale: number
   total_recla_free_confirmee?: number
+  total_recla_free_entreprise?: number
   interventions_detail: Array<{
     intervention_id: number
     num_inter: string
@@ -430,9 +431,16 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                             {employee.nombre_interventions}
                           </Badge>
                           {(employee.total_recla_free_confirmee ?? 0) > 0 && (
-                            <Badge variant="outline" className="ml-1 border-orange-500/50 text-orange-400 text-xs">
-                              +{formatCurrency(employee.total_recla_free_confirmee!)} RF
-                            </Badge>
+                            <div className="mt-1 text-xs space-y-0.5">
+                              <Badge variant="outline" className="block border-purple-500/50 text-purple-400 text-xs">
+                                Tech: +{formatCurrency(employee.total_recla_free_confirmee!)} RF
+                              </Badge>
+                              {(employee.total_recla_free_entreprise ?? 0) > 0 && (
+                                <Badge variant="outline" className="block border-green-500/50 text-green-400 text-xs">
+                                  Ent: +{formatCurrency(employee.total_recla_free_entreprise!)} RF
+                                </Badge>
+                              )}
+                            </div>
                           )}
                         </TableCell>
                         <TableCell className="text-right font-medium text-green-600">
@@ -535,16 +543,29 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                                               <div className="font-medium text-sm">{rf.agence || '—'}</div>
                                             </div>
                                             <div>
-                                              <div className="text-xs text-gray-500">Date · Nature</div>
+                                              <div className="text-xs text-gray-500">Date confirmation · Nature</div>
                                               <div className="font-medium text-sm">
-                                                {rf.date ? new Date(rf.date).toLocaleDateString('fr-FR') : '—'}
+                                                {rf.date_confirmation ? new Date(rf.date_confirmation).toLocaleDateString('fr-FR') : '—'}
                                                 {' · '}
                                                 <span className="text-xs text-gray-400">{rf.nature_travaux}{rf.nature_travaux === 'AUTRE' && rf.nature_travaux_detail ? ` (${rf.nature_travaux_detail})` : ''}</span>
                                               </div>
                                             </div>
                                             <div className="text-right">
-                                              <div className="text-xs text-gray-500">Montant</div>
-                                              <div className="font-bold text-orange-400 text-base">{formatCurrency(Number(rf.montant) || 0)}</div>
+                                              <div className="text-xs text-gray-500 mb-1">Montants</div>
+                                              <div className="space-y-1">
+                                                <div className="flex items-center justify-end gap-1 text-purple-400">
+                                                  <span className="text-xs">Tech:</span>
+                                                  <span className="font-bold text-sm">{formatCurrency(Number(rf.montant_technicien) || 0)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-end gap-1 text-green-400">
+                                                  <span className="text-xs">Ent:</span>
+                                                  <span className="font-bold text-sm">{formatCurrency(Number(rf.montant_entreprise) || 0)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-end gap-1 text-orange-400 pt-1 border-t border-orange-500/20">
+                                                  <span className="text-xs">Total:</span>
+                                                  <span className="font-bold text-base">{formatCurrency(Number(rf.montant) || 0)}</span>
+                                                </div>
+                                              </div>
                                             </div>
                                           </div>
                                           {rf.commentaire && (

@@ -75,13 +75,16 @@ export async function GET(request: NextRequest) {
       params.push(parseInt(employeId))
     }
     if (mois && annee) {
-      conditions.push(`EXTRACT(MONTH FROM rf.date) = $${idx++} AND EXTRACT(YEAR FROM rf.date) = $${idx++}`)
+      conditions.push(`rf.date_confirmation IS NOT NULL`)
+      conditions.push(`EXTRACT(MONTH FROM rf.date_confirmation) = $${idx++} AND EXTRACT(YEAR FROM rf.date_confirmation) = $${idx++}`)
       params.push(parseInt(mois), parseInt(annee))
     } else if (dateDebut && dateFin) {
-      conditions.push(`rf.date >= $${idx++}::date AND rf.date <= $${idx++}::date`)
+      conditions.push(`rf.date_confirmation IS NOT NULL`)
+      conditions.push(`rf.date_confirmation::date >= $${idx++}::date AND rf.date_confirmation::date <= $${idx++}::date`)
       params.push(dateDebut, dateFin)
     } else if (dateDebut) {
-      conditions.push(`rf.date >= $${idx++}::date`)
+      conditions.push(`rf.date_confirmation IS NOT NULL`)
+      conditions.push(`rf.date_confirmation::date >= $${idx++}::date`)
       params.push(dateDebut)
     }
     if (confirmer !== null && confirmer !== undefined && confirmer !== '') {
@@ -100,7 +103,7 @@ export async function GET(request: NextRequest) {
       FROM recla_free rf
       LEFT JOIN employes e ON rf.employe_id = e.id
       ${whereClause}
-      ORDER BY rf.date DESC NULLS LAST, rf.created_at DESC
+      ORDER BY rf.date_confirmation DESC NULLS LAST, rf.date DESC NULLS LAST, rf.created_at DESC
     `, params)
 
     return NextResponse.json({ success: true, reclaFree: result.rows, total: result.rows.length })

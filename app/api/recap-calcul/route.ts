@@ -327,8 +327,9 @@ export async function GET(request: NextRequest) {
         FROM recla_free rf
         JOIN employes e ON rf.employe_id = e.id
         WHERE rf.confirmer = TRUE
-          AND COALESCE(rf.date, rf.created_at::date) >= $1::date
-          AND COALESCE(rf.date, rf.created_at::date) <= $2::date
+          AND rf.date_confirmation IS NOT NULL
+          AND rf.date_confirmation::date >= $1::date
+          AND rf.date_confirmation::date <= $2::date
           ${selectedEmployee ? `AND e.matricule = '${selectedEmployee.matricule}'` : ''}
         GROUP BY e.matricule, e.id, e.nom, e.prenom
       )
