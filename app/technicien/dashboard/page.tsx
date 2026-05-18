@@ -617,6 +617,11 @@ export default function TechnicienDashboard() {
         ? `&date_debut=${dateDebut}&date_fin=${dateFin}`
         : ''
       
+      // Paramètres de date pour les réclamations (toujours appliqués si disponibles)
+      const reclamationsDateParams = dateDebut && dateFin
+        ? `&date_debut=${dateDebut}&date_fin=${dateFin}`
+        : ''
+
       // Construire les paramètres de date pour l'API revenue (format différent)
       const revenueDateParams = activeTab === 'overview' && dateDebut && dateFin
         ? `&date_from=${dateDebut}&date_to=${dateFin}`
@@ -625,7 +630,7 @@ export default function TechnicienDashboard() {
       // Charger toutes les données en parallèle pour de meilleures performances
       const [interventionsResponse, reclamationsResponse, penalitesResponse, revenueResponse, amendesResponse] = await Promise.all([
         fetchWithAuth(`/api/interventions?employe_id=${user.id}${dateParams}`),
-        fetchWithAuth(`/api/reclamations?employe_id=${user.id}${dateParams}`),
+        fetchWithAuth(`/api/reclamations?employe_id=${user.id}${reclamationsDateParams}`),
         fetchWithAuth(`/api/penalites?employe_id=${user.id}${dateParams}`),
         fetchWithAuth(`/api/revenue-calculation?employe_id=${user.id}${revenueDateParams}`),
         fetchWithAuth(`/api/amendes-vehicules?employe_id=${user.id}`)
@@ -1889,12 +1894,15 @@ export default function TechnicienDashboard() {
                         <AlertCircle className="w-5 h-5 text-white" />
                       </div>
                       <div className="text-right">
-                        {recetteGeneree.total_recla_free_confirmee > 0 ? (
-                          <p className="text-2xl font-bold text-orange-600">
-                            +{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                        {recetteGeneree.total_recla_free_confirmee > 0 && (
+                          <p className="text-xl font-bold text-orange-600">
+                            +{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€ <span className="text-xs font-normal">confirmé</span>
                           </p>
-                        ) : (
-                          <p className="text-lg font-bold text-yellow-600">En cours</p>
+                        )}
+                        {reclaFreeData.filter((rf: any) => !rf.confirmer).reduce((s: number, rf: any) => s + (parseFloat(rf.montant_technicien) || 0), 0) > 0 && (
+                          <p className="text-xl font-bold text-yellow-600">
+                            +{reclaFreeData.filter((rf: any) => !rf.confirmer).reduce((s: number, rf: any) => s + (parseFloat(rf.montant_technicien) || 0), 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€ <span className="text-xs font-normal">en cours</span>
+                          </p>
                         )}
                         <p className="text-xs text-gray-500 mt-1">
                           {reclaFreeData.filter((rf: any) => rf.confirmer).length > 0 && (
@@ -2125,6 +2133,45 @@ export default function TechnicienDashboard() {
 
         {activeTab === 'reclamations' && (
           <div className="space-y-4 sm:space-y-6">
+            {/* Filtre de période */}
+            <Card className="shadow-sm">
+              <CardContent className="p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                  <div>
+                    <Label htmlFor="reclDateDebut" className="text-xs font-medium text-gray-700 mb-1 block">Date début</Label>
+                    <Input
+                      id="reclDateDebut"
+                      type="date"
+                      value={dateDebut}
+                      onChange={(e) => setDateDebut(e.target.value)}
+                      className="w-full text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="reclDateFin" className="text-xs font-medium text-gray-700 mb-1 block">Date fin</Label>
+                    <Input
+                      id="reclDateFin"
+                      type="date"
+                      value={dateFin}
+                      onChange={(e) => setDateFin(e.target.value)}
+                      className="w-full text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-sm"
+                      onClick={() => { const d = getDefaultDates(); setDateDebut(d.start); setDateFin(d.end) }}
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Mois en cours
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -2531,12 +2578,17 @@ export default function TechnicienDashboard() {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">Recla Free</h3>
-                  <p className="text-sm text-gray-500">
-                    {reclaFreeData.length} entrée{reclaFreeData.length !== 1 ? 's' : ''}
+                  <div className="flex flex-wrap gap-3 mt-1">
                     {recetteGeneree.total_recla_free_confirmee > 0 && (
-                      <> — <span className="font-semibold text-orange-600">+{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ confirmés</span></>
+                      <span className="text-sm font-semibold text-orange-600">✓ +{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ confirmé</span>
                     )}
-                  </p>
+                    {reclaFreeData.filter((rf: any) => !rf.confirmer).reduce((s: number, rf: any) => s + (parseFloat(rf.montant_technicien) || 0), 0) > 0 && (
+                      <span className="text-sm font-semibold text-yellow-600">⏳ +{reclaFreeData.filter((rf: any) => !rf.confirmer).reduce((s: number, rf: any) => s + (parseFloat(rf.montant_technicien) || 0), 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ en cours</span>
+                    )}
+                    {recetteGeneree.total_recla_free_confirmee === 0 && reclaFreeData.filter((rf: any) => !rf.confirmer).length === 0 && (
+                      <span className="text-sm text-gray-500">{reclaFreeData.length} entrée{reclaFreeData.length !== 1 ? 's' : ''}</span>
+                    )}
+                  </div>
                 </div>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setShowReclaFreeModal(false)}>
@@ -2568,11 +2620,10 @@ export default function TechnicienDashboard() {
                         )}
                       </div>
                       <div className="text-right">
-                        {rf.confirmer ? (
-                          <div className="text-lg font-bold text-orange-600 whitespace-nowrap">+{parseFloat(rf.montant_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ <span className="text-xs font-normal text-gray-500">votre part</span></div>
-                        ) : (
-                          <div className="text-sm font-semibold text-yellow-700 whitespace-nowrap">En attente de confirmation</div>
-                        )}
+                        <div className={`text-lg font-bold whitespace-nowrap ${rf.confirmer ? 'text-orange-600' : 'text-yellow-700'}`}>
+                          +{parseFloat(rf.montant_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
+                          <span className="text-xs font-normal text-gray-500 ml-1">votre part</span>
+                        </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 mb-2">
