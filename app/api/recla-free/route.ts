@@ -65,6 +65,8 @@ export async function GET(request: NextRequest) {
     const dateDebut = searchParams.get('date_debut')
     const dateFin = searchParams.get('date_fin')
     const confirmer = searchParams.get('confirmer')
+    // use_date_field=true: filter by rf.date instead of rf.date_confirmation (for non-confirmed recla free)
+    const useDateField = searchParams.get('use_date_field') === 'true'
 
     const conditions: string[] = []
     const params: any[] = []
@@ -74,18 +76,33 @@ export async function GET(request: NextRequest) {
       conditions.push(`rf.employe_id = $${idx++}`)
       params.push(parseInt(employeId))
     }
-    if (mois && annee) {
-      conditions.push(`rf.date_confirmation IS NOT NULL`)
-      conditions.push(`EXTRACT(MONTH FROM rf.date_confirmation) = $${idx++} AND EXTRACT(YEAR FROM rf.date_confirmation) = $${idx++}`)
-      params.push(parseInt(mois), parseInt(annee))
-    } else if (dateDebut && dateFin) {
-      conditions.push(`rf.date_confirmation IS NOT NULL`)
-      conditions.push(`rf.date_confirmation::date >= $${idx++}::date AND rf.date_confirmation::date <= $${idx++}::date`)
-      params.push(dateDebut, dateFin)
-    } else if (dateDebut) {
-      conditions.push(`rf.date_confirmation IS NOT NULL`)
-      conditions.push(`rf.date_confirmation::date >= $${idx++}::date`)
-      params.push(dateDebut)
+    if (useDateField) {
+      // Filter by rf.created_at (date d'ajout en base) for non-confirmed entries
+      const dateCol = `rf.created_at::date`
+      if (mois && annee) {
+        conditions.push(`EXTRACT(MONTH FROM ${dateCol}) = $${idx++} AND EXTRACT(YEAR FROM ${dateCol}) = $${idx++}`)
+        params.push(parseInt(mois), parseInt(annee))
+      } else if (dateDebut && dateFin) {
+        conditions.push(`${dateCol} >= $${idx++}::date AND ${dateCol} <= $${idx++}::date`)
+        params.push(dateDebut, dateFin)
+      } else if (dateDebut) {
+        conditions.push(`${dateCol} >= $${idx++}::date`)
+        params.push(dateDebut)
+      }
+    } else {
+      if (mois && annee) {
+        conditions.push(`rf.date_confirmation IS NOT NULL`)
+        conditions.push(`EXTRACT(MONTH FROM rf.date_confirmation) = $${idx++} AND EXTRACT(YEAR FROM rf.date_confirmation) = $${idx++}`)
+        params.push(parseInt(mois), parseInt(annee))
+      } else if (dateDebut && dateFin) {
+        conditions.push(`rf.date_confirmation IS NOT NULL`)
+        conditions.push(`rf.date_confirmation::date >= $${idx++}::date AND rf.date_confirmation::date <= $${idx++}::date`)
+        params.push(dateDebut, dateFin)
+      } else if (dateDebut) {
+        conditions.push(`rf.date_confirmation IS NOT NULL`)
+        conditions.push(`rf.date_confirmation::date >= $${idx++}::date`)
+        params.push(dateDebut)
+      }
     }
     if (confirmer !== null && confirmer !== undefined && confirmer !== '') {
       conditions.push(`rf.confirmer = $${idx++}`)

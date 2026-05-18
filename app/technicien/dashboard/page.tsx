@@ -757,17 +757,25 @@ export default function TechnicienDashboard() {
         }
       }
 
-      // Charger les recla free confirmées du technicien
+      // Charger les recla free du technicien (confirmées + en cours)
       if (user?.id) {
         try {
-          const rfParams = new URLSearchParams({ employe_id: String(user.id), confirmer: 'true' })
-          if (dateDebut) rfParams.append('date_debut', dateDebut)
-          if (dateFin) rfParams.append('date_fin', dateFin)
-          const rfRes = await fetchWithAuth(`/api/recla-free?${rfParams.toString()}`)
-          if (rfRes.ok) {
-            const rfData = await rfRes.json()
-            setReclaFreeData(rfData.reclaFree || [])
-          }
+          // Recla free confirmées (filtrées par date_confirmation)
+          const rfConfParams = new URLSearchParams({ employe_id: String(user.id), confirmer: 'true' })
+          if (dateDebut) rfConfParams.append('date_debut', dateDebut)
+          if (dateFin) rfConfParams.append('date_fin', dateFin)
+          // Recla free non confirmées (filtrées par date de la recla free)
+          const rfPendParams = new URLSearchParams({ employe_id: String(user.id), confirmer: 'false', use_date_field: 'true' })
+          if (dateDebut) rfPendParams.append('date_debut', dateDebut)
+          if (dateFin) rfPendParams.append('date_fin', dateFin)
+
+          const [rfConfRes, rfPendRes] = await Promise.all([
+            fetchWithAuth(`/api/recla-free?${rfConfParams.toString()}`),
+            fetchWithAuth(`/api/recla-free?${rfPendParams.toString()}`),
+          ])
+          const confirmed = rfConfRes.ok ? ((await rfConfRes.json()).reclaFree || []) : []
+          const pending = rfPendRes.ok ? ((await rfPendRes.json()).reclaFree || []) : []
+          setReclaFreeData([...confirmed, ...pending])
         } catch (e) {
           console.warn('recla_free load error:', e)
           setReclaFreeData([])
@@ -1870,7 +1878,7 @@ export default function TechnicienDashboard() {
               </Card>
 
               {/* Carte Recla Free */}
-              {recetteGeneree.total_recla_free_confirmee > 0 && (
+              {reclaFreeData.length > 0 && (
                 <Card
                   className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-orange-500 cursor-pointer"
                   onClick={() => setShowReclaFreeModal(true)}
@@ -1881,11 +1889,21 @@ export default function TechnicienDashboard() {
                         <AlertCircle className="w-5 h-5 text-white" />
                       </div>
                       <div className="text-right">
-                        <p className="text-2xl font-bold text-orange-600">
-                          +{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
-                        </p>
+                        {recetteGeneree.total_recla_free_confirmee > 0 ? (
+                          <p className="text-2xl font-bold text-orange-600">
+                            +{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€
+                          </p>
+                        ) : (
+                          <p className="text-lg font-bold text-yellow-600">En cours</p>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">
-                          {reclaFreeData.length} recla free
+                          {reclaFreeData.filter((rf: any) => rf.confirmer).length > 0 && (
+                            <span className="text-orange-600 font-medium">{reclaFreeData.filter((rf: any) => rf.confirmer).length} confirmée{reclaFreeData.filter((rf: any) => rf.confirmer).length > 1 ? 's' : ''}</span>
+                          )}
+                          {reclaFreeData.filter((rf: any) => rf.confirmer).length > 0 && reclaFreeData.filter((rf: any) => !rf.confirmer).length > 0 && ' · '}
+                          {reclaFreeData.filter((rf: any) => !rf.confirmer).length > 0 && (
+                            <span className="text-yellow-600 font-medium">{reclaFreeData.filter((rf: any) => !rf.confirmer).length} en cours</span>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -2512,8 +2530,13 @@ export default function TechnicienDashboard() {
                   <AlertCircle className="w-5 h-5 text-orange-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Recla Free confirmées</h3>
-                  <p className="text-sm text-gray-500">{reclaFreeData.length} entrée{reclaFreeData.length !== 1 ? 's' : ''} — Total: <span className="font-semibold text-orange-600">+{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€</span></p>
+                  <h3 className="text-lg font-bold text-gray-900">Recla Free</h3>
+                  <p className="text-sm text-gray-500">
+                    {reclaFreeData.length} entrée{reclaFreeData.length !== 1 ? 's' : ''}
+                    {recetteGeneree.total_recla_free_confirmee > 0 && (
+                      <> — <span className="font-semibold text-orange-600">+{recetteGeneree.total_recla_free_confirmee.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ confirmés</span></>
+                    )}
+                  </p>
                 </div>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setShowReclaFreeModal(false)}>
@@ -2526,9 +2549,15 @@ export default function TechnicienDashboard() {
                 <p className="text-center text-gray-500 py-8">Aucune recla free pour cette période</p>
               ) : (
                 reclaFreeData.map((rf: any) => (
-                  <div key={rf.id} className="border border-orange-200 rounded-lg p-4 bg-orange-50">
+                  <div key={rf.id} className={`border rounded-lg p-4 ${rf.confirmer ? 'border-orange-200 bg-orange-50' : 'border-yellow-200 bg-yellow-50'}`}>
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {/* Statut confirmation */}
+                        {rf.confirmer ? (
+                          <span className="px-2 py-0.5 bg-orange-500 text-white rounded-full text-xs font-bold">Confirmée</span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-yellow-400 text-yellow-900 rounded-full text-xs font-bold">En cours</span>
+                        )}
                         {rf.type_litige && (
                           <span className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs font-semibold">
                             {rf.type_litige === 'controleur' ? 'Contrôleur' : 'Client'}
@@ -2539,7 +2568,11 @@ export default function TechnicienDashboard() {
                         )}
                       </div>
                       <div className="text-right">
-                        <div className="text-lg font-bold text-orange-600 whitespace-nowrap">+{parseFloat(rf.montant_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ <span className="text-xs font-normal text-gray-500">votre part</span></div>
+                        {rf.confirmer ? (
+                          <div className="text-lg font-bold text-orange-600 whitespace-nowrap">+{parseFloat(rf.montant_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€ <span className="text-xs font-normal text-gray-500">votre part</span></div>
+                        ) : (
+                          <div className="text-sm font-semibold text-yellow-700 whitespace-nowrap">En attente de confirmation</div>
+                        )}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 mb-2">
@@ -2551,7 +2584,7 @@ export default function TechnicienDashboard() {
                       {rf.nature_travaux && <div><span className="font-medium text-gray-500">Nature:</span> {rf.nature_travaux}</div>}
                     </div>
                     {rf.nature_travaux_detail && <p className="text-xs text-gray-600 mb-1"><span className="font-medium">Détail:</span> {rf.nature_travaux_detail}</p>}
-                    {rf.commentaire && <p className="text-xs text-gray-500 italic border-t border-orange-200 pt-1 mt-1">{rf.commentaire}</p>}
+                    {rf.commentaire && <p className={`text-xs italic border-t pt-1 mt-1 ${rf.confirmer ? 'text-gray-500 border-orange-200' : 'text-gray-500 border-yellow-200'}`}>{rf.commentaire}</p>}
                   </div>
                 ))
               )}
