@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 
-// Mettre à jour la fonction si recla-free manque
-async function ensureReclaFreeSection() {
+// Mettre à jour la fonction si recla-free ou ftto manque
+async function ensureSections() {
   try {
-    const check = await query(`SELECT section_key FROM get_available_sections() WHERE section_key = 'recla-free'`)
+    const check = await query(`SELECT section_key FROM get_available_sections() WHERE section_key = 'ftto'`)
     if (check.rows.length === 0) {
       await query(`
         CREATE OR REPLACE FUNCTION get_available_sections() 
@@ -33,6 +33,7 @@ async function ensureReclaFreeSection() {
           UNION ALL SELECT 'reclamations-techniques'::VARCHAR(50), 'Réclamations Techniques'::VARCHAR(100)
           UNION ALL SELECT 'absences'::VARCHAR(50), 'Absences'::VARCHAR(100)
           UNION ALL SELECT 'historique'::VARCHAR(50), 'Historique'::VARCHAR(100)
+          UNION ALL SELECT 'ftto'::VARCHAR(50), 'FTTO'::VARCHAR(100)
           UNION ALL SELECT 'compte-admin'::VARCHAR(50), 'Compte Admin'::VARCHAR(100);
         END;
         $$ LANGUAGE plpgsql;
@@ -45,7 +46,7 @@ async function ensureReclaFreeSection() {
 
 export async function GET() {
   try {
-    await ensureReclaFreeSection()
+    await ensureSections()
     const result = await query('SELECT * FROM get_available_sections()')
     return NextResponse.json({ sections: result.rows })
   } catch (error) {

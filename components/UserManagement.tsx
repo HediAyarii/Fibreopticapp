@@ -129,7 +129,8 @@ export default function UserManagement() {
           { section_key: 'reclamations-techniques', section_name: 'Réclamations Techniques' },
           { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' },
           { section_key: 'absences', section_name: 'Absences' },
-          { section_key: 'historique', section_name: 'Historique' }
+          { section_key: 'historique', section_name: 'Historique' },
+          { section_key: 'ftto', section_name: 'FTTO' }
         ])
       }
     } catch (error) {
@@ -156,7 +157,8 @@ export default function UserManagement() {
         { section_key: 'reclamations-techniques', section_name: 'Réclamations Techniques' },
         { section_key: 'technicien-accounts', section_name: 'Comptes Techniciens' },
         { section_key: 'absences', section_name: 'Absences' },
-        { section_key: 'historique', section_name: 'Historique' }
+        { section_key: 'historique', section_name: 'Historique' },
+        { section_key: 'ftto', section_name: 'FTTO' }
       ])
     }
   }
