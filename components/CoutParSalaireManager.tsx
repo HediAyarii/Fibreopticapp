@@ -21,7 +21,8 @@ import {
   Plus,
   Eye,
   RefreshCw,
-  Trash2
+  Trash2,
+  BarChart2
 } from 'lucide-react'
 import PaymentHistoryModal from './PaymentHistoryModal'
 
@@ -157,6 +158,29 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   // États pour la synchronisation des techniciens manquants
   const [syncingMissing, setSyncingMissing] = useState(false)
   const [missingSyncResult, setMissingSyncResult] = useState<any>(null)
+
+  // États pour le détail du Total Généré
+  const [showDetailGenereModal, setShowDetailGenereModal] = useState(false)
+  const [selectedCoutForDetail, setSelectedCoutForDetail] = useState<CoutParSalaire | null>(null)
+  const [detailGenereData, setDetailGenereData] = useState<any>(null)
+  const [loadingDetailGenere, setLoadingDetailGenere] = useState(false)
+
+  const openDetailGenere = async (cout: CoutParSalaire) => {
+    if (!cout.matricule) return
+    setSelectedCoutForDetail(cout)
+    setDetailGenereData(null)
+    setShowDetailGenereModal(true)
+    setLoadingDetailGenere(true)
+    try {
+      const res = await fetch(`/api/cout-par-salaire/detail-genere?matricule=${cout.matricule}&mois=${cout.mois}&annee=${cout.annee}`)
+      const data = await res.json()
+      if (data.success) setDetailGenereData(data)
+    } catch (e) {
+      console.error('Erreur chargement détail généré:', e)
+    } finally {
+      setLoadingDetailGenere(false)
+    }
+  }
 
   // Fonction utilitaire pour afficher "-" si valeur est 0 ou null (techniciens manquants)
   const formatValueOrDash = (value: any): string => {
@@ -1679,9 +1703,20 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                       </td>
                       
                       <td className="p-3 text-right">
-                        <span className={`font-medium ${cout.total_genere && Number(cout.total_genere) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                          {cout.total_genere ? `${Number(cout.total_genere).toFixed(2)}€` : '0.00€'}
-                        </span>
+                        <div className="flex items-center justify-end gap-1">
+                          <span className={`font-medium ${cout.total_genere && Number(cout.total_genere) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                            {cout.total_genere ? `${Number(cout.total_genere).toFixed(2)}€` : '0.00€'}
+                          </span>
+                          {cout.matricule && (
+                            <button
+                              onClick={() => openDetailGenere(cout)}
+                              className="ml-1 text-gray-400 hover:text-blue-600 transition-colors"
+                              title="Voir le détail des recettes générées"
+                            >
+                              <BarChart2 size={13} />
+                            </button>
+                          )}
+                        </div>
                         {cout.total_genere && Number(cout.total_genere) > 0 && (
                           <div className="text-xs text-green-600 mt-1">✓ Recettes générées</div>
                         )}
@@ -2366,6 +2401,223 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                   {paymentLoading ? 'Ajout...' : '+ Ajouter la Prime'}
                 </Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Détail Total Généré */}
+      {showDetailGenereModal && selectedCoutForDetail && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            {/* En-tête */}
+            <div className="flex items-center justify-between px-5 py-4 border-b bg-gradient-to-r from-green-50 to-emerald-50">
+              <div className="flex items-center gap-2">
+                <BarChart2 className="text-green-600 w-5 h-5" />
+                <div>
+                  <h3 className="font-semibold text-gray-800">
+                    Détail des recettes générées
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {selectedCoutForDetail.nom} {selectedCoutForDetail.prenom} — {selectedCoutForDetail.matricule}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDetailGenereModal(false)}
+                className="text-gray-400 hover:text-gray-700 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Corps */}
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+              {loadingDetailGenere ? (
+                <div className="flex items-center justify-center py-10 text-gray-400">
+                  <RefreshCw className="w-5 h-5 animate-spin mr-2" />
+                  Chargement…
+                </div>
+              ) : detailGenereData ? (
+                <>
+                  {/* Résumé */}
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="bg-blue-50 rounded-lg p-3 text-center">
+                      <p className="text-xs text-blue-600 font-medium">Interventions</p>
+                      <p className="text-xl font-bold text-blue-700">{detailGenereData.nb_interventions}</p>
+                      <p className="text-xs text-blue-600">{Number(detailGenereData.total_interventions).toFixed(2)}€</p>
+                    </div>
+                    <div className="bg-purple-50 rounded-lg p-3 text-center">
+                      <p className="text-xs text-purple-600 font-medium">Récla Free</p>
+                      <p className="text-xl font-bold text-purple-700">{detailGenereData.nb_reclas_free}</p>
+                      <p className="text-xs text-purple-600">{Number(detailGenereData.total_recla_free).toFixed(2)}€</p>
+                    </div>
+                    <div className="bg-indigo-50 rounded-lg p-3 text-center">
+                      <p className="text-xs text-indigo-600 font-medium">FTTO</p>
+                      <p className="text-xl font-bold text-indigo-700">{detailGenereData.nb_ftto || 0}</p>
+                      <p className="text-xs text-indigo-600">{Number(detailGenereData.total_ftto || 0).toFixed(2)}€</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-3 text-center">
+                      <p className="text-xs text-green-600 font-medium">Total Généré</p>
+                      <p className="text-xl font-bold text-green-700">{Number(detailGenereData.total_genere).toFixed(2)}€</p>
+                      <p className="text-xs text-green-600">Interventions + Récla + FTTO</p>
+                    </div>
+                  </div>
+
+                  {/* Interventions */}
+                  {detailGenereData.interventions.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                        <FileText className="w-4 h-4 text-blue-500" />
+                        Interventions ({detailGenereData.nb_interventions})
+                      </h4>
+                      <div className="rounded-lg border overflow-hidden text-xs">
+                        <table className="w-full">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="text-left p-2 text-gray-500 font-medium">N° Inter</th>
+                              <th className="text-left p-2 text-gray-500 font-medium">Client</th>
+                              <th className="text-left p-2 text-gray-500 font-medium">Type</th>
+                              <th className="text-left p-2 text-gray-500 font-medium">Articles</th>
+                              <th className="text-right p-2 text-gray-500 font-medium">Montant</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {detailGenereData.interventions.map((inter: any) => (
+                              <tr key={inter.id} className="hover:bg-gray-50">
+                                <td className="p-2 font-mono text-blue-700">{inter.num_inter || '—'}</td>
+                                <td className="p-2 text-gray-700 truncate max-w-[120px]">{inter.client || '—'}</td>
+                                <td className="p-2">
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">
+                                    {inter.type_intervention || '—'}
+                                  </span>
+                                </td>
+                                <td className="p-2 text-gray-500 truncate max-w-[100px]">{inter.articles || '—'}</td>
+                                <td className="p-2 text-right font-semibold text-green-700">
+                                  {Number(inter.montant).toFixed(2)}€
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-blue-50">
+                            <tr>
+                              <td colSpan={4} className="p-2 text-right font-semibold text-blue-700">Total Interventions</td>
+                              <td className="p-2 text-right font-bold text-blue-700">{Number(detailGenereData.total_interventions).toFixed(2)}€</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Réclamations Free */}
+                  {detailGenereData.reclas_free.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                        <CreditCard className="w-4 h-4 text-purple-500" />
+                        Réclamations Free ({detailGenereData.nb_reclas_free})
+                      </h4>
+                      <div className="rounded-lg border overflow-hidden text-xs">
+                        <table className="w-full">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="text-left p-2 text-gray-500 font-medium">Réf. Client</th>
+                              <th className="text-left p-2 text-gray-500 font-medium">Type</th>
+                              <th className="text-left p-2 text-gray-500 font-medium">Date Confirmation</th>
+                              <th className="text-right p-2 text-gray-500 font-medium">Montant</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {detailGenereData.reclas_free.map((r: any) => (
+                              <tr key={r.id} className="hover:bg-gray-50">
+                                <td className="p-2 font-mono text-purple-700">{r.reference_client || '—'}</td>
+                                <td className="p-2">
+                                  <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-medium capitalize">
+                                    {r.type_litige || '—'}
+                                  </span>
+                                </td>
+                                <td className="p-2 text-gray-500">
+                                  {r.date_confirmation ? new Date(r.date_confirmation).toLocaleDateString('fr-FR') : '—'}
+                                </td>
+                                <td className="p-2 text-right font-semibold text-purple-700">
+                                  {Number(r.montant_technicien).toFixed(2)}€
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-purple-50">
+                            <tr>
+                              <td colSpan={3} className="p-2 text-right font-semibold text-purple-700">Total Récla Free</td>
+                              <td className="p-2 text-right font-bold text-purple-700">{Number(detailGenereData.total_recla_free).toFixed(2)}€</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {detailGenereData.interventions.length === 0 && detailGenereData.reclas_free.length === 0 && !(detailGenereData.ftto_tickets?.length > 0) && (
+                    <div className="text-center py-8 text-gray-400 text-sm">
+                      Aucune recette générée pour cette période.
+                    </div>
+                  )}
+
+                  {/* FTTO Tickets */}
+                  {(detailGenereData.ftto_tickets?.length > 0) && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                        <FileText className="w-4 h-4 text-indigo-500" />
+                        FTTO ({detailGenereData.nb_ftto})
+                      </h4>
+                      <div className="rounded-lg border overflow-hidden text-xs">
+                        <table className="w-full">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="text-left p-2 text-gray-500 font-medium">N° Ticket</th>
+                              <th className="text-left p-2 text-gray-500 font-medium">Date</th>
+                              <th className="text-left p-2 text-gray-500 font-medium">Code Art.</th>
+                              <th className="text-left p-2 text-gray-500 font-medium">Désignation</th>
+                              <th className="text-right p-2 text-gray-500 font-medium">P.U.</th>
+                              <th className="text-right p-2 text-gray-500 font-medium">Qté</th>
+                              <th className="text-right p-2 text-gray-500 font-medium">Part Tech (35%)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {detailGenereData.ftto_tickets.map((ft: any) => (
+                              <tr key={ft.id} className="hover:bg-gray-50">
+                                <td className="p-2 font-mono text-indigo-700">{ft.num_ticket || '—'}</td>
+                                <td className="p-2 text-gray-500">
+                                  {ft.date_ticket ? new Date(ft.date_ticket).toLocaleDateString('fr-FR') : '—'}
+                                </td>
+                                <td className="p-2 font-mono">{ft.code_article || '—'}</td>
+                                <td className="p-2 text-gray-700 truncate max-w-[120px]">{ft.designation || '—'}</td>
+                                <td className="p-2 text-right">{Number(ft.prix_unitaire).toFixed(2)}€</td>
+                                <td className="p-2 text-right">{ft.quantite}</td>
+                                <td className="p-2 text-right font-semibold text-indigo-700">
+                                  {Number(ft.part_technicien).toFixed(2)}€
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-indigo-50">
+                            <tr>
+                              <td colSpan={6} className="p-2 text-right font-semibold text-indigo-700">Total FTTO (part tech)</td>
+                              <td className="p-2 text-right font-bold text-indigo-700">{Number(detailGenereData.total_ftto || 0).toFixed(2)}€</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-8 text-gray-400 text-sm">Erreur lors du chargement.</div>
+              )}
+            </div>
+
+            {/* Pied */}
+            <div className="border-t px-5 py-3 flex justify-end">
+              <Button variant="outline" onClick={() => setShowDetailGenereModal(false)}>Fermer</Button>
             </div>
           </div>
         </div>

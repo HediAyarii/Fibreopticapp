@@ -30,6 +30,8 @@ interface RevenueData {
   total_recette_generale: number
   total_recla_free_confirmee?: number
   total_recla_free_entreprise?: number
+  total_ftto_technicien?: number
+  total_ftto_entreprise?: number
   interventions_detail: Array<{
     intervention_id: number
     num_inter: string
@@ -103,6 +105,7 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
   const [selectedGrille, setSelectedGrille] = useState<string>("all")
   const [expandedEmployee, setExpandedEmployee] = useState<number | null>(null)
   const [reclaFreeDetails, setReclaFreeDetails] = useState<Record<number, any[]>>({})
+  const [fttoDetails, setFttoDetails] = useState<Record<number, any[]>>({})
 
   const loadRevenueData = async () => {
     setLoading(true)
@@ -239,6 +242,18 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
         setReclaFreeDetails(prev => ({ ...prev, [next]: data.reclaFree || [] }))
       } catch {
         setReclaFreeDetails(prev => ({ ...prev, [next]: [] }))
+      }
+    }
+    if (next !== null && !fttoDetails[next]) {
+      try {
+        const p = new URLSearchParams({ employe_id: String(next) })
+        if (dateFrom) p.append('date_debut', dateFrom)
+        if (dateTo) p.append('date_fin', dateTo)
+        const res = await fetch(`/api/ftto?${p.toString()}`)
+        const data = await res.json()
+        setFttoDetails(prev => ({ ...prev, [next]: data.tickets || [] }))
+      } catch {
+        setFttoDetails(prev => ({ ...prev, [next]: [] }))
       }
     }
   }
@@ -442,6 +457,18 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                               )}
                             </div>
                           )}
+                          {(employee.total_ftto_technicien ?? 0) > 0 && (
+                            <div className="mt-1 text-xs space-y-0.5">
+                              <Badge variant="outline" className="block border-blue-500/50 text-blue-400 text-xs">
+                                Tech: +{formatCurrency(employee.total_ftto_technicien!)} FTTO
+                              </Badge>
+                              {(employee.total_ftto_entreprise ?? 0) > 0 && (
+                                <Badge variant="outline" className="block border-indigo-500/50 text-indigo-400 text-xs">
+                                  Ent: +{formatCurrency(employee.total_ftto_entreprise!)} FTTO
+                                </Badge>
+                              )}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-medium text-green-600">
                           <div className="flex items-center justify-end gap-1">
@@ -571,6 +598,60 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                                           {rf.commentaire && (
                                             <div className="mt-1 text-xs text-gray-500 italic">{rf.commentaire}</div>
                                           )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {/* Section FTTO */}
+                                  {(fttoDetails[employee.employe_id] ?? []).length > 0 && (
+                                    <div className="mt-2">
+                                      <div className="flex items-center gap-2 mb-3 pt-3 border-t border-blue-500/20">
+                                        <AlertCircle className="w-4 h-4 text-blue-400" />
+                                        <span className="font-semibold text-blue-400">FTTO</span>
+                                        <Badge variant="outline" className="border-blue-500/50 text-blue-400 text-xs">
+                                          {(fttoDetails[employee.employe_id] ?? []).length} ticket(s)
+                                        </Badge>
+                                      </div>
+                                      {(fttoDetails[employee.employe_id] ?? []).map((ft: any) => (
+                                        <div key={ft.id} className="p-3 border border-blue-500/20 bg-blue-500/5 rounded-lg mb-2">
+                                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-center">
+                                            <div>
+                                              <div className="text-xs text-gray-500 mb-1">N° Ticket</div>
+                                              <div className="font-mono font-medium text-sm text-blue-400">{ft.num_ticket || '—'}</div>
+                                            </div>
+                                            <div>
+                                              <div className="text-xs text-gray-500">Date · Code G2R</div>
+                                              <div className="font-medium text-sm">
+                                                {ft.date_ticket ? new Date(ft.date_ticket).toLocaleDateString('fr-FR') : '—'}
+                                                {ft.code_g2r ? <span className="text-xs text-gray-400 ml-1">· {ft.code_g2r}</span> : null}
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div className="text-xs text-gray-500">Article · Ville</div>
+                                              <div className="font-medium text-sm">{ft.code_article || '—'}{ft.ville ? <span className="text-xs text-gray-400 ml-1">· {ft.ville}</span> : null}</div>
+                                            </div>
+                                            <div>
+                                              <div className="text-xs text-gray-500">Désignation</div>
+                                              <div className="font-medium text-sm truncate">{ft.designation || '—'}</div>
+                                            </div>
+                                            <div className="text-right">
+                                              <div className="text-xs text-gray-500 mb-1">Montants</div>
+                                              <div className="space-y-1">
+                                                <div className="flex items-center justify-end gap-1 text-blue-400">
+                                                  <span className="text-xs">Tech (35%):</span>
+                                                  <span className="font-bold text-sm">{formatCurrency(Number(ft.part_technicien) || 0)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-end gap-1 text-indigo-400">
+                                                  <span className="text-xs">Ent (65%):</span>
+                                                  <span className="font-bold text-sm">{formatCurrency(Number(ft.part_entreprise) || 0)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-end gap-1 text-blue-300 pt-1 border-t border-blue-500/20">
+                                                  <span className="text-xs">Total H.T.:</span>
+                                                  <span className="font-bold text-base">{formatCurrency(Number(ft.total_ht) || 0)}</span>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
                                         </div>
                                       ))}
                                     </div>

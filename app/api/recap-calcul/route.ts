@@ -332,6 +332,22 @@ export async function GET(request: NextRequest) {
           AND rf.date_confirmation::date <= $2::date
           ${selectedEmployee ? `AND e.matricule = '${selectedEmployee.matricule}'` : ''}
         GROUP BY e.matricule, e.id, e.nom, e.prenom
+      ),
+      ftto_data AS (
+        SELECT
+          e.matricule,
+          e.id as employe_id,
+          e.nom as employe_nom,
+          e.prenom as employe_prenom,
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.35, 2)), 0) as total_ftto_technicien,
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.65, 2)), 0) as total_ftto_entreprise
+        FROM ftto_tickets ft
+        JOIN employes e ON ft.employe_id = e.id
+        WHERE ft.date_ticket IS NOT NULL
+          AND ft.date_ticket::date >= $1::date
+          AND ft.date_ticket::date <= $2::date
+          ${selectedEmployee ? `AND e.matricule = '${selectedEmployee.matricule}'` : ''}
+        GROUP BY e.matricule, e.id, e.nom, e.prenom
       )
       SELECT 
         COALESCE(id.employe_nom, cd.employe_nom, md.employe_nom, rfd.employe_nom) as employe_nom,
@@ -339,10 +355,12 @@ export async function GET(request: NextRequest) {
         COALESCE(id.matricule, cd.matricule, md.matricule, rfd.matricule) as matricule,
         COALESCE(id.employe_id, rfd.employe_id, -1) as employe_id,
         COALESCE(id.nombre_interventions, 0) as nombre_interventions,
-        COALESCE(id.total_recette_technicien, 0) + COALESCE(rfd.total_recla_free_confirmee, 0) as total_recette_technicien,
-        COALESCE(id.total_recette_entreprise, 0) + COALESCE(rfd.total_recla_free_entreprise, 0) as total_recette_entreprise,
+        COALESCE(id.total_recette_technicien, 0) + COALESCE(rfd.total_recla_free_confirmee, 0) + COALESCE(ftd.total_ftto_technicien, 0) as total_recette_technicien,
+        COALESCE(id.total_recette_entreprise, 0) + COALESCE(rfd.total_recla_free_entreprise, 0) + COALESCE(ftd.total_ftto_entreprise, 0) as total_recette_entreprise,
         COALESCE(rfd.total_recla_free_confirmee, 0) as total_recla_free_confirmee,
         COALESCE(rfd.total_recla_free_entreprise, 0) as total_recla_free_entreprise,
+        COALESCE(ftd.total_ftto_technicien, 0) as total_ftto_technicien,
+        COALESCE(ftd.total_ftto_entreprise, 0) as total_ftto_entreprise,
         COALESCE(cd.nombre_transactions_carburant, 0) as nombre_transactions_carburant,
         COALESCE(cd.consommation_totale_carburant, 0) as consommation_totale_carburant,
         COALESCE(cd.consommation_moyenne_carburant, 0) as consommation_moyenne_carburant,
@@ -356,9 +374,10 @@ export async function GET(request: NextRequest) {
       FULL OUTER JOIN carburant_data cd ON id.matricule = cd.matricule
       FULL OUTER JOIN materiel_data md ON COALESCE(id.matricule, cd.matricule) = md.matricule
       FULL OUTER JOIN recla_free_data rfd ON COALESCE(id.matricule, cd.matricule, md.matricule) = rfd.matricule
+      LEFT JOIN ftto_data ftd ON COALESCE(id.matricule, cd.matricule, md.matricule, rfd.matricule) = ftd.matricule
       LEFT JOIN employee_labels el ON COALESCE(id.matricule, cd.matricule, md.matricule, rfd.matricule) = el.matricule
       ${selectedEmployee ? `WHERE id.matricule = '${selectedEmployee.matricule}' OR cd.matricule = '${selectedEmployee.matricule}' OR md.matricule = '${selectedEmployee.matricule}' OR rfd.matricule = '${selectedEmployee.matricule}'` : ''}
-      ORDER BY (COALESCE(id.total_recette_technicien, 0) + COALESCE(rfd.total_recla_free_confirmee, 0)) DESC
+      ORDER BY (COALESCE(id.total_recette_technicien, 0) + COALESCE(rfd.total_recla_free_confirmee, 0) + COALESCE(ftd.total_ftto_technicien, 0)) DESC
     `
 
     // Exécuter la requête avec les filtres
@@ -381,6 +400,8 @@ export async function GET(request: NextRequest) {
         total_recette_entreprise: Number(row.total_recette_entreprise) || 0,
         total_recla_free_confirmee: Number(row.total_recla_free_confirmee) || 0,
         total_recla_free_entreprise: Number(row.total_recla_free_entreprise) || 0,
+        total_ftto_technicien: Number(row.total_ftto_technicien) || 0,
+        total_ftto_entreprise: Number(row.total_ftto_entreprise) || 0,
         nombre_transactions_carburant: Number(row.nombre_transactions_carburant) || 0,
         consommation_totale_carburant: Number(row.consommation_totale_carburant) || 0,
         consommation_moyenne_carburant: Number(row.consommation_moyenne_carburant) || 0,

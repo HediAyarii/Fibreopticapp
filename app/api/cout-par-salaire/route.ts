@@ -169,6 +169,18 @@ export async function GET(request: NextRequest) {
         WHERE rf.confirmer = TRUE
           AND rf.date_confirmation IS NOT NULL
         GROUP BY e.matricule, EXTRACT(MONTH FROM rf.date_confirmation), EXTRACT(YEAR FROM rf.date_confirmation)
+      ),
+      -- Pré-calculer les FTTO (part technicien) par matricule/mois/année
+      ftto_totaux AS (
+        SELECT
+          e.matricule,
+          EXTRACT(MONTH FROM ft.date_ticket)::int as mois,
+          EXTRACT(YEAR FROM ft.date_ticket)::int as annee,
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.35, 2)), 0) as total_ftto
+        FROM ftto_tickets ft
+        JOIN employes e ON ft.employe_id = e.id
+        WHERE ft.date_ticket IS NOT NULL
+        GROUP BY e.matricule, EXTRACT(MONTH FROM ft.date_ticket), EXTRACT(YEAR FROM ft.date_ticket)
       )
       SELECT 
         cps.id,
@@ -196,17 +208,19 @@ export async function GET(request: NextRequest) {
         cps.prime,
         -- Primes
         COALESCE(pt.total_primes, 0) as total_primes,
-        -- Total généré (recalculé en temps réel + recla free confirmées)
-        COALESCE(rev.total_genere, 0) + COALESCE(rft.total_recla_free, 0) as total_genere,
+        -- Total généré (recalculé en temps réel + recla free confirmées + FTTO part technicien)
+        COALESCE(rev.total_genere, 0) + COALESCE(rft.total_recla_free, 0) + COALESCE(ftt.total_ftto, 0) as total_genere,
         -- Paiements
         COALESCE(pai.total_paiements, 0) as total_paiements,
         -- Amendes
         COALESCE(am.total_amendes, 0) as total_amendes,
         -- Recla Free confirmées
         COALESCE(rft.total_recla_free, 0) as total_recla_free,
-        -- RAP = Total Généré (incl. recla free) - Salaire Net - Impôt + Primes - Pénalités - Paiements - Amendes
+        -- FTTO part technicien
+        COALESCE(ftt.total_ftto, 0) as total_ftto,
+        -- RAP = Total Généré (incl. recla free + FTTO) - Salaire Net - Impôt + Primes - Pénalités - Paiements - Amendes
         (
-          COALESCE(rev.total_genere, 0) + COALESCE(rft.total_recla_free, 0)
+          COALESCE(rev.total_genere, 0) + COALESCE(rft.total_recla_free, 0) + COALESCE(ftt.total_ftto, 0)
           - cps.salaire_net 
           - CASE 
               WHEN ABS(COALESCE(e.pourcentage_taxe, 50) - 100) < 0.01 THEN 0
@@ -228,6 +242,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN primes_totaux pt ON pt.cout_par_salaire_id = cps.id
       LEFT JOIN amendes_totaux am ON cps.matricule IS NOT NULL AND am.matricule = cps.matricule AND am.mois = cps.mois AND am.annee = cps.annee
       LEFT JOIN recla_free_totaux rft ON cps.matricule IS NOT NULL AND rft.matricule = cps.matricule AND rft.mois = cps.mois AND rft.annee = cps.annee
+      LEFT JOIN ftto_totaux ftt ON cps.matricule IS NOT NULL AND ftt.matricule = cps.matricule AND ftt.mois = cps.mois AND ftt.annee = cps.annee
       ${whereClause}
       ORDER BY cps.annee DESC, cps.mois DESC, cps.nom, cps.prenom
     `

@@ -251,49 +251,99 @@ export async function GET(request: NextRequest) {
       console.warn("recla_free table not ready yet:", rfErr)
     }
 
+    // Récupérer les FTTO par employe_id dans la même période
+    let fttoTechByEmployee: Record<number, number> = {}
+    let fttoEntByEmployee: Record<number, number> = {}
+    try {
+      const ftConditions: string[] = ['ft.employe_id IS NOT NULL', 'ft.date_ticket IS NOT NULL']
+      const ftParams: any[] = []
+      let ftIdx = 1
+      if (employeId) {
+        ftConditions.push(`ft.employe_id = $${ftIdx++}`)
+        ftParams.push(parseInt(employeId))
+      }
+      if (dateFrom) {
+        ftConditions.push(`ft.date_ticket::date >= $${ftIdx++}::date`)
+        ftParams.push(dateFrom)
+      }
+      if (dateTo) {
+        ftConditions.push(`ft.date_ticket::date <= $${ftIdx++}::date`)
+        ftParams.push(dateTo)
+      }
+      const ftResult = await query(`
+        SELECT ft.employe_id,
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.35, 2)), 0) as total_ftto_tech,
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.65, 2)), 0) as total_ftto_ent
+        FROM ftto_tickets ft
+        WHERE ${ftConditions.join(' AND ')}
+        GROUP BY ft.employe_id
+      `, ftParams)
+      for (const row of ftResult.rows) {
+        fttoTechByEmployee[Number(row.employe_id)] = parseFloat(row.total_ftto_tech) || 0
+        fttoEntByEmployee[Number(row.employe_id)] = parseFloat(row.total_ftto_ent) || 0
+      }
+    } catch (ftErr) {
+      console.warn("ftto_tickets table not ready yet:", ftErr)
+    }
+
     const revenue_data = result.rows.map((row: any) => {
       const reclaFreeTech = reclaFreeByEmployee[Number(row.employe_id)] || 0
       const reclaFreeEnt = reclaFreeEntByEmployee[Number(row.employe_id)] || 0
+      const fttoTech = fttoTechByEmployee[Number(row.employe_id)] || 0
+      const fttoEnt = fttoEntByEmployee[Number(row.employe_id)] || 0
       const origTech = parseFloat(row.total_recette_technicien || 0)
       const origEnt = parseFloat(row.total_recette_entreprise || 0)
       const origGen = parseFloat(row.total_recette_generale || 0)
       return {
         ...row,
-        total_recette_technicien: origTech + reclaFreeTech,
-        total_recette_entreprise: origEnt + reclaFreeEnt,
-        total_recette_generale: origGen + reclaFreeTech + reclaFreeEnt,
+        total_recette_technicien: origTech + reclaFreeTech + fttoTech,
+        total_recette_entreprise: origEnt + reclaFreeEnt + fttoEnt,
+        total_recette_generale: origGen + reclaFreeTech + reclaFreeEnt + fttoTech + fttoEnt,
         total_recla_free_confirmee: reclaFreeTech,
+        total_ftto_technicien: fttoTech,
+        total_ftto_entreprise: fttoEnt,
       }
     })
 
-    // Ajouter les techniciens qui ont des recla_free mais aucune intervention dans la période
+    // Ajouter les techniciens qui ont des recla_free et/ou FTTO mais aucune intervention dans la période
     const existingEmployeeIds = new Set(result.rows.map((r: any) => Number(r.employe_id)))
-    for (const [empIdStr, reclaFreeTechAmount] of Object.entries(reclaFreeByEmployee)) {
-      const empId = Number(empIdStr)
-      if (!existingEmployeeIds.has(empId) && reclaFreeTechAmount > 0) {
-        const reclaFreeEntAmount = reclaFreeEntByEmployee[empId] || 0
-        try {
-          const empResult = await query(
-            `SELECT id, nom, prenom, matricule FROM employes WHERE id = $1`,
-            [empId]
-          )
-          if (empResult.rows.length > 0) {
-            const emp = empResult.rows[0]
-            revenue_data.push({
-              employe_id: emp.id,
-              employe_nom: emp.nom,
-              employe_prenom: emp.prenom,
-              matricule: emp.matricule,
-              nombre_interventions: 0,
-              total_recette_technicien: reclaFreeTechAmount,
-              total_recette_entreprise: reclaFreeEntAmount,
-              total_recette_generale: reclaFreeTechAmount + reclaFreeEntAmount,
-              total_recla_free_confirmee: reclaFreeTechAmount,
-              interventions_detail: [],
-            })
-          }
-        } catch (e) { /* ignore */ }
-      }
+
+    // Collecter tous les employe_id non-interventions qui ont RF ou FTTO
+    const extraEmpIds = new Set<number>([
+      ...Object.keys(reclaFreeByEmployee).map(Number),
+      ...Object.keys(fttoTechByEmployee).map(Number),
+    ])
+
+    for (const empId of extraEmpIds) {
+      if (existingEmployeeIds.has(empId)) continue
+      const reclaFreeTechAmount = reclaFreeByEmployee[empId] || 0
+      const reclaFreeEntAmount = reclaFreeEntByEmployee[empId] || 0
+      const fttoTech = fttoTechByEmployee[empId] || 0
+      const fttoEnt = fttoEntByEmployee[empId] || 0
+      if (reclaFreeTechAmount === 0 && fttoTech === 0) continue
+      try {
+        const empResult = await query(
+          `SELECT id, nom, prenom, matricule FROM employes WHERE id = $1`,
+          [empId]
+        )
+        if (empResult.rows.length > 0) {
+          const emp = empResult.rows[0]
+          revenue_data.push({
+            employe_id: emp.id,
+            employe_nom: emp.nom,
+            employe_prenom: emp.prenom,
+            matricule: emp.matricule,
+            nombre_interventions: 0,
+            total_recette_technicien: reclaFreeTechAmount + fttoTech,
+            total_recette_entreprise: reclaFreeEntAmount + fttoEnt,
+            total_recette_generale: reclaFreeTechAmount + reclaFreeEntAmount + fttoTech + fttoEnt,
+            total_recla_free_confirmee: reclaFreeTechAmount,
+            total_ftto_technicien: fttoTech,
+            total_ftto_entreprise: fttoEnt,
+            interventions_detail: [],
+          })
+        }
+      } catch (e) { /* ignore */ }
     }
 
     // Calculer les totaux globaux APRÈS revenue_data complet (inclut les lignes recla_free virtuelles)

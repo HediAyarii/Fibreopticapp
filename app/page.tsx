@@ -64,6 +64,7 @@ import KPIProductionSection from "@/components/KPIProductionSection"
 import ReclamationsTechniques from "@/components/ReclamationsTechniques"
 import { AbsencesManager } from "@/components/AbsencesManager"
 import ReclaFreeManager from "@/components/ReclaFreeManager"
+import FttoManager from "@/components/FttoManager"
 import AutoSyncTotalGenere from "@/components/AutoSyncTotalGenere"
 import SyncButton from "@/components/SyncButton"
 import AutoDetectButton from "@/components/AutoDetectButton"
@@ -283,7 +284,7 @@ export default function EmployeeTracker() {
     'documents', 'penalties', 'statistics', 'costs', 'cout-par-salaire',
     'claims', 'reclamations-techniques', 'tarifs', 'recap-articles', 'vehicules',
     'recette-generer', 'fuel-consumption', 'technicien-accounts', 'absences',
-    'recla-free', 'compte-admin', 'historique'
+    'recla-free', 'ftto', 'compte-admin', 'historique'
   ]
   
   // État pour l'ordre personnalisé des sections (persisté dans la BDD par utilisateur)
@@ -3907,6 +3908,7 @@ La page va se recharger automatiquement...`)
                     'technicien-accounts': { icon: <UserCog className="w-5 h-5" />, label: 'Comptes Techniciens', permission: 'technicien-accounts' },
                     'absences': { icon: <Calendar className="w-5 h-5" />, label: 'Absences', permission: 'absences' },
                     'recla-free': { icon: <AlertCircle className="w-5 h-5" />, label: 'Recla Free', permission: 'recla-free' },
+                    'ftto': { icon: <FileText className="w-5 h-5" />, label: 'FTTO', permission: 'ftto' },
                     'compte-admin': { icon: <UserPlus className="w-5 h-5" />, label: 'Compte Admin', adminOnly: true },
                     'historique': { icon: <History className="w-5 h-5" />, label: 'Historique', adminOnly: true },
                   }
@@ -8585,6 +8587,13 @@ La page va se recharger automatiquement...`)
           {activeTab === "recla-free" && (
             <div className="space-y-6">
               <ReclaFreeManager />
+            </div>
+          )}
+
+          {/* FTTO Section */}
+          {activeTab === "ftto" && (
+            <div className="space-y-6">
+              <FttoManager />
             </div>
           )}
 
