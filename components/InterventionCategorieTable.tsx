@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Package, Home, RefreshCw, Wrench, MapPin, Clock, ChevronRight, AlertCircle, CheckCircle } from "lucide-react"
+import { Loader2, Package, Home, RefreshCw, Wrench, MapPin, Clock, ChevronRight, AlertCircle, CheckCircle, FileText } from "lucide-react"
 import { useSocket } from "@/contexts/SocketContext"
 
 interface CategorieIntervention {
@@ -129,6 +129,10 @@ export function InterventionCategorieTable({
   const [reclaFreeData, setReclaFreeData] = useState<any[]>([])
   const [showReclaFreeDialog, setShowReclaFreeDialog] = useState(false)
 
+  // FTTO
+  const [fttoData, setFttoData] = useState<any[]>([])
+  const [showFttoDialog, setShowFttoDialog] = useState(false)
+
   // Socket.IO pour notifications temps réel
   const socket = useSocket()
 
@@ -194,6 +198,26 @@ export function InterventionCategorieTable({
       }
     }
     fetchReclaFree()
+  }, [employeId, dateDebut, dateFin])
+
+  // Charger les tickets FTTO confirmés du technicien
+  useEffect(() => {
+    const fetchFtto = async () => {
+      if (!employeId) return
+      try {
+        const params = new URLSearchParams({ employe_id: String(employeId) })
+        if (dateDebut) params.append('date_debut', dateDebut)
+        if (dateFin) params.append('date_fin', dateFin)
+        const res = await fetch(`/api/ftto?${params.toString()}`)
+        if (res.ok) {
+          const data = await res.json()
+          setFttoData(data.tickets || [])
+        }
+      } catch (e) {
+        console.warn('ftto fetch error:', e)
+      }
+    }
+    fetchFtto()
   }, [employeId, dateDebut, dateFin])
 
   // Vérifier le statut de confirmation et si le bouton peut être activé
@@ -588,6 +612,28 @@ export function InterventionCategorieTable({
                       </TableCell>
                     </TableRow>
                   )}
+                  {fttoData.length > 0 && (
+                    <TableRow
+                      className="bg-blue-50 border-t-2 border-blue-300 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setShowFttoDialog(true)}
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-blue-600" />
+                          <span className="text-blue-800 font-semibold">FTTO</span>
+                          <ChevronRight className="h-4 w-4 text-blue-400 ml-auto" />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-blue-700">{fttoData.length}</TableCell>
+                      <TableCell className="text-right"><span className="text-gray-400">-</span></TableCell>
+                      <TableCell className="text-right"><span className="text-gray-400">-</span></TableCell>
+                      <TableCell className="text-right">
+                        <span className="font-semibold text-blue-600">
+                          +{fttoData.reduce((s: number, ft: any) => s + parseFloat(ft.part_technicien || 0), 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </>
               )}
             </TableBody>
@@ -769,6 +815,56 @@ export function InterventionCategorieTable({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowReclaFreeDialog(false)}>Fermer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog FTTO */}
+      <Dialog open={showFttoDialog} onOpenChange={setShowFttoDialog}>
+        <DialogContent className="!max-w-[95vw] !w-[95vw] max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-600" />
+              FTTO
+              <Badge variant="secondary" className="ml-auto bg-blue-100 text-blue-800">
+                {fttoData.length} ticket{fttoData.length !== 1 ? 's' : ''} — part tech: +{fttoData.reduce((s: number, ft: any) => s + parseFloat(ft.part_technicien || 0), 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
+              </Badge>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1 space-y-3 pr-2">
+            {fttoData.map((ft: any) => (
+              <div key={ft.id} className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 bg-blue-500 text-white rounded-full text-xs font-bold font-mono">
+                      {ft.num_ticket || '—'}
+                    </span>
+                    {ft.code_article && (
+                      <span className="px-2 py-0.5 bg-blue-200 text-blue-800 rounded-full text-xs font-semibold">{ft.code_article}</span>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-lg font-bold text-blue-600 whitespace-nowrap">
+                      +{parseFloat(ft.part_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
+                      <span className="text-xs font-normal text-gray-500 ml-1">35%</span>
+                    </div>
+                    <div className="text-xs text-gray-500">H.T.: {parseFloat(ft.total_ht || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 mb-2">
+                  {ft.date_ticket && <div><span className="font-medium text-gray-500">Date:</span> {new Date(ft.date_ticket).toLocaleDateString('fr-FR')}</div>}
+                  {ft.ville && <div><span className="font-medium text-gray-500">Ville:</span> {ft.ville}</div>}
+                  {ft.code_g2r && <div><span className="font-medium text-gray-500">Code G2R:</span> {ft.code_g2r}</div>}
+                  {ft.quantite && <div><span className="font-medium text-gray-500">Quantité:</span> {ft.quantite}</div>}
+                </div>
+                {ft.designation && (
+                  <p className="text-xs text-gray-500 italic border-t border-blue-200 pt-1 mt-1">{ft.designation}</p>
+                )}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFttoDialog(false)}>Fermer</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

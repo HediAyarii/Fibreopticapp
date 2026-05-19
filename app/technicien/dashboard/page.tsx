@@ -413,7 +413,8 @@ export default function TechnicienDashboard() {
   const [recetteGeneree, setRecetteGeneree] = useState({
     total_recette_technicien: 0,
     nombre_interventions: 0,
-    total_recla_free_confirmee: 0
+    total_recla_free_confirmee: 0,
+    total_ftto_technicien: 0
   })
   
   // État pour les amendes du mois
@@ -433,6 +434,8 @@ export default function TechnicienDashboard() {
   const [showPrimesModal, setShowPrimesModal] = useState(false)
   const [reclaFreeData, setReclaFreeData] = useState<any[]>([])
   const [showReclaFreeModal, setShowReclaFreeModal] = useState(false)
+  const [fttoData, setFttoData] = useState<any[]>([])
+  const [showFttoModal, setShowFttoModal] = useState(false)
   
   // États pour le véhicule
   const [vehiculeData, setVehiculeData] = useState<any>(null)
@@ -728,13 +731,15 @@ export default function TechnicienDashboard() {
         setRecetteGeneree({
           total_recette_technicien: parseFloat(technicienRevenue.total_recette_technicien || 0),
           nombre_interventions: parseInt(technicienRevenue.nombre_interventions || 0),
-          total_recla_free_confirmee: parseFloat(technicienRevenue.total_recla_free_confirmee || 0)
+          total_recla_free_confirmee: parseFloat(technicienRevenue.total_recla_free_confirmee || 0),
+          total_ftto_technicien: parseFloat(technicienRevenue.total_ftto_technicien || 0)
         })
       } else {
         setRecetteGeneree({
           total_recette_technicien: 0,
           nombre_interventions: 0,
-          total_recla_free_confirmee: 0
+          total_recla_free_confirmee: 0,
+          total_ftto_technicien: 0
         })
       }
 
@@ -784,6 +789,21 @@ export default function TechnicienDashboard() {
         } catch (e) {
           console.warn('recla_free load error:', e)
           setReclaFreeData([])
+        }
+      }
+
+      // Charger les tickets FTTO du technicien pour la période
+      if (user?.id) {
+        try {
+          const ftParams = new URLSearchParams({ employe_id: String(user.id) })
+          if (dateDebut) ftParams.append('date_debut', dateDebut)
+          if (dateFin) ftParams.append('date_fin', dateFin)
+          const ftRes = await fetchWithAuth(`/api/ftto?${ftParams.toString()}`)
+          const ftJson = ftRes.ok ? await ftRes.json() : {}
+          setFttoData(ftJson.tickets || [])
+        } catch (e) {
+          console.warn('ftto load error:', e)
+          setFttoData([])
         }
       }
 
@@ -1923,6 +1943,36 @@ export default function TechnicienDashboard() {
                 </Card>
               )}
 
+              {/* Carte FTTO */}
+              {fttoData.length > 0 && (
+                <Card
+                  className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-blue-500 cursor-pointer"
+                  onClick={() => setShowFttoModal(true)}
+                >
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-md">
+                        <FileText className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="text-right">
+                        {recetteGeneree.total_ftto_technicien > 0 && (
+                          <p className="text-xl font-bold text-blue-600">
+                            +{recetteGeneree.total_ftto_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}€ <span className="text-xs font-normal">part tech</span>
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">
+                          <span className="text-blue-600 font-medium">{fttoData.length} ticket{fttoData.length > 1 ? 's' : ''}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-600">FTTO</p>
+                      <Eye className="w-4 h-4 text-gray-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card className="shadow-md hover:shadow-lg transition-shadow border-l-4 border-l-purple-500 lg:col-span-2">
                 <CardContent className="p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -2649,7 +2699,79 @@ export default function TechnicienDashboard() {
         </div>
       )}
 
-      {/* Modal de changement de mot de passe */}
+      {/* Modal FTTO */}
+      {showFttoModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowFttoModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <FileText className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">FTTO</h3>
+                  <div className="flex flex-wrap gap-3 mt-1">
+                    {recetteGeneree.total_ftto_technicien > 0 && (
+                      <span className="text-sm font-semibold text-blue-600">
+                        Tech (35%): +{recetteGeneree.total_ftto_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
+                      </span>
+                    )}
+                    <span className="text-sm text-gray-500">{fttoData.length} ticket{fttoData.length !== 1 ? 's' : ''}</span>
+                  </div>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowFttoModal(false)}>
+                <XIcon className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-4 space-y-3">
+              {fttoData.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Aucun ticket FTTO pour cette période</p>
+              ) : (
+                fttoData.map((ft: any) => (
+                  <div key={ft.id} className="border border-blue-200 bg-blue-50 rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 bg-blue-500 text-white rounded-full text-xs font-bold font-mono">
+                          {ft.num_ticket || '—'}
+                        </span>
+                        {ft.code_article && (
+                          <span className="px-2 py-0.5 bg-blue-200 text-blue-800 rounded-full text-xs font-semibold">
+                            {ft.code_article}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-lg font-bold text-blue-600 whitespace-nowrap">
+                          +{parseFloat(ft.part_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
+                          <span className="text-xs font-normal text-gray-500 ml-1">35%</span>
+                        </div>
+                        <div className="text-xs text-gray-500">H.T.: {parseFloat(ft.total_ht || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€</div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 mb-2">
+                      {ft.date_ticket && <div><span className="font-medium text-gray-500">Date:</span> {new Date(ft.date_ticket).toLocaleDateString('fr-FR')}</div>}
+                      {ft.ville && <div><span className="font-medium text-gray-500">Ville:</span> {ft.ville}</div>}
+                      {ft.code_g2r && <div><span className="font-medium text-gray-500">Code G2R:</span> {ft.code_g2r}</div>}
+                      {ft.quantite && <div><span className="font-medium text-gray-500">Quantité:</span> {ft.quantite}</div>}
+                    </div>
+                    {ft.designation && (
+                      <p className="text-xs text-gray-600 border-t border-blue-200 pt-1 mt-1 italic">{ft.designation}</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 border-t bg-gray-50">
+              <Button className="w-full" variant="outline" onClick={() => setShowFttoModal(false)}>
+                Fermer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {showChangePasswordModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
