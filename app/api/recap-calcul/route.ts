@@ -339,8 +339,8 @@ export async function GET(request: NextRequest) {
           e.id as employe_id,
           e.nom as employe_nom,
           e.prenom as employe_prenom,
-          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.35, 2)), 0) as total_ftto_technicien,
-          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.65, 2)), 0) as total_ftto_entreprise
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.40, 2)), 0) as total_ftto_technicien,
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.60, 2)), 0) as total_ftto_entreprise
         FROM ftto_tickets ft
         JOIN employes e ON ft.employe_id = e.id
         WHERE ft.date_ticket IS NOT NULL

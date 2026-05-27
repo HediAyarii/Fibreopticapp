@@ -101,8 +101,8 @@ export async function GET(request: NextRequest) {
     const result = await query(
       `SELECT *,
         (COALESCE(prix_unitaire,0) * COALESCE(quantite,1)) AS total_ht,
-        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.35, 2) AS part_technicien,
-        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.65, 2) AS part_entreprise
+        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.40, 2) AS part_technicien,
+        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.60, 2) AS part_entreprise
        FROM ftto_tickets ${where} ORDER BY date_ticket DESC, id DESC`,
       params
     )
@@ -142,8 +142,8 @@ export async function POST(request: NextRequest) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *,
         (COALESCE(prix_unitaire,0) * COALESCE(quantite,1)) AS total_ht,
-        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.35, 2) AS part_technicien,
-        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.65, 2) AS part_entreprise`,
+        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.40, 2) AS part_technicien,
+        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.60, 2) AS part_entreprise`,
       [
         num_ticket || null,
         date_ticket || null,
@@ -189,8 +189,8 @@ export async function PUT(request: NextRequest) {
        WHERE id=$13
        RETURNING *,
         (COALESCE(prix_unitaire,0) * COALESCE(quantite,1)) AS total_ht,
-        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.35, 2) AS part_technicien,
-        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.65, 2) AS part_entreprise`,
+        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.40, 2) AS part_technicien,
+        ROUND(COALESCE(prix_unitaire,0) * COALESCE(quantite,1) * 0.60, 2) AS part_entreprise`,
       [
         num_ticket || null,
         date_ticket || null,

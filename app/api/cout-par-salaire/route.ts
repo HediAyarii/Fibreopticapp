@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
           e.matricule,
           EXTRACT(MONTH FROM ft.date_ticket)::int as mois,
           EXTRACT(YEAR FROM ft.date_ticket)::int as annee,
-          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.35, 2)), 0) as total_ftto
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.40, 2)), 0) as total_ftto
         FROM ftto_tickets ft
         JOIN employes e ON ft.employe_id = e.id
         WHERE ft.date_ticket IS NOT NULL

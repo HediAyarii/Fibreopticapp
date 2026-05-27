@@ -638,11 +638,11 @@ export function RevenueCalculation({ employees }: RevenueCalculationProps) {
                                               <div className="text-xs text-gray-500 mb-1">Montants</div>
                                               <div className="space-y-1">
                                                 <div className="flex items-center justify-end gap-1 text-blue-400">
-                                                  <span className="text-xs">Tech (35%):</span>
+                                                  <span className="text-xs">Tech (40%):</span>
                                                   <span className="font-bold text-sm">{formatCurrency(Number(ft.part_technicien) || 0)}</span>
                                                 </div>
                                                 <div className="flex items-center justify-end gap-1 text-indigo-400">
-                                                  <span className="text-xs">Ent (65%):</span>
+                                                  <span className="text-xs">Ent (60%):</span>
                                                   <span className="font-bold text-sm">{formatCurrency(Number(ft.part_entreprise) || 0)}</span>
                                                 </div>
                                                 <div className="flex items-center justify-end gap-1 text-blue-300 pt-1 border-t border-blue-500/20">

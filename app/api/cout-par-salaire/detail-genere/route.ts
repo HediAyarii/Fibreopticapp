@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
            ft.prix_unitaire,
            ft.quantite,
            ROUND(ft.prix_unitaire * ft.quantite, 2) AS total_ht,
-           ROUND(ft.prix_unitaire * ft.quantite * 0.35, 2) AS part_technicien
+           ROUND(ft.prix_unitaire * ft.quantite * 0.40, 2) AS part_technicien
          FROM ftto_tickets ft
          JOIN employes e ON ft.employe_id = e.id
          WHERE ft.date_ticket IS NOT NULL

@@ -120,8 +120,8 @@ export default function FttoManager() {
   }
 
   const totalHt = Number(form.prix_unitaire || 0) * Number(form.quantite || 1)
-  const partTech = Math.round(totalHt * 0.35 * 100) / 100
-  const partEnt = Math.round(totalHt * 0.65 * 100) / 100
+  const partTech = Math.round(totalHt * 0.40 * 100) / 100
+  const partEnt = Math.round(totalHt * 0.60 * 100) / 100
 
   const openCreate = () => {
     setEditingTicket(null)
@@ -242,11 +242,11 @@ export default function FttoManager() {
           <p className="text-xs text-blue-400">{filtered.length} ticket(s)</p>
         </div>
         <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
-          <p className="text-xs text-green-500 font-medium mb-1">Part Techniciens (35%)</p>
+          <p className="text-xs text-green-500 font-medium mb-1">Part Techniciens (40%)</p>
           <p className="text-2xl font-bold text-green-700">{totals.part_technicien.toFixed(2)}€</p>
         </div>
         <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 text-center">
-          <p className="text-xs text-purple-500 font-medium mb-1">Part Entreprise (65%)</p>
+          <p className="text-xs text-purple-500 font-medium mb-1">Part Entreprise (60%)</p>
           <p className="text-2xl font-bold text-purple-700">{totals.part_entreprise.toFixed(2)}€</p>
         </div>
       </div>
@@ -277,8 +277,8 @@ export default function FttoManager() {
               <th className="text-right p-3 font-medium text-gray-500">Qté</th>
               <th className="text-right p-3 font-medium text-gray-500">Total H.T.</th>
               <th className="text-left p-3 font-medium text-gray-500">Technicien</th>
-              <th className="text-right p-3 font-medium text-gray-500">Part Tech (35%)</th>
-              <th className="text-right p-3 font-medium text-gray-500">Part Entr. (65%)</th>
+              <th className="text-right p-3 font-medium text-gray-500">Part Tech (40%)</th>
+              <th className="text-right p-3 font-medium text-gray-500">Part Entr. (60%)</th>
               <th className="text-center p-3 font-medium text-gray-500">Actions</th>
             </tr>
           </thead>
@@ -491,11 +491,11 @@ export default function FttoManager() {
               {/* Répartition preview */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-green-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-green-600 font-medium">Part Technicien (35%)</p>
+                  <p className="text-xs text-green-600 font-medium">Part Technicien (40%)</p>
                   <p className="text-xl font-bold text-green-700">{partTech.toFixed(2)}€</p>
                 </div>
                 <div className="bg-purple-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-purple-600 font-medium">Part Entreprise (65%)</p>
+                  <p className="text-xs text-purple-600 font-medium">Part Entreprise (60%)</p>
                   <p className="text-xl font-bold text-purple-700">{partEnt.toFixed(2)}€</p>
                 </div>
               </div>

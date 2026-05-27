@@ -693,7 +693,7 @@ export function RecapCalculTable() {
                     <Calculator className="w-5 h-5 text-blue-500" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">FTTO (part techniciens 35%)</p>
+                    <p className="text-sm text-muted-foreground">FTTO (part techniciens 40%)</p>
                     <p className="text-2xl font-bold text-blue-500">
                       +{formatCurrency(getTotalFttoTechnicien())}
                     </p>
@@ -709,7 +709,7 @@ export function RecapCalculTable() {
                     <Calculator className="w-5 h-5 text-indigo-500" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">FTTO (part entreprise 65%)</p>
+                    <p className="text-sm text-muted-foreground">FTTO (part entreprise 60%)</p>
                     <p className="text-2xl font-bold text-indigo-500">
                       +{formatCurrency(getTotalFttoEntreprise())}
                     </p>

@@ -272,8 +272,8 @@ export async function GET(request: NextRequest) {
       }
       const ftResult = await query(`
         SELECT ft.employe_id,
-          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.35, 2)), 0) as total_ftto_tech,
-          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.65, 2)), 0) as total_ftto_ent
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.40, 2)), 0) as total_ftto_tech,
+          COALESCE(SUM(ROUND(ft.prix_unitaire * ft.quantite * 0.60, 2)), 0) as total_ftto_ent
         FROM ftto_tickets ft
         WHERE ${ftConditions.join(' AND ')}
         GROUP BY ft.employe_id

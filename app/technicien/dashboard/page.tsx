@@ -2713,7 +2713,7 @@ export default function TechnicienDashboard() {
                   <div className="flex flex-wrap gap-3 mt-1">
                     {recetteGeneree.total_ftto_technicien > 0 && (
                       <span className="text-sm font-semibold text-blue-600">
-                        Tech (35%): +{recetteGeneree.total_ftto_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
+                        Tech (40%): +{recetteGeneree.total_ftto_technicien.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
                       </span>
                     )}
                     <span className="text-sm text-gray-500">{fttoData.length} ticket{fttoData.length !== 1 ? 's' : ''}</span>
@@ -2745,7 +2745,7 @@ export default function TechnicienDashboard() {
                       <div className="text-right shrink-0">
                         <div className="text-lg font-bold text-blue-600 whitespace-nowrap">
                           +{parseFloat(ft.part_technicien || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€
-                          <span className="text-xs font-normal text-gray-500 ml-1">35%</span>
+                          <span className="text-xs font-normal text-gray-500 ml-1">40%</span>
                         </div>
                         <div className="text-xs text-gray-500">H.T.: {parseFloat(ft.total_ht || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}€</div>
                       </div>

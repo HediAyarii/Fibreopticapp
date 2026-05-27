@@ -2579,7 +2579,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                               <th className="text-left p-2 text-gray-500 font-medium">Désignation</th>
                               <th className="text-right p-2 text-gray-500 font-medium">P.U.</th>
                               <th className="text-right p-2 text-gray-500 font-medium">Qté</th>
-                              <th className="text-right p-2 text-gray-500 font-medium">Part Tech (35%)</th>
+                              <th className="text-right p-2 text-gray-500 font-medium">Part Tech (40%)</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
