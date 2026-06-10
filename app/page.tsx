@@ -480,6 +480,10 @@ export default function EmployeeTracker() {
   const [materialPage, setMaterialPage] = useState<number>(1)
   const [materialItemsPerPage] = useState<number>(20)
   const [penalties, setPenalties] = useState<any[]>([])
+  const [penaltyFilterDateDebut, setPenaltyFilterDateDebut] = useState('')
+  const [penaltyFilterDateFin, setPenaltyFilterDateFin] = useState('')
+  const [penaltyFilterSearch, setPenaltyFilterSearch] = useState('')
+  const [penaltyFilterType, setPenaltyFilterType] = useState('tous')
   const [claims, setClaims] = useState<any[]>([])
   const [affectations, setAffectations] = useState<any[]>([])
   const [consommationCarburant, setConsommationCarburant] = useState<any[]>([])
@@ -1003,6 +1007,16 @@ export default function EmployeeTracker() {
     // Cleanup
     return () => clearInterval(intervalId)
   }, [activeTab, vehiculesSubTab, isLoggedIn])
+
+  // Écouter les pénalités créées automatiquement par le module Retards pour mise à jour temps réel
+  useEffect(() => {
+    const handlePenaliteRetard = async () => {
+      const fresh = await loadPenaltiesFromDatabase()
+      setPenalties(fresh)
+    }
+    window.addEventListener('penalite-retard-created', handlePenaliteRetard)
+    return () => window.removeEventListener('penalite-retard-created', handlePenaliteRetard)
+  }, [])
 
   // Reload materials when depot filter changes while on materials tab
   useEffect(() => {
@@ -6815,17 +6829,70 @@ La page va se recharger automatiquement...`)
                        </div>
                      </div>
                   </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  {/* Filtres */}
+                  {(() => {
+                    const filteredPenalties = penalties.filter((p: any) => {
+                      if (penaltyFilterDateDebut) {
+                        const pd = new Date(p.date_attribution); pd.setHours(12,0,0,0)
+                        const fd = new Date(penaltyFilterDateDebut); fd.setHours(0,0,0,0)
+                        if (pd < fd) return false
+                      }
+                      if (penaltyFilterDateFin) {
+                        const pd = new Date(p.date_attribution); pd.setHours(12,0,0,0)
+                        const ff = new Date(penaltyFilterDateFin); ff.setHours(23,59,59,999)
+                        if (pd > ff) return false
+                      }
+                      if (penaltyFilterType !== 'tous' && p.type_penalite !== penaltyFilterType) return false
+                      if (penaltyFilterSearch) {
+                        const s = penaltyFilterSearch.toLowerCase()
+                        const nom = `${p.employe_nom || ''} ${p.employe_prenom || ''}`.toLowerCase()
+                        if (!nom.includes(s)) return false
+                      }
+                      return true
+                    })
+                    const hasFilter = penaltyFilterDateDebut || penaltyFilterDateFin || penaltyFilterType !== 'tous' || penaltyFilterSearch
+                    return (<>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-white/5 rounded-lg border border-white/10">
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">Date début</label>
+                      <input type="date" value={penaltyFilterDateDebut} onChange={e => setPenaltyFilterDateDebut(e.target.value)} className="w-full h-9 rounded-md border border-white/20 bg-white/5 px-2 text-sm text-white" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">Date fin</label>
+                      <input type="date" value={penaltyFilterDateFin} onChange={e => setPenaltyFilterDateFin(e.target.value)} className="w-full h-9 rounded-md border border-white/20 bg-white/5 px-2 text-sm text-white" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">Type</label>
+                      <select value={penaltyFilterType} onChange={e => setPenaltyFilterType(e.target.value)} className="w-full h-9 rounded-md border border-white/20 bg-white/5 px-2 text-sm text-white">
+                        <option value="tous">Tous les types</option>
+                        <option value="dossier_non_cloture">Dossier non clôturé</option>
+                        <option value="retard">Retard</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-400 mb-1 block">Recherche employé</label>
+                      <div className="flex gap-2">
+                        <input type="text" placeholder="Nom..." value={penaltyFilterSearch} onChange={e => setPenaltyFilterSearch(e.target.value)} className="flex-1 h-9 rounded-md border border-white/20 bg-white/5 px-2 text-sm text-white placeholder:text-gray-500" />
+                        {hasFilter && (
+                          <Button variant="outline" size="sm" className="h-9 px-2 border-white/20" onClick={() => { setPenaltyFilterDateDebut(''); setPenaltyFilterDateFin(''); setPenaltyFilterType('tous'); setPenaltyFilterSearch('') }}>
+                            <X className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-400">{filteredPenalties.length} pénalité{filteredPenalties.length > 1 ? 's' : ''} affichée{filteredPenalties.length > 1 ? 's' : ''}{hasFilter ? ` (filtrée${filteredPenalties.length > 1 ? 's' : ''} sur ${penalties.length})` : ''}</p>
                   {loadingPenalties ? (
                     <div className="text-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                       <p className="mt-2 text-muted-foreground">Chargement des pénalités...</p>
                     </div>
-                  ) : penalties.length === 0 ? (
+                  ) : filteredPenalties.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Aucune pénalité trouvée</h3>
-                         <p>Ajoutez des pénalités pour commencer à gérer les sanctions.</p>
+                      <h3 className="text-lg font-semibold mb-2">{penalties.length === 0 ? 'Aucune pénalité trouvée' : 'Aucun résultat pour ces filtres'}</h3>
+                         <p>{penalties.length === 0 ? 'Ajoutez des pénalités pour commencer à gérer les sanctions.' : 'Modifiez les filtres pour afficher des résultats.'}</p>
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
@@ -6841,7 +6908,7 @@ La page va se recharger automatiquement...`)
                           </tr>
                         </thead>
                         <tbody>
-                             {penalties.slice(0, 50).map((penalty, index) => (
+                             {filteredPenalties.slice(0, 100).map((penalty: any, index: number) => (
                                <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                               <td className="p-4">
                                    <div className="flex items-center gap-2">
@@ -6893,6 +6960,8 @@ La page va se recharger automatiquement...`)
                       </table>
                     </div>
                   )}
+                  </>)
+                  })()}
                   </CardContent>
                 </Card>
                </div>

@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Trash2,
   Pencil,
+  AlarmClock,
 } from "lucide-react"
 import { useUserPermissions } from "@/hooks/useUserPermissions"
 
@@ -50,6 +51,17 @@ interface Employee {
   prenom: string
   matricule: string
   poste: string
+}
+
+interface Retard {
+  id: number
+  employe_id: number | null
+  nom: string
+  prenom: string
+  societe: string
+  date_retard: string
+  description: string | null
+  created_at: string
 }
 
 const TYPE_ABSENCE_LABELS: Record<string, string> = {
@@ -88,7 +100,7 @@ export function AbsencesManager() {
   const [absences, setAbsences] = useState<Absence[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
-  const [activeView, setActiveView] = useState<'calendrier' | 'demandes' | 'liste'>('calendrier')
+  const [activeView, setActiveView] = useState<'calendrier' | 'demandes' | 'liste' | 'retards'>('calendrier')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDecisionModal, setShowDecisionModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -115,6 +127,25 @@ export function AbsencesManager() {
     if (cm >= 8) return cm - 8  // Sept=0, Oct=1, Nov=2, Dec=3
     return cm + 4               // Jan=4, Feb=5, Mar=6, Apr=7, May=8, Jun=9, Jul=10, Aug=11
   })
+
+  // Retards state
+  const [retards, setRetards] = useState<Retard[]>([])
+  const [loadingRetards, setLoadingRetards] = useState(false)
+  const [showCreateRetardModal, setShowCreateRetardModal] = useState(false)
+  const [showEditRetardModal, setShowEditRetardModal] = useState(false)
+  const [editRetard, setEditRetard] = useState<Retard | null>(null)
+  const [newRetard, setNewRetard] = useState({
+    employe_id: '',
+    nom: '',
+    prenom: '',
+    societe: 'AXECOM',
+    date_retard: '',
+    description: ''
+  })
+  const [retardFilterSearch, setRetardFilterSearch] = useState('')
+  const [retardFilterSociete, setRetardFilterSociete] = useState('tous')
+  const [retardFilterDateDebut, setRetardFilterDateDebut] = useState('')
+  const [retardFilterDateFin, setRetardFilterDateFin] = useState('')
 
   const [newAbsence, setNewAbsence] = useState({
     employe_id: '',
@@ -164,6 +195,115 @@ export function AbsencesManager() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  const loadRetards = useCallback(async () => {
+    setLoadingRetards(true)
+    try {
+      const res = await fetch('/api/retards')
+      if (res.ok) {
+        const data = await res.json()
+        setRetards(data.retards || [])
+      }
+    } catch (error) {
+      console.error('Erreur chargement retards:', error)
+    } finally {
+      setLoadingRetards(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeView === 'retards') loadRetards()
+  }, [activeView, loadRetards])
+
+  const handleCreateRetard = async () => {
+    if (!newRetard.date_retard || !newRetard.societe) {
+      alert('La date et la société sont obligatoires')
+      return
+    }
+
+    let nom = newRetard.nom
+    let prenom = newRetard.prenom
+    let employe_id = newRetard.employe_id ? parseInt(newRetard.employe_id) : null
+
+    if (employe_id) {
+      const emp = employees.find(e => e.id === employe_id)
+      if (emp) { nom = emp.nom; prenom = emp.prenom }
+    }
+
+    if (!nom || !prenom) {
+      alert('Veuillez sélectionner un technicien')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/retards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employe_id, nom, prenom, societe: newRetard.societe, date_retard: newRetard.date_retard, description: newRetard.description || null })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.penaliteCreee) {
+          // Notifier page.tsx de recharger les pénalités en temps réel
+          window.dispatchEvent(new CustomEvent('penalite-retard-created', { detail: data.penaliteCreee }))
+          alert(`Retard enregistré !\n\n⚠️ PÉNALITÉ AUTOMATIQUE CRÉÉE : 3 retards cette semaine pour ce technicien.\nPénalité de 30€ créée automatiquement (${data.penaliteCreee.numero_penalite})`)
+        } else {
+          alert('Retard enregistré avec succès !')
+        }
+        setShowCreateRetardModal(false)
+        setNewRetard({ employe_id: '', nom: '', prenom: '', societe: 'AXECOM', date_retard: '', description: '' })
+        loadRetards()
+      } else {
+        const err = await response.json()
+        alert(err.error || 'Erreur')
+      }
+    } catch (error) {
+      console.error('Erreur création retard:', error)
+      alert('Erreur lors de la création')
+    }
+  }
+
+  const handleEditRetard = async () => {
+    if (!editRetard) return
+    try {
+      const response = await fetch('/api/retards', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editRetard.id,
+          employe_id: editRetard.employe_id,
+          nom: editRetard.nom,
+          prenom: editRetard.prenom,
+          societe: editRetard.societe,
+          date_retard: editRetard.date_retard?.split('T')[0],
+          description: editRetard.description || null
+        })
+      })
+      if (response.ok) {
+        alert('Retard modifié avec succès !')
+        setShowEditRetardModal(false)
+        setEditRetard(null)
+        loadRetards()
+      } else {
+        const err = await response.json()
+        alert(err.error || 'Erreur')
+      }
+    } catch (error) {
+      console.error('Erreur modification retard:', error)
+      alert('Erreur lors de la modification')
+    }
+  }
+
+  const handleDeleteRetard = async (id: number) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer ce retard ?')) return
+    try {
+      const response = await fetch(`/api/retards?id=${id}`, { method: 'DELETE' })
+      if (response.ok) loadRetards()
+    } catch (error) {
+      console.error('Erreur suppression retard:', error)
+    }
+  }
 
   const handleCreateAbsence = async () => {
     if (!newAbsence.date_debut || !newAbsence.date_fin) {
@@ -388,6 +528,12 @@ export function AbsencesManager() {
         </Button>
         <Button variant={activeView === 'liste' ? 'default' : 'outline'} size="sm" onClick={() => setActiveView('liste')}>
           <Users className="w-4 h-4 mr-2" />Toutes les absences
+        </Button>
+        <Button variant={activeView === 'retards' ? 'default' : 'outline'} size="sm" onClick={() => setActiveView('retards')} className={activeView === 'retards' ? '' : 'border-orange-300 text-orange-700 hover:bg-orange-50'}>
+          <AlarmClock className="w-4 h-4 mr-2" />Retards
+          {retards.length > 0 && activeView !== 'retards' && (
+            <span className="ml-1.5 bg-orange-100 text-orange-700 text-xs rounded-full px-1.5 py-0.5 font-semibold">{retards.length}</span>
+          )}
         </Button>
       </div>
 
@@ -748,6 +894,267 @@ export function AbsencesManager() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* ===== RETARDS ===== */}
+      {activeView === 'retards' && (() => {
+        const filteredRetards = retards.filter(r => {
+          if (retardFilterSociete !== 'tous' && r.societe !== retardFilterSociete) return false
+          if (retardFilterSearch) {
+            const s = retardFilterSearch.toLowerCase()
+            if (!(`${r.nom} ${r.prenom}`.toLowerCase().includes(s) || `${r.prenom} ${r.nom}`.toLowerCase().includes(s))) return false
+          }
+          if (retardFilterDateDebut) {
+            const dr = new Date(r.date_retard); dr.setHours(12,0,0,0)
+            const fd = new Date(retardFilterDateDebut); fd.setHours(0,0,0,0)
+            if (dr < fd) return false
+          }
+          if (retardFilterDateFin) {
+            const dr = new Date(r.date_retard); dr.setHours(12,0,0,0)
+            const ff = new Date(retardFilterDateFin); ff.setHours(23,59,59,999)
+            if (dr > ff) return false
+          }
+          return true
+        })
+
+        // Comptage retards par technicien sur la semaine en cours (lundi-dimanche)
+        const now = new Date()
+        const dayOfWeekNow = now.getDay() === 0 ? 6 : now.getDay() - 1
+        const lundiSemaine = new Date(now)
+        lundiSemaine.setDate(now.getDate() - dayOfWeekNow)
+        lundiSemaine.setHours(0, 0, 0, 0)
+        const dimancheSemaine = new Date(lundiSemaine)
+        dimancheSemaine.setDate(lundiSemaine.getDate() + 6)
+        dimancheSemaine.setHours(23, 59, 59, 999)
+
+        const retardsParTech: Record<string, number> = {}
+        retards.forEach(r => {
+          const dr = new Date(r.date_retard)
+          dr.setHours(12, 0, 0, 0)
+          if (dr >= lundiSemaine && dr <= dimancheSemaine) {
+            const key = `${r.nom}_${r.prenom}`
+            retardsParTech[key] = (retardsParTech[key] || 0) + 1
+          }
+        })
+
+        return (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <AlarmClock className="w-5 h-5 text-orange-500" />
+                  Gestion des Retards
+                  <span className="text-sm font-normal text-gray-500 ml-2">({retards.length} total)</span>
+                </CardTitle>
+                <Button onClick={() => setShowCreateRetardModal(true)} size="sm" className="bg-orange-600 hover:bg-orange-700 text-white">
+                  <Plus className="w-4 h-4 mr-2" />Nouveau Retard
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Info règle */}
+              <div className="flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-800">
+                <AlarmClock className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span><strong>Règle automatique :</strong> 3 retards dans la même semaine (lundi → dimanche) = pénalité de 30€ créée automatiquement dans la section Pénalités.</span>
+              </div>
+
+              {/* Filtres */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-4 bg-gray-50 rounded-lg border">
+                <div>
+                  <Label className="text-xs text-gray-500 mb-1 block">Date début</Label>
+                  <Input type="date" value={retardFilterDateDebut} onChange={(e) => setRetardFilterDateDebut(e.target.value)} className="h-9" />
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500 mb-1 block">Date fin</Label>
+                  <Input type="date" value={retardFilterDateFin} onChange={(e) => setRetardFilterDateFin(e.target.value)} className="h-9" />
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500 mb-1 block">Société</Label>
+                  <select value={retardFilterSociete} onChange={(e) => setRetardFilterSociete(e.target.value)} className="w-full h-9 rounded-md border border-gray-300 px-2 text-sm">
+                    <option value="tous">Toutes</option>
+                    <option value="AXECOM">AXECOM</option>
+                    <option value="ERT">ERT</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500 mb-1 block">Recherche technicien</Label>
+                  <Input placeholder="Nom ou prénom..." value={retardFilterSearch} onChange={(e) => setRetardFilterSearch(e.target.value)} className="h-9" />
+                </div>
+                <div className="flex items-end gap-2">
+                  <Button variant="outline" size="sm" onClick={loadRetards} disabled={loadingRetards}>
+                    <RefreshCw className={`w-4 h-4 mr-1 ${loadingRetards ? 'animate-spin' : ''}`} />Actualiser
+                  </Button>
+                  {(retardFilterDateDebut || retardFilterDateFin || retardFilterSociete !== 'tous' || retardFilterSearch) && (
+                    <Button variant="outline" size="sm" onClick={() => { setRetardFilterDateDebut(''); setRetardFilterDateFin(''); setRetardFilterSociete('tous'); setRetardFilterSearch('') }}>
+                      <X className="w-3 h-3 mr-1" />Reset
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <p className="text-sm text-gray-500">{filteredRetards.length} retard{filteredRetards.length > 1 ? 's' : ''} trouvé{filteredRetards.length > 1 ? 's' : ''}</p>
+
+              {filteredRetards.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <AlarmClock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Aucun retard enregistré</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left p-3">Date</th>
+                        <th className="text-left p-3">Technicien</th>
+                        <th className="text-left p-3">Société</th>
+                        <th className="text-left p-3">Description</th>
+                        <th className="text-center p-3">Retards semaine</th>
+                        <th className="text-center p-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRetards.map((retard) => {
+                        const techKey = `${retard.nom}_${retard.prenom}`
+                        const totalTech = retardsParTech[techKey] || 0
+                        const isPenaltyTriggered = totalTech >= 3
+                        return (
+                          <tr key={retard.id} className="border-b hover:bg-gray-50">
+                            <td className="p-3 whitespace-nowrap font-medium">
+                              {new Date(retard.date_retard).toLocaleDateString('fr-FR')}
+                            </td>
+                            <td className="p-3 font-medium">{retard.nom} {retard.prenom}</td>
+                            <td className="p-3">
+                              <Badge variant="outline" className={retard.societe === 'AXECOM' ? 'border-blue-300 text-blue-700' : 'border-purple-300 text-purple-700'}>
+                                {retard.societe}
+                              </Badge>
+                            </td>
+                            <td className="p-3 max-w-[250px] truncate text-gray-600">{retard.description || '-'}</td>
+                            <td className="p-3 text-center">
+                              <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold ${
+                                isPenaltyTriggered ? 'bg-red-100 text-red-700' :
+                                totalTech === 2 ? 'bg-orange-100 text-orange-700' :
+                                totalTech === 1 ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-gray-100 text-gray-500'
+                              }`}
+                              title={totalTech > 0 ? `${totalTech}/3 retard(s) cette semaine` : 'Aucun retard cette semaine'}>
+                                {totalTech}/3
+                                {isPenaltyTriggered && ' ⚠️'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="flex gap-1 justify-center">
+                                <Button size="sm" variant="outline" className="h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700"
+                                  onClick={() => { setEditRetard(retard); setShowEditRetardModal(true) }} title="Modifier">
+                                  <Pencil className="w-3 h-3" />
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 px-2 text-xs bg-red-50 hover:bg-red-100 border-red-300 text-red-700"
+                                  onClick={() => handleDeleteRetard(retard.id)} title="Supprimer">
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })()}
+
+      {/* ===== MODAL CRÉATION RETARD ===== */}
+      {showCreateRetardModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2"><AlarmClock className="w-5 h-5 text-orange-500" />Nouveau Retard</h3>
+              <Button variant="ghost" size="sm" onClick={() => setShowCreateRetardModal(false)}><X className="w-4 h-4" /></Button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <Label>Technicien *</Label>
+                <Select value={newRetard.employe_id} onValueChange={(value) => {
+                  const emp = employees.find(e => e.id === parseInt(value))
+                  setNewRetard({ ...newRetard, employe_id: value, nom: emp?.nom || '', prenom: emp?.prenom || '' })
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Sélectionner un technicien" /></SelectTrigger>
+                  <SelectContent>
+                    {employees.map((emp) => (
+                      <SelectItem key={emp.id} value={String(emp.id)}>{emp.nom} {emp.prenom} {emp.matricule ? `(${emp.matricule})` : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Date du retard *</Label>
+                <Input type="date" value={newRetard.date_retard} onChange={(e) => setNewRetard({ ...newRetard, date_retard: e.target.value })} />
+              </div>
+              <div>
+                <Label>Société *</Label>
+                <Select value={newRetard.societe} onValueChange={(value) => setNewRetard({ ...newRetard, societe: value })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="AXECOM">AXECOM</SelectItem>
+                    <SelectItem value="ERT">ERT</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Textarea value={newRetard.description} onChange={(e) => setNewRetard({ ...newRetard, description: e.target.value })} placeholder="Détails du retard..." rows={3} />
+              </div>
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button variant="outline" onClick={() => setShowCreateRetardModal(false)}>Annuler</Button>
+                <Button className="bg-orange-600 hover:bg-orange-700 text-white" onClick={handleCreateRetard}>
+                  <Plus className="w-4 h-4 mr-2" />Enregistrer
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL MODIFICATION RETARD ===== */}
+      {showEditRetardModal && editRetard && (
+        <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2"><Pencil className="w-5 h-5" />Modifier le retard</h3>
+              <Button variant="ghost" size="sm" onClick={() => { setShowEditRetardModal(false); setEditRetard(null) }}><X className="w-4 h-4" /></Button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="font-semibold">{editRetard.nom} {editRetard.prenom}</p>
+              </div>
+              <div>
+                <Label>Date du retard *</Label>
+                <Input type="date" value={editRetard.date_retard?.split('T')[0]} onChange={(e) => setEditRetard({ ...editRetard, date_retard: e.target.value })} />
+              </div>
+              <div>
+                <Label>Société *</Label>
+                <Select value={editRetard.societe} onValueChange={(value) => setEditRetard({ ...editRetard, societe: value })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="AXECOM">AXECOM</SelectItem>
+                    <SelectItem value="ERT">ERT</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Textarea value={editRetard.description || ''} onChange={(e) => setEditRetard({ ...editRetard, description: e.target.value })} placeholder="Détails du retard..." rows={3} />
+              </div>
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button variant="outline" onClick={() => { setShowEditRetardModal(false); setEditRetard(null) }}>Annuler</Button>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleEditRetard}>
+                  <Pencil className="w-4 h-4 mr-2" />Enregistrer
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ===== MODAL CRÉATION ===== */}
