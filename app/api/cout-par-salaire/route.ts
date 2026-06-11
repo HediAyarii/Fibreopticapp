@@ -103,10 +103,8 @@ export async function GET(request: NextRequest) {
                 THEN EXTRACT(MONTH FROM i.cloture_hotline::date)::int
               WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
                 THEN EXTRACT(MONTH FROM TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY'))::int
-              WHEN i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-                THEN EXTRACT(MONTH FROM i.date_rdv::date)::int
-              WHEN i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
-                THEN EXTRACT(MONTH FROM TO_DATE(i.date_rdv, 'DD/MM/YYYY'))::int
+              -- Pas de fallback date_rdv : interventions sans date de clôture exclues
+              -- (à classer manuellement via l'onglet dédié dans la section Interventions)
               ELSE NULL
             END as mois_cloture,
             CASE
@@ -118,10 +116,7 @@ export async function GET(request: NextRequest) {
                 THEN EXTRACT(YEAR FROM i.cloture_hotline::date)::int
               WHEN i.cloture_hotline IS NOT NULL AND i.cloture_hotline != '' AND i.cloture_hotline != 'nan' AND i.cloture_hotline ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
                 THEN EXTRACT(YEAR FROM TO_DATE(SUBSTRING(i.cloture_hotline FROM 1 FOR 10), 'DD/MM/YYYY'))::int
-              WHEN i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND i.date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-                THEN EXTRACT(YEAR FROM i.date_rdv::date)::int
-              WHEN i.date_rdv IS NOT NULL AND i.date_rdv != '' AND i.date_rdv != 'nan' AND i.date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
-                THEN EXTRACT(YEAR FROM TO_DATE(i.date_rdv, 'DD/MM/YYYY'))::int
+              -- Pas de fallback date_rdv (cohérence avec mois_cloture)
               ELSE NULL
             END as annee_cloture
           FROM interventions i

@@ -63,6 +63,7 @@ import { CoutParSalaireManager } from "@/components/CoutParSalaireManager"
 import KPIProductionSection from "@/components/KPIProductionSection"
 import ReclamationsTechniques from "@/components/ReclamationsTechniques"
 import { AbsencesManager } from "@/components/AbsencesManager"
+import { InterventionsSansCloture } from "@/components/InterventionsSansCloture"
 import ReclaFreeManager from "@/components/ReclaFreeManager"
 import FttoManager from "@/components/FttoManager"
 import AutoSyncTotalGenere from "@/components/AutoSyncTotalGenere"
@@ -480,6 +481,7 @@ export default function EmployeeTracker() {
   const [materialPage, setMaterialPage] = useState<number>(1)
   const [materialItemsPerPage] = useState<number>(20)
   const [penalties, setPenalties] = useState<any[]>([])
+  const [interventionsSubTab, setInterventionsSubTab] = useState<'toutes' | 'sans-cloture'>('toutes')
   const [penaltyFilterDateDebut, setPenaltyFilterDateDebut] = useState('')
   const [penaltyFilterDateFin, setPenaltyFilterDateFin] = useState('')
   const [penaltyFilterSearch, setPenaltyFilterSearch] = useState('')
@@ -5028,6 +5030,28 @@ La page va se recharger automatiquement...`)
                   </div>
               </div>
 
+               {/* Sous-onglets Interventions */}
+               <div className="flex gap-2 border-b border-white/10 pb-2">
+                 <Button
+                   variant={interventionsSubTab === 'toutes' ? 'default' : 'outline'}
+                   size="sm"
+                   onClick={() => setInterventionsSubTab('toutes')}
+                 >
+                   <FileText className="w-4 h-4 mr-2" />Toutes les interventions
+                 </Button>
+                 <Button
+                   variant={interventionsSubTab === 'sans-cloture' ? 'default' : 'outline'}
+                   size="sm"
+                   onClick={() => setInterventionsSubTab('sans-cloture')}
+                   className={interventionsSubTab === 'sans-cloture' ? '' : 'border-orange-300 text-orange-700 hover:bg-orange-50'}
+                 >
+                   <AlertCircle className="w-4 h-4 mr-2" />Sans date de clôture (à classer)
+                 </Button>
+               </div>
+
+               {interventionsSubTab === 'sans-cloture' && <InterventionsSansCloture />}
+
+               {interventionsSubTab === 'toutes' && (
                <Card className="glass-card border border-white/20 hover-lift">
                  <CardHeader>
                   <CardTitle className="flex items-center gap-3 text-xl font-bold">
@@ -5476,6 +5500,7 @@ La page va se recharger automatiquement...`)
                   )}
                 </CardContent>
               </Card>
+               )}
             </div>
           )}
 
