@@ -25,13 +25,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Filtre par période (optionnel)
+    // date_rdv est en TEXTE avec formats mixtes (YYYY-MM-DD et DD/MM/YYYY) -> parsing explicite
+    // (une comparaison de texte brute exclurait à tort les dates au format DD/MM/YYYY)
     if (dateStart) {
-      whereClauses.push(`date_rdv >= $${paramIndex}`)
+      whereClauses.push(`date_rdv IS NOT NULL AND date_rdv != '' AND date_rdv != 'nan' AND (
+        (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_rdv::date >= $${paramIndex}::date)
+        OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(SUBSTRING(date_rdv FROM 1 FOR 10), 'DD/MM/YYYY') >= $${paramIndex}::date)
+      )`)
       params.push(dateStart)
       paramIndex++
     }
     if (dateEnd) {
-      whereClauses.push(`date_rdv <= $${paramIndex}`)
+      whereClauses.push(`date_rdv IS NOT NULL AND date_rdv != '' AND date_rdv != 'nan' AND (
+        (date_rdv ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_rdv::date <= $${paramIndex}::date)
+        OR (date_rdv ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}' AND TO_DATE(SUBSTRING(date_rdv FROM 1 FOR 10), 'DD/MM/YYYY') <= $${paramIndex}::date)
+      )`)
       params.push(dateEnd)
       paramIndex++
     }

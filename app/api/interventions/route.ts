@@ -272,15 +272,17 @@ export async function GET(request: NextRequest) {
       
       if (employeResult.rows.length > 0) {
         const employe = employeResult.rows[0]
-        whereClauses.push(`nom_technicien = $${paramIndex} AND prenom_technicien = $${paramIndex + 1}`)
+        // Matching insensible à la casse (employes en MAJUSCULES vs interventions en casse normale)
+        whereClauses.push(`LOWER(nom_technicien) = LOWER($${paramIndex}) AND LOWER(prenom_technicien) = LOWER($${paramIndex + 1})`)
         params.push(employe.nom, employe.prenom)
         paramIndex += 2
       }
     }
-    
+
     // Filtre direct par nom et prénom du technicien
     if (nomTechnicien && prenomTechnicien) {
-      whereClauses.push(`nom_technicien = $${paramIndex} AND prenom_technicien = $${paramIndex + 1}`)
+      // Matching insensible à la casse
+      whereClauses.push(`LOWER(nom_technicien) = LOWER($${paramIndex}) AND LOWER(prenom_technicien) = LOWER($${paramIndex + 1})`)
       params.push(nomTechnicien, prenomTechnicien)
       paramIndex += 2
     }

@@ -57,8 +57,8 @@ export async function GET(request: NextRequest) {
           END as recette_technicien
         FROM interventions i
         WHERE i.statut = 'CLOTURE TERMINEE'
-          AND i.nom_technicien = $1
-          AND i.prenom_technicien = $2
+          AND LOWER(i.nom_technicien) = LOWER($1)
+          AND LOWER(i.prenom_technicien) = LOWER($2)
     `;
 
     const params: any[] = [nomTechnicien, prenomTechnicien];
