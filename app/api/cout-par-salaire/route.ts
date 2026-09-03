@@ -31,32 +31,9 @@ function buildDateFilter(moisParam: string, anneeParam: string): string {
   `
 }
 
-// GET - Récupérer les coûts par salarié avec filtres (OPTIMISÉ - 1 seule requête)
-export async function GET(request: NextRequest) {
-  try {
-    await ensureReclaFreeTable()
-    const { searchParams } = new URL(request.url)
-    const mois = searchParams.get('mois')
-    const annee = searchParams.get('annee')
-    
-    let whereClause = ''
-    const params: any[] = []
-    
-    if (mois && annee) {
-      whereClause = 'WHERE cps.mois = $1 AND cps.annee = $2'
-      params.push(parseInt(mois), parseInt(annee))
-    } else if (mois) {
-      whereClause = 'WHERE cps.mois = $1'
-      params.push(parseInt(mois))
-    } else if (annee) {
-      whereClause = 'WHERE cps.annee = $1'
-      params.push(parseInt(annee))
-    }
-
-    const dateFilter = buildDateFilter('cps.mois', 'cps.annee')
-    
-    // UNE SEULE requête qui calcule tout : revenu, paiements, amendes, primes, RAP
-    const sqlQuery = `
+// CTE communes : revenus interventions, paiements, primes, amendes, récla free, FTTO
+// Partagées entre les lignes réelles (cout_par_salaire) et les lignes prévisionnelles (employés sans import)
+const AGGREGATION_CTES = `
       WITH 
       -- Pré-calculer le revenu par matricule/mois/année
       revenue_by_matricule AS (
@@ -176,7 +153,50 @@ export async function GET(request: NextRequest) {
         JOIN employes e ON ft.employe_id = e.id
         WHERE ft.date_ticket IS NOT NULL
         GROUP BY e.matricule, EXTRACT(MONTH FROM ft.date_ticket), EXTRACT(YEAR FROM ft.date_ticket)
-      )
+      ),
+      -- Pré-calculer les pénalités par matricule/mois/année
+      -- (utilisé uniquement pour les lignes prévisionnelles : les lignes réelles
+      --  s'appuient sur la colonne cout_par_salaire.penalite déjà synchronisée)
+      penalites_totaux AS (
+        SELECT
+          e.matricule,
+          EXTRACT(MONTH FROM p.date_penalite)::int as mois,
+          EXTRACT(YEAR FROM p.date_penalite)::int as annee,
+          COALESCE(SUM(p.montant), 0) as total_penalites
+        FROM penalites p
+        JOIN employes e ON p.employe_id = e.id
+        WHERE e.matricule IS NOT NULL
+          AND p.date_penalite IS NOT NULL
+        GROUP BY e.matricule, EXTRACT(MONTH FROM p.date_penalite), EXTRACT(YEAR FROM p.date_penalite)
+      )`
+
+// GET - Récupérer les coûts par salarié avec filtres (OPTIMISÉ - 1 seule requête)
+export async function GET(request: NextRequest) {
+  try {
+    await ensureReclaFreeTable()
+    const { searchParams } = new URL(request.url)
+    const mois = searchParams.get('mois')
+    const annee = searchParams.get('annee')
+    
+    let whereClause = ''
+    const params: any[] = []
+    
+    if (mois && annee) {
+      whereClause = 'WHERE cps.mois = $1 AND cps.annee = $2'
+      params.push(parseInt(mois), parseInt(annee))
+    } else if (mois) {
+      whereClause = 'WHERE cps.mois = $1'
+      params.push(parseInt(mois))
+    } else if (annee) {
+      whereClause = 'WHERE cps.annee = $1'
+      params.push(parseInt(annee))
+    }
+
+    const dateFilter = buildDateFilter('cps.mois', 'cps.annee')
+    
+    // UNE SEULE requête qui calcule tout : revenu, paiements, amendes, primes, RAP
+    const sqlQuery = `
+      ${AGGREGATION_CTES}
       SELECT 
         cps.id,
         cps.nom,
@@ -229,7 +249,8 @@ export async function GET(request: NextRequest) {
           - COALESCE(am.total_amendes, 0)
         ) as rap,
         cps.created_at,
-        cps.updated_at
+        cps.updated_at,
+        FALSE as is_previsionnel
       FROM cout_par_salaire cps
       LEFT JOIN employes e ON cps.matricule IS NOT NULL AND cps.matricule = e.matricule AND e.statut = 'actif'
       LEFT JOIN revenue_by_matricule rev ON cps.matricule IS NOT NULL AND rev.matricule_calc = cps.matricule AND rev.mois_cloture = cps.mois AND rev.annee_cloture = cps.annee
@@ -243,13 +264,96 @@ export async function GET(request: NextRequest) {
     `
 
     const result = await query(sqlQuery, params)
+    let couts = result.rows
+
+    // Lignes PRÉVISIONNELLES : employés actifs qui n'ont pas encore de ligne pour ce mois.
+    // Permet de consulter tout ce qui est déjà connu (généré, récla free, FTTO, amendes,
+    // pénalités) AVANT l'import de l'export de paie.
+    //
+    // Dès qu'un import existe pour la période, l'export de paie fait foi : les employés
+    // absents du fichier ne sont plus affichés du tout. Pour rajouter un technicien qui a
+    // généré des recettes sans figurer dans l'import, utiliser le bouton "Tech. Manquants".
+    const aucunImportPourLaPeriode = couts.length === 0
+
+    if (mois && annee && aucunImportPourLaPeriode && searchParams.get('previsionnel') !== 'false') {
+      const previsionnelQuery = `
+        ${AGGREGATION_CTES}
+        SELECT
+          NULL::integer as id,
+          e.nom,
+          e.prenom,
+          0::numeric as salaire_net,
+          0::numeric as salaire_brut,
+          0::numeric as cout_total,
+          0::numeric as charge,
+          $1::integer as mois,
+          $2::integer as annee,
+          e.matricule,
+          COALESCE(e.pourcentage_taxe, 50) as taxe,
+          e.nom as nom_employe,
+          e.prenom as prenom_employe,
+          0::numeric as impot,
+          COALESCE(pen.total_penalites, 0) as penalite,
+          0::numeric as prime,
+          0::numeric as total_primes,
+          COALESCE(rev.total_genere, 0) + COALESCE(rft.total_recla_free, 0) + COALESCE(ftt.total_ftto, 0) as total_genere,
+          0::numeric as total_paiements,
+          COALESCE(am.total_amendes, 0) as total_amendes,
+          COALESCE(rft.total_recla_free, 0) as total_recla_free,
+          COALESCE(ftt.total_ftto, 0) as total_ftto,
+          -- RAP provisoire : salaire net et impôt inconnus tant que l'export n'est pas importé
+          (
+            COALESCE(rev.total_genere, 0) + COALESCE(rft.total_recla_free, 0) + COALESCE(ftt.total_ftto, 0)
+            - COALESCE(pen.total_penalites, 0)
+            - COALESCE(am.total_amendes, 0)
+          ) as rap,
+          NULL::timestamp as created_at,
+          NULL::timestamp as updated_at,
+          TRUE as is_previsionnel
+        FROM employes e
+        LEFT JOIN revenue_by_matricule rev ON rev.matricule_calc = e.matricule AND rev.mois_cloture = $1 AND rev.annee_cloture = $2
+        LEFT JOIN amendes_totaux am ON am.matricule = e.matricule AND am.mois = $1 AND am.annee = $2
+        LEFT JOIN recla_free_totaux rft ON rft.matricule = e.matricule AND rft.mois = $1 AND rft.annee = $2
+        LEFT JOIN ftto_totaux ftt ON ftt.matricule = e.matricule AND ftt.mois = $1 AND ftt.annee = $2
+        LEFT JOIN penalites_totaux pen ON pen.matricule = e.matricule AND pen.mois = $1 AND pen.annee = $2
+        WHERE e.statut = 'actif'
+          AND e.matricule IS NOT NULL
+          -- Pas déjà présent via le matricule
+          AND NOT EXISTS (
+            SELECT 1 FROM cout_par_salaire cps
+            WHERE cps.matricule = e.matricule AND cps.mois = $1 AND cps.annee = $2
+          )
+          -- Ni via le nom/prénom (ligne importée dont le matricule n'est pas encore rattaché)
+          AND NOT EXISTS (
+            SELECT 1 FROM cout_par_salaire cps
+            WHERE LOWER(TRIM(cps.nom)) = LOWER(TRIM(e.nom))
+              AND LOWER(TRIM(cps.prenom)) = LOWER(TRIM(e.prenom))
+              AND cps.mois = $1 AND cps.annee = $2
+          )
+        ORDER BY e.nom, e.prenom
+      `
+
+      try {
+        const previsionnel = await query(previsionnelQuery, [parseInt(mois), parseInt(annee)])
+        couts = [...couts, ...previsionnel.rows]
+        // Tri global : lignes importées et prévisionnelles mélangées par ordre alphabétique
+        couts.sort((a: any, b: any) =>
+          `${a.nom || ''} ${a.prenom || ''}`.localeCompare(`${b.nom || ''} ${b.prenom || ''}`, 'fr')
+        )
+      } catch (previsionnelError) {
+        // Une erreur ici ne doit jamais empêcher l'affichage des lignes réelles
+        console.error('⚠️ Erreur calcul lignes prévisionnelles:', previsionnelError)
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      couts: result.rows,
-      total: result.rows.length
+      couts,
+      total: couts.length,
+      total_importes: couts.filter((c: any) => !c.is_previsionnel).length,
+      total_previsionnels: couts.filter((c: any) => c.is_previsionnel).length
     })
-    
+
   } catch (error) {
     console.error("Erreur GET cout-par-salaire:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -315,19 +419,30 @@ export async function POST(request: NextRequest) {
                  
                  console.log('Valeurs converties:', { salaireNet, salaireBrut, coutTotal, chargeValue, taxeValue, impotValue, matricule: matricule || 'N/A' })
           
-          // Vérifier si l'enregistrement existe déjà
-          const existing = await query(
-            'SELECT id FROM cout_par_salaire WHERE nom = $1 AND prenom = $2 AND mois = $3 AND annee = $4',
-            [nom, prenom, mois, annee]
-          )
-          
+          // Vérifier si l'enregistrement existe déjà.
+          // Priorité au matricule : une ligne déjà créée pour ce technicien (sync "Tech. Manquants"
+          // ou import précédent avec une autre orthographe) est complétée au lieu d'être dupliquée.
+          let existing = { rows: [] as any[] }
+          if (matricule) {
+            existing = await query(
+              'SELECT id FROM cout_par_salaire WHERE matricule = $1 AND mois = $2 AND annee = $3',
+              [matricule, mois, annee]
+            )
+          }
+          if (existing.rows.length === 0) {
+            existing = await query(
+              'SELECT id FROM cout_par_salaire WHERE LOWER(TRIM(nom)) = LOWER(TRIM($1)) AND LOWER(TRIM(prenom)) = LOWER(TRIM($2)) AND mois = $3 AND annee = $4',
+              [nom, prenom, mois, annee]
+            )
+          }
+
           if (existing.rows.length > 0) {
-            // Mettre à jour
+            // Mettre à jour (les colonnes salaire manquantes se remplissent ici)
             await query(`
-              UPDATE cout_par_salaire 
-              SET salaire_net = $1, salaire_brut = $2, cout_total = $3, charge = $4, matricule = $5, taxe = $6, impot = $7, updated_at = CURRENT_TIMESTAMP
-              WHERE nom = $8 AND prenom = $9 AND mois = $10 AND annee = $11
-            `, [salaireNet, salaireBrut, coutTotal, chargeValue, matricule, taxeValue, impotValue, nom, prenom, mois, annee])
+              UPDATE cout_par_salaire
+              SET salaire_net = $1, salaire_brut = $2, cout_total = $3, charge = $4, matricule = COALESCE($5, matricule), taxe = $6, impot = $7, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $8
+            `, [salaireNet, salaireBrut, coutTotal, chargeValue, matricule, taxeValue, impotValue, existing.rows[0].id])
             updated++
             console.log('Mis à jour:', nom, prenom, matricule ? `(matricule: ${matricule})` : '')
           } else {

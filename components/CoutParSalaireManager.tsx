@@ -27,7 +27,8 @@ import {
 import PaymentHistoryModal from './PaymentHistoryModal'
 
 interface CoutParSalaire {
-  id: number
+  // null pour une ligne prévisionnelle (employé pas encore présent dans l'export importé)
+  id: number | null
   nom: string
   prenom: string
   salaire_net: number
@@ -46,6 +47,10 @@ interface CoutParSalaire {
   rap?: number
   total_paiements?: number
   total_amendes?: number
+  total_recla_free?: number
+  total_ftto?: number
+  // true = ligne calculée à la volée, en attente de l'import de l'export de paie
+  is_previsionnel?: boolean
   created_at: string
   updated_at: string
 }
@@ -101,6 +106,9 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [selectedMonth, setSelectedMonth] = useState(previousMonth.month)
   const [selectedYear, setSelectedYear] = useState(previousMonth.year)
   
+  // Afficher les lignes prévisionnelles (employés sans données d'import pour ce mois)
+  const [showPrevisionnel, setShowPrevisionnel] = useState(true)
+
   const [editingField, setEditingField] = useState<{id: number, field: string} | null>(null)
   const [editValue, setEditValue] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -221,7 +229,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       
       if (data.success) {
         setCouts(data.couts || [])
-        console.log(`✅ ${data.couts.length} enregistrements chargés`)
+        console.log(`✅ ${data.couts.length} enregistrements chargés (${data.total_importes ?? '?'} importés, ${data.total_previsionnels ?? 0} prévisionnels)`)
       } else {
         console.error('❌ Erreur chargement données:', data.error)
         alert(`Erreur lors du chargement: ${data.error}`)
@@ -308,6 +316,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
 
   // Fonctions pour la gestion des paiements
   const openPaymentModal = (cout: CoutParSalaire) => {
+    if (cout.is_previsionnel || cout.id == null) {
+      alert("Cette ligne est en attente d'import : importez l'export de paie du mois pour pouvoir agir dessus.")
+      return
+    }
     setSelectedCoutForPayment(cout)
     setPaymentForm({
       montant_verse: '',
@@ -320,6 +332,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   }
 
   const openPaymentHistory = async (cout: CoutParSalaire) => {
+    if (cout.is_previsionnel || cout.id == null) {
+      alert("Cette ligne est en attente d'import : importez l'export de paie du mois pour pouvoir agir dessus.")
+      return
+    }
     setSelectedCoutForPayment(cout)
     setPaymentLoading(true)
     
@@ -457,6 +473,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
 
   // Fonction pour ouvrir l'historique des paiements d'un employé
   const openPaymentHistoryForEmployee = async (cout: CoutParSalaire) => {
+    if (cout.is_previsionnel || cout.id == null) {
+      alert("Cette ligne est en attente d'import : importez l'export de paie du mois pour pouvoir agir dessus.")
+      return
+    }
     console.log('🔍 Debug historique employé:')
     console.log('   📊 Coût:', cout.nom, cout.prenom, cout.matricule)
     console.log('   📊 Cache employés:', employeesCache.length)
@@ -486,7 +506,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   }
 
   // Fonction pour charger les primes d'un employé
-  const loadPrimes = async (coutId: number) => {
+  const loadPrimes = async (coutId: number | null) => {
+    if (coutId == null) {
+      setPrimesList([])
+      return
+    }
     setLoadingPrimes(true)
     try {
       const response = await fetch(`/api/primes-employes?cout_par_salaire_id=${coutId}`)
@@ -504,6 +528,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
 
   // Fonction pour gérer l'ajout de prime
   const handleAddPrime = async (cout: CoutParSalaire) => {
+    if (cout.is_previsionnel || cout.id == null) {
+      alert("Cette ligne est en attente d'import : importez l'export de paie du mois pour pouvoir agir dessus.")
+      return
+    }
     console.log('💰 Gestion des primes pour:', cout.nom, cout.prenom)
     setSelectedCoutForPrime(cout)
     setPrimeAmount('')
@@ -516,6 +544,10 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
 
   // Fonction pour gérer la modification de prime (ouvre le même modal)
   const handleEditPrime = async (cout: CoutParSalaire) => {
+    if (cout.is_previsionnel || cout.id == null) {
+      alert("Cette ligne est en attente d'import : importez l'export de paie du mois pour pouvoir agir dessus.")
+      return
+    }
     console.log('✏️ Modification de prime pour:', cout.nom, cout.prenom)
     setSelectedCoutForPrime(cout)
     setPrimeAmount('')
@@ -783,9 +815,15 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   }, [selectedMonth, selectedYear])
 
   // Gestion de l'édition en double-clic
-  const handleDoubleClick = (id: number, field: string, currentValue: any) => {
+  const handleDoubleClick = (id: number | null, field: string, currentValue: any) => {
+    // Une ligne prévisionnelle n'existe pas encore en base : rien à éditer tant que
+    // l'export de paie n'a pas été importé
+    if (id == null) {
+      alert("Cette ligne est en attente d'import : importez l'export de paie du mois pour pouvoir la modifier.")
+      return
+    }
     setEditingField({ id, field })
-    setEditValue(currentValue.toString())
+    setEditValue(currentValue?.toString() ?? '')
   }
 
   const handleSaveEdit = async () => {
@@ -1173,10 +1211,12 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   // Export CSV
   const handleExport = () => {
     const csvContent = [
-      'Nom\tPrénom\tSalaire net (€)\tSalaire brut (€)\tCoût total (€)\tCharge\tMOIS',
-      ...couts.map(cout => 
-        `${cout.nom}\t${cout.prenom}\t${cout.salaire_net}\t${cout.salaire_brut}\t${cout.cout_total}\t${cout.charge}\t${cout.mois}/${cout.annee}`
-      )
+      'Nom\tPrénom\tMatricule\tSalaire net (€)\tSalaire brut (€)\tCoût total (€)\tCharge\tMOIS',
+      ...visibleCouts.map(cout => {
+        // Lignes en attente d'import : cellules salaire laissées vides pour servir de modèle à remplir
+        const v = (value: any) => (cout.is_previsionnel ? '' : value)
+        return `${cout.nom}\t${cout.prenom}\t${cout.matricule || ''}\t${v(cout.salaire_net)}\t${v(cout.salaire_brut)}\t${v(cout.cout_total)}\t${v(cout.charge)}\t${cout.mois}/${cout.annee}`
+      })
     ].join('\n')
 
     const blob = new Blob([csvContent], { type: 'text/csv' })
@@ -1188,27 +1228,34 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     URL.revokeObjectURL(url)
   }
 
-  const totalCout = couts.reduce((sum, cout) => {
+  // Séparation lignes importées / lignes prévisionnelles
+  const coutsImportes = couts.filter(c => !c.is_previsionnel)
+  const coutsPrevisionnels = couts.filter(c => c.is_previsionnel)
+  const visibleCouts = showPrevisionnel ? couts : coutsImportes
+
+  const totalCout = visibleCouts.reduce((sum, cout) => {
     const value = parseFloat(cout.cout_total || 0)
     return sum + (isNaN(value) ? 0 : value)
   }, 0)
 
-  const totalGenere = couts.reduce((sum, cout) => {
+  const totalGenere = visibleCouts.reduce((sum, cout) => {
     const value = parseFloat(cout.total_genere || 0)
     return sum + (isNaN(value) ? 0 : value)
   }, 0)
 
-  const totalSalaireNet = couts.reduce((sum, cout) => {
+  const totalSalaireNet = visibleCouts.reduce((sum, cout) => {
     const value = parseFloat(cout.salaire_net || 0)
     return sum + (isNaN(value) ? 0 : value)
   }, 0)
 
-  const totalVerse = couts.reduce((sum, cout) => {
+  const totalVerse = visibleCouts.reduce((sum, cout) => {
     const value = parseFloat(cout.total_paiements || 0)
     return sum + (isNaN(value) ? 0 : value)
   }, 0)
 
-  const totalResteAPayer = couts.reduce((sum, cout) => {
+  const totalResteAPayer = visibleCouts.reduce((sum, cout) => {
+    // Les lignes prévisionnelles ont un RAP incomplet (salaire/impôt inconnus) : exclues du total
+    if (cout.is_previsionnel) return sum
     const rap = parseFloat(cout.rap || 0)
     // Seulement les RAP positifs (reste à payer)
     return sum + (rap > 0 ? rap : 0)
@@ -1217,7 +1264,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   // Calcul du total impôt basé sur le pourcentage de taxe
   // 0% = employé paye tout (impôt = 0 pour l'entreprise)
   // 100% = entreprise paye tout (impôt = charge)
-  const totalImpot = couts.reduce((sum, cout) => {
+  const totalImpot = visibleCouts.reduce((sum, cout) => {
     const taxe = parseFloat(cout.taxe || 0)
     const charge = parseFloat(cout.charge || 0)
     
@@ -1322,6 +1369,22 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
             <Download className="w-4 h-4 mr-2" />
             Export CSV
           </Button>
+
+          {coutsPrevisionnels.length > 0 && (
+            <Button
+              onClick={() => setShowPrevisionnel(!showPrevisionnel)}
+              variant="outline"
+              className={showPrevisionnel
+                ? "bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-800"
+                : "bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-700"}
+              title={showPrevisionnel
+                ? "Masquer les salariés qui n'ont pas encore de données d'import pour ce mois"
+                : "Afficher les salariés qui n'ont pas encore de données d'import pour ce mois"}
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              {showPrevisionnel ? 'Masquer' : 'Afficher'} en attente ({coutsPrevisionnels.length})
+            </Button>
+          )}
           
           {/* Bouton Sync Pénalités désactivé - risque de création de doublons
           <Button 
@@ -1369,9 +1432,9 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
           <Button 
             onClick={syncMissingTechnicians} 
             variant="outline" 
-            disabled={syncingMissing || couts.length === 0}
+            disabled={syncingMissing || coutsImportes.length === 0}
             className="bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-800 disabled:opacity-50"
-            title={couts.length === 0 
+            title={coutsImportes.length === 0 
               ? "Importez d'abord les données du mois, puis cliquez sur 'Corriger Noms'" 
               : "Ajouter les techniciens qui ont généré de l'argent mais ne sont pas dans l'import (fait automatiquement après 'Corriger Noms')"}
           >
@@ -1437,7 +1500,12 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
               <Users className="w-5 h-5 text-blue-500" />
               <div>
                 <p className="text-sm text-gray-600">Salariés</p>
-                <p className="text-2xl font-bold">{couts.length}</p>
+                <p className="text-2xl font-bold">{visibleCouts.length}</p>
+                {coutsPrevisionnels.length > 0 && (
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    {coutsImportes.length} importés · {coutsPrevisionnels.length} en attente
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -1504,6 +1572,23 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
         </Card>
       </div>
 
+      {/* Bandeau explicatif : période sans import, les lignes affichées sont prévisionnelles */}
+      {coutsPrevisionnels.length > 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+          <Eye className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+          <div className="text-sm text-amber-900">
+            <p className="font-medium">
+              Aucun export de paie importé pour {new Date(0, selectedMonth - 1).toLocaleString('fr-FR', { month: 'long' })} {selectedYear}
+            </p>
+            <p className="text-amber-700 mt-0.5">
+              Les {coutsPrevisionnels.length} salariés ci-dessous sont affichés à titre prévisionnel avec ce qui est déjà
+              connu (total généré, amendes, pénalités, taxe). Une fois le CSV importé, seuls les salariés présents dans
+              le fichier resteront affichés et les colonnes salaire se rempliront automatiquement.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Table des coûts */}
       <Card>
         <CardHeader>
@@ -1557,13 +1642,20 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {couts.map((cout) => (
-                    <tr key={cout.id} className={`border-b hover:bg-gray-50 ${
-                      cout.rap != null && Math.abs(Number(cout.rap)) < 0.01 
-                        ? 'bg-green-50 border-green-200' 
+                  {visibleCouts.map((cout) => (
+                    <tr key={cout.id ?? `prev-${cout.matricule}`} className={`border-b hover:bg-gray-50 ${
+                      cout.is_previsionnel
+                        ? 'bg-amber-50/60 border-amber-200'
+                        : cout.rap != null && Math.abs(Number(cout.rap)) < 0.01
+                        ? 'bg-green-50 border-green-200'
                         : ''
                     }`}>
                       <td className="p-3 font-medium">
+                        {cout.is_previsionnel && (
+                          <div className="text-[10px] uppercase tracking-wide text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 inline-block mb-1">
+                            En attente d'import
+                          </div>
+                        )}
                         {editingField?.id === cout.id && editingField?.field === 'nom' ? (
                           <div className="flex items-center gap-2">
                             <Input
@@ -1723,25 +1815,39 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                       </td>
                       
                       <td className="p-3 text-right">
-                        <span className={`font-medium ${
-                          cout.rap && Number(cout.rap) > 0.01 
-                            ? 'text-blue-600' 
-                            : cout.rap && Number(cout.rap) < -0.01 
-                            ? 'text-red-600' 
-                            : cout.rap && Math.abs(Number(cout.rap)) <= 0.01
-                            ? 'text-green-600'
-                            : 'text-gray-400'
-                        }`}>
-                          {cout.rap ? `${Number(cout.rap).toFixed(2)}€` : '0.00€'}
-                        </span>
-                        {cout.rap && Number(cout.rap) > 0.01 && (
-                          <div className="text-xs text-blue-600 mt-1">✓ Reste à payer</div>
-                        )}
-                        {cout.rap && Math.abs(Number(cout.rap)) <= 0.01 && (
-                          <div className="text-xs text-green-600 mt-1">✓ 100% payé</div>
-                        )}
-                        {cout.rap && Number(cout.rap) < 0 && (
-                          <div className="text-xs text-red-600 mt-1">⚠️ Déficit</div>
+                        {cout.is_previsionnel ? (
+                          <>
+                            <span
+                              className="font-medium text-amber-700"
+                              title="Estimation : salaire net et impôt encore inconnus (export de paie non importé)"
+                            >
+                              ≈ {Number(cout.rap || 0).toFixed(2)}€
+                            </span>
+                            <div className="text-xs text-amber-600 mt-1">Hors salaire</div>
+                          </>
+                        ) : (
+                          <>
+                            <span className={`font-medium ${
+                              cout.rap && Number(cout.rap) > 0.01
+                                ? 'text-blue-600'
+                                : cout.rap && Number(cout.rap) < -0.01
+                                ? 'text-red-600'
+                                : cout.rap && Math.abs(Number(cout.rap)) <= 0.01
+                                ? 'text-green-600'
+                                : 'text-gray-400'
+                            }`}>
+                              {cout.rap ? `${Number(cout.rap).toFixed(2)}€` : '0.00€'}
+                            </span>
+                            {cout.rap && Number(cout.rap) > 0.01 && (
+                              <div className="text-xs text-blue-600 mt-1">✓ Reste à payer</div>
+                            )}
+                            {cout.rap && Math.abs(Number(cout.rap)) <= 0.01 && (
+                              <div className="text-xs text-green-600 mt-1">✓ 100% payé</div>
+                            )}
+                            {cout.rap && Number(cout.rap) < 0 && (
+                              <div className="text-xs text-red-600 mt-1">⚠️ Déficit</div>
+                            )}
+                          </>
                         )}
                       </td>
                       
@@ -1922,7 +2028,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
                 </tbody>
               </table>
               
-              {couts.length === 0 && (
+              {visibleCouts.length === 0 && (
                 <div className="text-center py-8 text-gray-500">
                   Aucun coût trouvé pour cette période
                 </div>
