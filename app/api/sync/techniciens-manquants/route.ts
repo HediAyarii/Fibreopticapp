@@ -155,14 +155,14 @@ export async function POST(request: NextRequest) {
             salaire_net, salaire_brut, cout_total, charge,
             taxe, impot, penalite, prime,
             total_genere, rap,
-            matricule,
+            matricule, importe,
             created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4,
             0, 0, 0, 0,
             $5, 0, 0, 0,
             $6, $6,
-            $7,
+            $7, TRUE,
             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           )
           RETURNING id

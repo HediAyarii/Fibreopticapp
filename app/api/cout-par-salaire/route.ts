@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 import { ensureReclaFreeTable } from "@/lib/ensure-recla-free-table"
+import { ensureCoutParSalaireColumns } from "@/lib/ensure-cout-par-salaire-columns"
 
 export const dynamic = 'force-dynamic'
 
@@ -174,6 +175,7 @@ const AGGREGATION_CTES = `
 export async function GET(request: NextRequest) {
   try {
     await ensureReclaFreeTable()
+    await ensureCoutParSalaireColumns()
     const { searchParams } = new URL(request.url)
     const mois = searchParams.get('mois')
     const annee = searchParams.get('annee')
@@ -250,7 +252,9 @@ export async function GET(request: NextRequest) {
         ) as rap,
         cps.created_at,
         cps.updated_at,
-        FALSE as is_previsionnel
+        -- Une ligne créée avant l'import (pour porter une prime saisie en avance) reste
+        -- affichée comme prévisionnelle : son salaire n'est pas encore connu.
+        NOT COALESCE(cps.importe, TRUE) as is_previsionnel
       FROM cout_par_salaire cps
       LEFT JOIN employes e ON cps.matricule IS NOT NULL AND cps.matricule = e.matricule AND e.statut = 'actif'
       LEFT JOIN revenue_by_matricule rev ON cps.matricule IS NOT NULL AND rev.matricule_calc = cps.matricule AND rev.mois_cloture = cps.mois AND rev.annee_cloture = cps.annee
@@ -273,7 +277,11 @@ export async function GET(request: NextRequest) {
     // Dès qu'un import existe pour la période, l'export de paie fait foi : les employés
     // absents du fichier ne sont plus affichés du tout. Pour rajouter un technicien qui a
     // généré des recettes sans figurer dans l'import, utiliser le bouton "Tech. Manquants".
-    const aucunImportPourLaPeriode = couts.length === 0
+    //
+    // Les lignes créées uniquement pour porter une prime saisie avant l'import
+    // (importe = FALSE) ne comptent pas comme un import : les autres salariés doivent
+    // rester visibles tant que l'export de paie n'est pas chargé.
+    const aucunImportPourLaPeriode = !couts.some((c: any) => c.is_previsionnel === false)
 
     if (mois && annee && aucunImportPourLaPeriode && searchParams.get('previsionnel') !== 'false') {
       const previsionnelQuery = `
@@ -440,7 +448,7 @@ export async function POST(request: NextRequest) {
             // Mettre à jour (les colonnes salaire manquantes se remplissent ici)
             await query(`
               UPDATE cout_par_salaire
-              SET salaire_net = $1, salaire_brut = $2, cout_total = $3, charge = $4, matricule = COALESCE($5, matricule), taxe = $6, impot = $7, updated_at = CURRENT_TIMESTAMP
+              SET salaire_net = $1, salaire_brut = $2, cout_total = $3, charge = $4, matricule = COALESCE($5, matricule), taxe = $6, impot = $7, importe = TRUE, updated_at = CURRENT_TIMESTAMP
               WHERE id = $8
             `, [salaireNet, salaireBrut, coutTotal, chargeValue, matricule, taxeValue, impotValue, existing.rows[0].id])
             updated++
@@ -448,8 +456,8 @@ export async function POST(request: NextRequest) {
           } else {
             // Insérer
             await query(`
-              INSERT INTO cout_par_salaire (nom, prenom, salaire_net, salaire_brut, cout_total, charge, mois, annee, matricule, taxe, impot)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+              INSERT INTO cout_par_salaire (nom, prenom, salaire_net, salaire_brut, cout_total, charge, mois, annee, matricule, taxe, impot, importe)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
             `, [nom, prenom, salaireNet, salaireBrut, coutTotal, chargeValue, mois, annee, matricule, taxeValue, impotValue])
             inserted++
             console.log('Inséré:', nom, prenom, matricule ? `(matricule: ${matricule})` : '')

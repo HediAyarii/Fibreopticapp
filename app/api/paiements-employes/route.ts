@@ -4,13 +4,41 @@ import { query } from "@/lib/database"
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
 
+// Convertit un paramètre en entier, ou renvoie null s'il est absent/invalide.
+// Évite d'envoyer NaN ou la chaîne "null" à Postgres (erreur pg_strtoint32_safe).
+function toInteger(value: any): number | null {
+  if (value === null || value === undefined || value === '' || value === 'null' || value === 'undefined') {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isInteger(parsed) ? parsed : null
+}
+
 // GET - Récupérer l'historique des paiements
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const employeId = searchParams.get('employe_id')
-    const coutId = searchParams.get('cout_id')
-    
+    const employeId = toInteger(searchParams.get('employe_id'))
+    const coutId = toInteger(searchParams.get('cout_id'))
+
+    // Un filtre fourni mais invalide (ligne prévisionnelle sans id, valeur "null"...) :
+    // renvoyer une liste vide plutôt que de faire échouer la requête SQL — et surtout
+    // plutôt que de retourner l'intégralité des paiements en ignorant le filtre.
+    const filtreInvalide =
+      (searchParams.get('employe_id') !== null && employeId === null) ||
+      (searchParams.get('cout_id') !== null && coutId === null)
+
+    if (filtreInvalide) {
+      return NextResponse.json({
+        success: true,
+        paiements: [],
+        total: 0,
+        totalMontant: 0,
+        paiementsParMethode: {},
+        statistiques: { totalPaiements: 0, totalMontant: 0, montantMoyen: 0, dernierPaiement: null }
+      })
+    }
+
     let sqlQuery = `
       SELECT 
         pe.id,
@@ -38,13 +66,13 @@ export async function GET(request: NextRequest) {
     const params: any[] = []
     let paramIndex = 1
     
-    if (employeId) {
+    if (employeId !== null) {
       sqlQuery += ` AND pe.employe_id = $${paramIndex}`
       params.push(employeId)
       paramIndex++
     }
     
-    if (coutId) {
+    if (coutId !== null) {
       sqlQuery += ` AND pe.cout_par_salaire_id = $${paramIndex}`
       params.push(coutId)
       paramIndex++

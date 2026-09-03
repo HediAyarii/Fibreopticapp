@@ -159,6 +159,11 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
   const [primesList, setPrimesList] = useState<any[]>([])
   const [loadingPrimes, setLoadingPrimes] = useState(false)
 
+  // Édition en place d'une prime déjà enregistrée
+  const [editingPrimeId, setEditingPrimeId] = useState<number | null>(null)
+  const [editingPrimeAmount, setEditingPrimeAmount] = useState('')
+  const [editingPrimeNote, setEditingPrimeNote] = useState('')
+
   // États pour la synchronisation des noms
   const [syncingNames, setSyncingNames] = useState(false)
   const [nameSyncResult, setNameSyncResult] = useState<any>(null)
@@ -528,10 +533,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
 
   // Fonction pour gérer l'ajout de prime
   const handleAddPrime = async (cout: CoutParSalaire) => {
-    if (cout.is_previsionnel || cout.id == null) {
-      alert("Cette ligne est en attente d'import : importez l'export de paie du mois pour pouvoir agir dessus.")
-      return
-    }
     console.log('💰 Gestion des primes pour:', cout.nom, cout.prenom)
     setSelectedCoutForPrime(cout)
     setPrimeAmount('')
@@ -544,10 +545,6 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
 
   // Fonction pour gérer la modification de prime (ouvre le même modal)
   const handleEditPrime = async (cout: CoutParSalaire) => {
-    if (cout.is_previsionnel || cout.id == null) {
-      alert("Cette ligne est en attente d'import : importez l'export de paie du mois pour pouvoir agir dessus.")
-      return
-    }
     console.log('✏️ Modification de prime pour:', cout.nom, cout.prenom)
     setSelectedCoutForPrime(cout)
     setPrimeAmount('')
@@ -581,8 +578,14 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          // null pour une ligne en attente d'import : l'API crée alors la ligne de coût
+          // à partir du matricule + mois + année
           cout_par_salaire_id: selectedCoutForPrime.id,
           matricule: selectedCoutForPrime.matricule,
+          mois: selectedCoutForPrime.mois,
+          annee: selectedCoutForPrime.annee,
+          nom: selectedCoutForPrime.nom,
+          prenom: selectedCoutForPrime.prenom,
           montant: amount,
           note: primeNote || null,
           deduit_rap: true // Toutes les primes s'ajoutent au RAP
@@ -594,9 +597,16 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       if (!response.ok || !result.success) {
         throw new Error(result.error || 'Erreur lors de l\'ajout de la prime')
       }
-      
+
+      // La ligne vient peut-être d'être créée côté serveur : récupérer son id pour que
+      // les primes suivantes s'y rattachent sans recréer de ligne
+      const coutId = result.prime?.cout_par_salaire_id ?? selectedCoutForPrime.id
+      if (selectedCoutForPrime.id == null && coutId != null) {
+        setSelectedCoutForPrime({ ...selectedCoutForPrime, id: coutId })
+      }
+
       // Recharger les primes et les données
-      await loadPrimes(selectedCoutForPrime.id)
+      await loadPrimes(coutId)
       await loadData()
       
       // Réinitialiser le formulaire mais garder le modal ouvert
@@ -608,7 +618,69 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       
     } catch (error) {
       console.error('Erreur lors de l\'ajout de la prime:', error)
-      alert('Erreur lors de l\'ajout de la prime')
+      // Remonter le message renvoyé par l'API plutôt qu'un message générique
+      alert(error instanceof Error && error.message
+        ? `Erreur lors de l'ajout de la prime : ${error.message}`
+        : 'Erreur lors de l\'ajout de la prime')
+    } finally {
+      setPaymentLoading(false)
+    }
+  }
+
+  // Passer une prime existante en mode édition dans le modal
+  const startEditPrime = (prime: any) => {
+    setEditingPrimeId(prime.id)
+    setEditingPrimeAmount(String(parseFloat(prime.montant) || ''))
+    setEditingPrimeNote(prime.note || '')
+  }
+
+  const cancelEditPrime = () => {
+    setEditingPrimeId(null)
+    setEditingPrimeAmount('')
+    setEditingPrimeNote('')
+  }
+
+  // Enregistrer la modification d'une prime existante
+  const handleUpdatePrime = async () => {
+    if (editingPrimeId == null) return
+
+    const amount = parseFloat(editingPrimeAmount)
+    if (isNaN(amount) || amount <= 0) {
+      alert('Veuillez saisir un montant valide (> 0)')
+      return
+    }
+
+    try {
+      setPaymentLoading(true)
+
+      const response = await fetch('/api/primes-employes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingPrimeId,
+          montant: amount,
+          note: editingPrimeNote || null
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Erreur lors de la modification de la prime')
+      }
+
+      cancelEditPrime()
+      if (selectedCoutForPrime) {
+        await loadPrimes(selectedCoutForPrime.id)
+      }
+      await loadData()
+
+      console.log(`✅ Prime mise à jour: ${amount}€`)
+    } catch (error) {
+      console.error('Erreur lors de la modification de la prime:', error)
+      alert(error instanceof Error && error.message
+        ? `Erreur lors de la modification de la prime : ${error.message}`
+        : 'Erreur lors de la modification de la prime')
     } finally {
       setPaymentLoading(false)
     }
@@ -643,7 +715,9 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
       
     } catch (error) {
       console.error('Erreur lors de la suppression de la prime:', error)
-      alert('Erreur lors de la suppression de la prime')
+      alert(error instanceof Error && error.message
+        ? `Erreur lors de la suppression de la prime : ${error.message}`
+        : 'Erreur lors de la suppression de la prime')
     } finally {
       setPaymentLoading(false)
     }
@@ -656,6 +730,7 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
     setPrimeAmount('')
     setPrimeNote('')
     setPrimesList([])
+    cancelEditPrime()
   }
 
   // Fonction pour synchroniser les pénalités
@@ -2419,36 +2494,88 @@ export function CoutParSalaireManager({ onClose }: CoutParSalaireManagerProps) {
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {primesList.map((prime: any) => (
-                    <div 
-                      key={prime.id} 
+                    <div
+                      key={prime.id}
                       className="p-3 rounded-lg border bg-green-50 border-green-200"
                     >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-lg">
-                              {parseFloat(prime.montant).toFixed(2)}€
-                            </span>
-                            <span className="text-xs px-2 py-0.5 rounded bg-green-200 text-green-800">
-                              + RAP
-                            </span>
+                      {editingPrimeId === prime.id ? (
+                        /* Édition en place du montant et du motif */
+                        <div className="space-y-2">
+                          <div>
+                            <label className="block text-xs font-medium mb-1 text-gray-600">Montant (€)</label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              value={editingPrimeAmount}
+                              onChange={(e) => setEditingPrimeAmount(e.target.value)}
+                              className="w-full"
+                              autoFocus
+                            />
                           </div>
-                          {prime.note && (
-                            <p className="text-sm text-gray-600 mt-1">📝 {prime.note}</p>
-                          )}
-                          <p className="text-xs text-gray-400 mt-1">
-                            {new Date(prime.date_prime || prime.created_at).toLocaleDateString('fr-FR')}
-                          </p>
+                          <div>
+                            <label className="block text-xs font-medium mb-1 text-gray-600">Note / Motif</label>
+                            <textarea
+                              value={editingPrimeNote}
+                              onChange={(e) => setEditingPrimeNote(e.target.value)}
+                              className="w-full p-2 border rounded-md text-sm"
+                              rows={2}
+                            />
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline" onClick={cancelEditPrime} disabled={paymentLoading}>
+                              <X className="w-3 h-3 mr-1" />
+                              Annuler
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={handleUpdatePrime}
+                              disabled={paymentLoading || !editingPrimeAmount || parseFloat(editingPrimeAmount) <= 0}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              <Save className="w-3 h-3 mr-1" />
+                              {paymentLoading ? 'Enregistrement...' : 'Enregistrer'}
+                            </Button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => handleDeletePrime(prime.id)}
-                          className="text-red-500 hover:text-red-700 p-1"
-                          title="Supprimer cette prime"
-                          disabled={paymentLoading}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      ) : (
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-lg">
+                                {parseFloat(prime.montant).toFixed(2)}€
+                              </span>
+                              <span className="text-xs px-2 py-0.5 rounded bg-green-200 text-green-800">
+                                + RAP
+                              </span>
+                            </div>
+                            {prime.note && (
+                              <p className="text-sm text-gray-600 mt-1">📝 {prime.note}</p>
+                            )}
+                            <p className="text-xs text-gray-400 mt-1">
+                              {new Date(prime.date_prime || prime.created_at).toLocaleDateString('fr-FR')}
+                            </p>
+                          </div>
+                          <div className="flex items-start gap-1">
+                            <button
+                              onClick={() => startEditPrime(prime)}
+                              className="text-blue-500 hover:text-blue-700 p-1"
+                              title="Modifier cette prime"
+                              disabled={paymentLoading}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeletePrime(prime.id)}
+                              className="text-red-500 hover:text-red-700 p-1"
+                              title="Supprimer cette prime"
+                              disabled={paymentLoading}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
