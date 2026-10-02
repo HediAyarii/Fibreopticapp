@@ -643,6 +643,12 @@ export default function EmployeeTracker() {
   const [showEmployeeSync, setShowEmployeeSync] = useState(false)
   const [autoSyncTriggered, setAutoSyncTriggered] = useState(false)
   const [unassignComments, setUnassignComments] = useState('')
+  const [unassignDate, setUnassignDate] = useState('')
+  // Titulaires actuels de la carte choisie (409) et choix de l'admin pour chacun
+  const [assignmentConflicts, setAssignmentConflicts] = useState<any[]>([])
+  const [conflictResolutions, setConflictResolutions] = useState<Record<string, { action: 'liberer' | 'changer'; carte?: string }>>({})
+  const [assignmentSubmitting, setAssignmentSubmitting] = useState(false)
+  const [showQuickAssignDialog, setShowQuickAssignDialog] = useState(false)
   const [showCardHistoryModal, setShowCardHistoryModal] = useState(false)
   const [selectedEmployeeHistory, setSelectedEmployeeHistory] = useState<any>(null)
   
@@ -3364,35 +3370,17 @@ La page va se recharger automatiquement...`)
     }
   }
 
-  // Function to handle assignation
-  const handleAssignation = async () => {
-    try {
-      if (!assignationData.numero_carte || !assignationData.employe_id) {
-        alert("Veuillez remplir tous les champs")
-        return
-      }
-
-      const response = await fetch('/api/carburant-assignation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(assignationData),
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        alert(result.message)
-        setAssignationData({numero_carte: '', employe_id: ''})
-        await loadDataFromDatabase() // Reload data to show changes
-      } else {
-        const error = await response.text()
-        alert(`Erreur: ${error}`)
-      }
-    } catch (error) {
-      console.error("Erreur assignation:", error)
-      alert("Erreur lors de l'assignation")
+  // Formulaire rapide de l'onglet Carburant : ouvre la même assignation par période
+  // (dates, titulaires actuels, conflits) pré-remplie avec la carte saisie
+  const handleAssignation = () => {
+    const employe = employees.find((emp: any) => emp.id.toString() === assignationData.employe_id)
+    if (!assignationData.numero_carte.trim() || !employe) {
+      alert("Veuillez remplir tous les champs")
+      return
     }
+    setShowQuickAssignDialog(false)
+    setAssignationData({numero_carte: '', employe_id: ''})
+    showCardAssignment(employe, assignationData.numero_carte.trim())
   }
 
   // Function to show employee details
@@ -3401,53 +3389,99 @@ La page va se recharger automatiquement...`)
     setShowEmployeeDetailsModal(true)
   }
 
-  // Function to show card assignment modal
-  const showCardAssignment = async (employee: any) => {
-    setSelectedEmployee(employee)
-    
-    // Récupérer les cartes carburant disponibles
+  // 'YYYY-MM-DD' -> 'DD/MM/YYYY'
+  const formatDateFr = (date?: string | null) => (date ? date.split('-').reverse().join('/') : '')
+
+  // Cartes connues avec leurs titulaires sur la période [debut, fin[
+  const loadCardsForPeriod = async (debut: string, fin: string | null) => {
     try {
-      const response = await fetch('/api/carburant')
-      if (response.ok) {
-        const data = await response.json()
-        // Extraire les numéros de carte uniques et trier en ordre croissant
-        const uniqueCards = [...new Set(data.carburant.map((item: any) => item.numero_carte))]
-          .filter(card => card && card !== 'nan')
-          .map(card => ({ numero_carte: card, label: `Carte ${card}` }))
-          .sort((a, b) => String(a.numero_carte).localeCompare(String(b.numero_carte), undefined, { numeric: true }))
-        setAvailableCards(uniqueCards)
-      }
+      const params = new URLSearchParams()
+      if (debut) params.append('date_debut', debut)
+      if (fin) params.append('date_fin', fin)
+      const response = await fetch(`/api/carburant-cartes?${params.toString()}`)
+      if (!response.ok) throw new Error('Erreur lors du chargement des cartes')
+      const data = await response.json()
+      setAvailableCards(data.cartes || [])
     } catch (error) {
       console.error('Erreur récupération cartes:', error)
       setAvailableCards([])
     }
-    
+  }
+
+  const cardHoldersLabel = (carte: any) => {
+    const autres = (carte.titulaires || []).filter((t: any) => t.employe_id !== selectedEmployee?.id)
+    if (autres.length > 0) return autres.map((t: any) => t.employe_nom).join(', ')
+    return (carte.titulaires || []).length > 0 ? 'déjà à lui' : 'libre'
+  }
+
+  const closeCardAssignment = () => {
+    setShowCardAssignmentModal(false)
+    setSelectedEmployee(null)
+    setSelectedCardNumber('')
+    setAssignmentStartDate('')
+    setAssignmentEndDate('')
+    setAssignmentComments('')
+    setAssignmentType('temporary')
+    setAssignmentConflicts([])
+    setConflictResolutions({})
+  }
+
+  // Function to show card assignment modal
+  const showCardAssignment = (employee: any, numeroCarte = '') => {
+    setSelectedEmployee(employee)
+    setSelectedCardNumber(numeroCarte)
+    setAssignmentConflicts([])
+    setConflictResolutions({})
     setShowCardAssignmentModal(true)
   }
 
+  // Les titulaires dépendent de la période : recharger quand elle change
+  useEffect(() => {
+    if (!showCardAssignmentModal) return
+    setAssignmentConflicts([])
+    setConflictResolutions({})
+    loadCardsForPeriod(assignmentStartDate, assignmentType === 'temporary' ? assignmentEndDate : null)
+  }, [showCardAssignmentModal, assignmentStartDate, assignmentEndDate, assignmentType])
+
   // Function to assign card to employee with period
   const assignCardToEmployee = async () => {
+    if (!selectedEmployee || !selectedCardNumber) {
+      alert("Veuillez sélectionner un employé et une carte")
+      return
+    }
+
+    if (!assignmentStartDate) {
+      alert("Veuillez sélectionner une date de début")
+      return
+    }
+
+    if (assignmentType === 'temporary' && !assignmentEndDate) {
+      alert("Veuillez sélectionner une date de fin pour une assignation temporaire")
+      return
+    }
+
+    if (assignmentType === 'temporary' && assignmentEndDate <= assignmentStartDate) {
+      alert("La date de fin doit être postérieure à la date de début")
+      return
+    }
+
+    // Choix de l'admin pour chaque titulaire actuel de la carte
+    const resolutions: Record<string, { action: 'liberer' } | { action: 'changer'; carte: string }> = {}
+    for (const conflit of assignmentConflicts) {
+      const choix = conflictResolutions[conflit.id] || { action: 'liberer' }
+      if (choix.action === 'changer') {
+        if (!choix.carte) {
+          alert(`Choisissez la nouvelle carte de ${conflit.employe_nom}`)
+          return
+        }
+        resolutions[conflit.id] = { action: 'changer', carte: choix.carte }
+      } else {
+        resolutions[conflit.id] = { action: 'liberer' }
+      }
+    }
+
+    setAssignmentSubmitting(true)
     try {
-      if (!selectedEmployee || !selectedCardNumber) {
-        alert("Veuillez sélectionner un employé et une carte")
-        return
-      }
-
-      if (!assignmentStartDate) {
-        alert("Veuillez sélectionner une date de début")
-        return
-      }
-
-      if (assignmentType === 'temporary' && !assignmentEndDate) {
-        alert("Veuillez sélectionner une date de fin pour une assignation temporaire")
-        return
-      }
-
-      if (assignmentEndDate && assignmentEndDate <= assignmentStartDate) {
-        alert("La date de fin doit être postérieure à la date de début")
-        return
-      }
-
       const response = await fetch('/api/carburant-assignation-periode', {
         method: 'POST',
         headers: {
@@ -3456,100 +3490,29 @@ La page va se recharger automatiquement...`)
         body: JSON.stringify({
           numero_carte: selectedCardNumber,
           employe_id: selectedEmployee.id,
-          employe_nom: `${selectedEmployee.prenom} ${selectedEmployee.nom}`,
           date_debut: assignmentStartDate,
-          date_fin_prevue: assignmentType === 'permanent' ? null : assignmentEndDate,
-          commentaires: assignmentComments
+          date_fin_prevue: assignmentType === 'temporary' ? assignmentEndDate : null,
+          commentaires: assignmentComments,
+          resolutions: assignmentConflicts.length > 0 ? resolutions : undefined
         })
       })
+      const data = await response.json()
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        if (response.status === 409) {
-          // Conflit détecté
-          const conflictMessage = `Conflit détecté !\n\n${errorData.message}\n\nConflits existants:\n${
-            errorData.conflits.map((c: any) => 
-              `- ${c.employe_nom}: ${c.date_debut_conflit} → ${c.date_fin_conflit}`
-            ).join('\n')
-          }\n\nVoulez-vous continuer malgré le conflit ?`
-          
-          if (!confirm(conflictMessage)) {
-            return
-          }
-          // Si l'utilisateur confirme, forcer l'assignation
-          console.log('🔄 Forçage de l\'assignation malgré le conflit')
-          
-          // Relancer l'assignation avec le paramètre force = true
-          const forceResponse = await fetch('/api/carburant-assignation-periode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              numero_carte: selectedCardNumber,
-              employe_id: selectedEmployee.id,
-              employe_nom: `${selectedEmployee.prenom} ${selectedEmployee.nom}`,
-              date_debut: assignmentStartDate,
-              date_fin_prevue: assignmentType === 'temporary' ? assignmentEndDate : null,
-              commentaires: assignmentComments,
-              assignee_par: 1, // ID de l'utilisateur actuel
-              force: true // Forcer l'assignation
-            })
-          })
-          
-          if (!forceResponse.ok) {
-            const forceErrorData = await forceResponse.json()
-            throw new Error(forceErrorData.error || 'Erreur lors du forçage de l\'assignation')
-          }
-          
-          const forceResult = await forceResponse.json()
-          console.log('✅ Assignation forcée avec succès:', forceResult)
-          
-          // Continuer avec le message de succès normal
-          const periodText = assignmentType === 'permanent' 
-            ? `à partir du ${assignmentStartDate}` 
-            : `du ${assignmentStartDate} au ${assignmentEndDate}`
-          
-          alert(`✅ Carte ${selectedCardNumber} assignée avec forçage à ${selectedEmployee.prenom} ${selectedEmployee.nom} ${periodText}`)
-          
-          // Fermer le modal et réinitialiser les champs
-          setShowCardAssignmentModal(false)
-          setSelectedEmployee(null)
-          setSelectedCardNumber('')
-          setAssignmentStartDate('')
-          setAssignmentEndDate('')
-          setAssignmentComments('')
-          setAssignmentType('temporary')
-          
-          // Recharger les données
-          setTimeout(async () => {
-            try {
-              await loadAllCRUDData()
-              await loadDataFromDatabase()
-            } catch (reloadError) {
-              console.error('Erreur lors du rechargement des données:', reloadError)
-              window.location.reload()
-            }
-          }, 500)
-          return
-        }
-        throw new Error(errorData.error || 'Erreur lors de l\'assignation')
+      if (response.status === 409 && data.code === 'conflit') {
+        // La carte est prise : afficher ses titulaires et laisser choisir (libérer / autre carte)
+        const conflits = data.conflits || []
+        setAssignmentConflicts(conflits)
+        setConflictResolutions(Object.fromEntries(conflits.map((c: any) => [c.id, { action: 'liberer' }])))
+        return
       }
 
-      const result = await response.json()
-      const periodText = assignmentType === 'permanent' 
-        ? `à partir du ${assignmentStartDate}` 
-        : `du ${assignmentStartDate} au ${assignmentEndDate}`
-      
-      alert(`✅ Carte ${selectedCardNumber} assignée à ${selectedEmployee.prenom} ${selectedEmployee.nom} ${periodText}`)
-      
-      // Fermer le modal et réinitialiser les champs
-      setShowCardAssignmentModal(false)
-      setSelectedEmployee(null)
-      setSelectedCardNumber('')
-      setAssignmentStartDate('')
-      setAssignmentEndDate('')
-      setAssignmentComments('')
-      setAssignmentType('temporary')
-      
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de l\'assignation')
+      }
+
+      alert(`✅ ${(data.actions || []).join('\n')}`)
+      closeCardAssignment()
+
       // Recharger les données
       setTimeout(async () => {
         try {
@@ -3562,7 +3525,9 @@ La page va se recharger automatiquement...`)
       }, 500)
     } catch (error) {
       console.error('Erreur assignation carte:', error)
-      alert(`❌ Erreur lors de l'assignation de la carte: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
+      alert(`❌ ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
+    } finally {
+      setAssignmentSubmitting(false)
     }
   }
 
@@ -3657,23 +3622,24 @@ La page va se recharger automatiquement...`)
         },
         body: JSON.stringify({
           employe_id: selectedEmployee.id,
-          employe_nom: `${selectedEmployee.prenom} ${selectedEmployee.nom}`,
+          numero_carte: selectedEmployee.numero_carte_actuelle || undefined,
+          date_fin: unassignDate || undefined,
           commentaires: unassignComments
         })
       })
 
+      const result = await response.json()
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Erreur lors de la désassignation')
+        throw new Error(result.error || 'Erreur lors de la désassignation')
       }
 
-      const result = await response.json()
-      alert(`Carte désassignée avec succès de ${selectedEmployee.prenom} ${selectedEmployee.nom}`)
-      
+      alert(`✅ ${(result.actions || []).join('\n')}`)
+
       // Fermer le modal et réinitialiser les champs
       setShowUnassignModal(false)
       setSelectedEmployee(null)
       setUnassignComments('')
+      setUnassignDate('')
       
       // Recharger les données
       setTimeout(async () => {
@@ -4397,6 +4363,7 @@ La page va se recharger automatiquement...`)
                                   size="sm"
                                   onClick={() => {
                                     setSelectedEmployee(employee)
+                                    setUnassignDate(new Date().toLocaleDateString('sv-SE'))
                                     setShowUnassignModal(true)
                                   }}
                                   className="glass-card border border-white/20 hover:bg-red-500/20"
@@ -5620,7 +5587,7 @@ La page va se recharger automatiquement...`)
                     </DialogContent>
                     </Dialog>
                     
-                    <Dialog>
+                    <Dialog open={showQuickAssignDialog} onOpenChange={setShowQuickAssignDialog}>
                       <DialogTrigger asChild>
                         <Button className="bg-white/90 border border-white/30 hover:bg-white text-gray-900 font-medium">
                           <Users className="h-4 w-4 mr-2" />
@@ -9104,8 +9071,8 @@ La page va se recharger automatiquement...`)
       </Dialog>
 
       {/* Card Assignment Modal */}
-      <Dialog open={showCardAssignmentModal} onOpenChange={setShowCardAssignmentModal}>
-        <DialogContent className="glass-card border border-white/20 max-w-lg">
+      <Dialog open={showCardAssignmentModal} onOpenChange={(open) => { if (!open) closeCardAssignment() }}>
+        <DialogContent className="glass-card border border-white/20 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               <CreditCard className="w-5 h-5" />
@@ -9115,27 +9082,37 @@ La page va se recharger automatiquement...`)
               Assignez une carte carburant à {selectedEmployee?.prenom} {selectedEmployee?.nom}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium">Sélectionner une carte</Label>
-              <Select onValueChange={(value) => setSelectedCardNumber(value)}>
+              <Select
+                value={selectedCardNumber}
+                onValueChange={(value) => {
+                  setSelectedCardNumber(value)
+                  setAssignmentConflicts([])
+                  setConflictResolutions({})
+                }}
+              >
                 <SelectTrigger className="glass-card border border-white/20">
                   <SelectValue placeholder="Choisir une carte carburant" />
                 </SelectTrigger>
                 <SelectContent>
                   {availableCards.map((card) => (
                     <SelectItem key={card.numero_carte} value={card.numero_carte}>
-                      {card.label}
+                      Carte {card.numero_carte}{card.peage ? ' (Télépéage)' : ''} — {cardHoldersLabel(card)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <div className="text-xs text-gray-500 mt-1">
+                Titulaires sur la période choisie{assignmentStartDate ? ` (à partir du ${formatDateFr(assignmentStartDate)})` : " (à partir d'aujourd'hui)"}
+              </div>
             </div>
 
             <div>
               <Label className="text-sm font-medium">Type d'assignation</Label>
-              <Select onValueChange={(value: 'permanent' | 'temporary') => setAssignmentType(value)} defaultValue="temporary">
+              <Select value={assignmentType} onValueChange={(value: 'permanent' | 'temporary') => setAssignmentType(value)}>
                 <SelectTrigger className="glass-card border border-white/20">
                   <SelectValue placeholder="Choisir le type d'assignation" />
                 </SelectTrigger>
@@ -9145,7 +9122,7 @@ La page va se recharger automatiquement...`)
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm font-medium">Date de début *</Label>
@@ -9157,13 +9134,13 @@ La page va se recharger automatiquement...`)
                   required
                 />
                 <div className="text-xs text-gray-500 mt-1">
-                  💡 Vous pouvez sélectionner une date passée pour les assignations rétroactives
+                  💡 Une date passée réattribue la consommation à partir de ce jour
                 </div>
               </div>
-              
+
               {assignmentType === 'temporary' && (
                 <div>
-                  <Label className="text-sm font-medium">Date de fin *</Label>
+                  <Label className="text-sm font-medium">Date de restitution *</Label>
                   <Input
                     type="date"
                     value={assignmentEndDate}
@@ -9173,43 +9150,82 @@ La page va se recharger automatiquement...`)
                     required
                   />
                   <div className="text-xs text-gray-500 mt-1">
-                    📅 Doit être postérieure à la date de début
+                    📅 À partir de ce jour, la consommation n'est plus à lui
                   </div>
                 </div>
               )}
             </div>
 
-            {assignmentStartDate && (
-              <div className={`p-3 rounded-lg border ${
-                new Date(assignmentStartDate).getTime() < new Date().setHours(0,0,0,0) 
-                  ? 'bg-orange-50/20 border-orange-200/30' 
-                  : 'bg-blue-50/20 border-blue-200/30'
-              }`}>
-                {new Date(assignmentStartDate).getTime() < new Date().setHours(0,0,0,0) && (
-                  <div className="flex items-center gap-2 text-sm text-blue-700 mb-2">
-                    <span className="font-medium">📅 Assignation historique</span>
-                  </div>
-                )}
-                
-                {assignmentType === 'temporary' && assignmentEndDate ? (
-                  <>
-                    <div className="flex items-center gap-2 text-sm text-blue-700">
-                      <span className="font-medium">📅 Période d'assignation:</span>
-                      <span>{assignmentStartDate} → {assignmentEndDate}</span>
+            {assignmentConflicts.length > 0 && (
+              <div className="p-3 rounded-lg border border-orange-300 bg-orange-50 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-orange-800">
+                  <AlertTriangle className="w-4 h-4" />
+                  La carte {selectedCardNumber} est déjà assignée
+                </div>
+                {assignmentConflicts.map((conflit) => {
+                  const choix = conflictResolutions[conflit.id] || { action: 'liberer' }
+                  const debutRetrait = conflit.debut > assignmentStartDate ? conflit.debut : assignmentStartDate
+                  const carteDemandee = availableCards.find((c) => c.numero_carte === selectedCardNumber)
+                  // Cartes libres sur la période (ou tenues par l'employé, qui les rend à cette date)
+                  const cartesLibres = availableCards.filter((c) =>
+                    c.numero_carte !== selectedCardNumber &&
+                    c.peage === carteDemandee?.peage &&
+                    (c.titulaires || []).every((t: any) => t.employe_id === selectedEmployee?.id)
+                  )
+                  return (
+                    <div key={conflit.id} className="space-y-2 text-sm border-t border-orange-200 pt-2 first:border-t-0 first:pt-0">
+                      <div className="text-orange-900">
+                        Assignée à <strong>{conflit.employe_nom}</strong> depuis le {formatDateFr(conflit.debut)}
+                        {conflit.fin ? ` jusqu'au ${formatDateFr(conflit.fin)}` : ' (sans fin)'}
+                      </div>
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          className="mt-1"
+                          checked={choix.action === 'liberer'}
+                          onChange={() => setConflictResolutions(prev => ({ ...prev, [conflit.id]: { action: 'liberer' } }))}
+                        />
+                        <span>
+                          Libérer {conflit.employe_nom} : plus de carte à partir du {formatDateFr(debutRetrait)}
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          className="mt-1"
+                          checked={choix.action === 'changer'}
+                          onChange={() => setConflictResolutions(prev => ({ ...prev, [conflit.id]: { action: 'changer', carte: '' } }))}
+                        />
+                        <span>
+                          Donner une autre carte à {conflit.employe_nom} à partir du {formatDateFr(debutRetrait)}
+                        </span>
+                      </label>
+                      {choix.action === 'changer' && (
+                        <Select
+                          value={choix.carte || ''}
+                          onValueChange={(value) => setConflictResolutions(prev => ({ ...prev, [conflit.id]: { action: 'changer', carte: value } }))}
+                        >
+                          <SelectTrigger className="glass-card border border-white/20 bg-white">
+                            <SelectValue placeholder={cartesLibres.length > 0 ? 'Choisir une carte libre' : 'Aucune carte libre sur cette période'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cartesLibres.map((card) => (
+                              <SelectItem key={card.numero_carte} value={card.numero_carte}>
+                                Carte {card.numero_carte}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
-                    <div className="text-xs text-blue-600 mt-1">
-                      Durée: {Math.ceil((new Date(assignmentEndDate).getTime() - new Date(assignmentStartDate).getTime()) / (1000 * 60 * 60 * 24))} jours
-                    </div>
-                  </>
-                ) : assignmentType === 'permanent' ? (
-                  <div className="flex items-center gap-2 text-sm text-green-700">
-                    <span className="font-medium">♾️ Assignation permanente:</span>
-                    <span>À partir du {assignmentStartDate}</span>
-                  </div>
-                ) : null}
+                  )
+                })}
+                <div className="text-xs text-orange-700">
+                  La consommation de la carte {selectedCardNumber} à partir du {formatDateFr(assignmentStartDate)} sera attribuée à {selectedEmployee?.prenom} {selectedEmployee?.nom}.
+                </div>
               </div>
             )}
-            
+
             <div>
               <Label className="text-sm font-medium">Commentaires (optionnel)</Label>
               <Textarea
@@ -9220,42 +9236,52 @@ La page va se recharger automatiquement...`)
                 rows={3}
               />
             </div>
-            
+
             {selectedCardNumber && (
               <div className="p-3 glass-card border border-white/20 rounded-lg">
                 <div className="text-sm text-gray-600 mb-2">Résumé de l'assignation :</div>
                 <div className="space-y-1 text-sm">
                   <div><strong>Employé :</strong> {selectedEmployee?.prenom} {selectedEmployee?.nom}</div>
                   <div><strong>Carte :</strong> {selectedCardNumber}</div>
-                  <div><strong>Date de début :</strong> {assignmentStartDate || 'Aujourd\'hui'}</div>
-                  <div><strong>Statut :</strong> Active</div>
+                  <div>
+                    <strong>Période :</strong>{' '}
+                    {assignmentStartDate ? `du ${formatDateFr(assignmentStartDate)}` : '—'}
+                    {assignmentType === 'temporary'
+                      ? (assignmentEndDate ? ` au ${formatDateFr(assignmentEndDate)} (restitution)` : '')
+                      : ' (sans fin)'}
+                  </div>
+                  {selectedEmployee?.numero_carte_actuelle &&
+                    selectedEmployee.numero_carte_actuelle !== selectedCardNumber &&
+                    !availableCards.find((c) => c.numero_carte === selectedCardNumber)?.peage &&
+                    assignmentStartDate && (
+                      <div className="text-gray-600">
+                        Sa carte actuelle {selectedEmployee.numero_carte_actuelle} sera rendue le {formatDateFr(assignmentStartDate)}
+                      </div>
+                    )}
                 </div>
               </div>
             )}
           </div>
-          
+
           <DialogFooter className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => {
-                setShowCardAssignmentModal(false)
-                setSelectedCardNumber('')
-                setAssignmentStartDate('')
-                setAssignmentEndDate('')
-                setAssignmentComments('')
-                setAssignmentType('temporary')
-              }}
+              onClick={closeCardAssignment}
               className="glass-card border border-white/20 hover:bg-white/10"
             >
               Annuler
             </Button>
             <Button
               onClick={assignCardToEmployee}
-              disabled={!selectedCardNumber || !assignmentStartDate || (assignmentType === 'temporary' && !assignmentEndDate)}
+              disabled={assignmentSubmitting || !selectedCardNumber || !assignmentStartDate || (assignmentType === 'temporary' && !assignmentEndDate)}
               className="gradient-primary text-white"
             >
               <CreditCard className="w-4 h-4 mr-2" />
-              {assignmentType === 'permanent' ? 'Assigner définitivement' : 'Assigner pour la période'}
+              {assignmentSubmitting
+                ? 'Enregistrement...'
+                : assignmentConflicts.length > 0
+                  ? 'Confirmer la réassignation'
+                  : assignmentType === 'permanent' ? 'Assigner définitivement' : 'Assigner pour la période'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -9273,7 +9299,7 @@ La page va se recharger automatiquement...`)
               Retirez la carte carburant de {selectedEmployee?.prenom} {selectedEmployee?.nom}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div className="p-4 glass-card border border-red-200 rounded-lg bg-red-50">
               <div className="flex items-center gap-2 mb-2">
@@ -9281,11 +9307,22 @@ La page va se recharger automatiquement...`)
                 <span className="font-semibold text-red-800">Attention</span>
               </div>
               <div className="text-sm text-red-700">
-                Cette action va retirer la carte carburant de cet employé. 
-                L'employé n'aura plus accès à aucune carte carburant après cette action.
+                À partir du {formatDateFr(unassignDate) || "jour choisi"}, {selectedEmployee?.prenom} {selectedEmployee?.nom} n'a plus
+                la carte {selectedEmployee?.numero_carte_actuelle || ''}. Sa consommation avant cette date lui reste attribuée.
               </div>
             </div>
-            
+
+            <div>
+              <Label className="text-sm font-medium">Date de restitution *</Label>
+              <Input
+                type="date"
+                value={unassignDate}
+                onChange={(e) => setUnassignDate(e.target.value)}
+                className="glass-card border border-white/20"
+                required
+              />
+            </div>
+
             <div>
               <Label className="text-sm font-medium">Raison de la désassignation (optionnel)</Label>
               <Textarea
@@ -9296,18 +9333,17 @@ La page va se recharger automatiquement...`)
                 rows={3}
               />
             </div>
-            
+
             <div className="p-3 glass-card border border-white/20 rounded-lg">
               <div className="text-sm text-gray-600 mb-2">Résumé de l'action :</div>
               <div className="space-y-1 text-sm">
                 <div><strong>Employé :</strong> {selectedEmployee?.prenom} {selectedEmployee?.nom}</div>
-                <div><strong>Action :</strong> Désassignation de la carte carburant</div>
-                <div><strong>Date :</strong> {new Date().toLocaleDateString('fr-FR')}</div>
-                <div><strong>Statut après :</strong> Aucune carte assignée</div>
+                <div><strong>Carte :</strong> {selectedEmployee?.numero_carte_actuelle || 'Toutes ses cartes'}</div>
+                <div><strong>Plus de carte à partir du :</strong> {formatDateFr(unassignDate)}</div>
               </div>
             </div>
           </div>
-          
+
           <DialogFooter className="flex gap-2">
             <Button
               variant="outline"
@@ -9315,6 +9351,7 @@ La page va se recharger automatiquement...`)
                 setShowUnassignModal(false)
                 setSelectedEmployee(null)
                 setUnassignComments('')
+                setUnassignDate('')
               }}
               className="glass-card border border-white/20 hover:bg-white/10"
             >
@@ -9322,6 +9359,7 @@ La page va se recharger automatiquement...`)
             </Button>
             <Button
               onClick={unassignCardFromEmployee}
+              disabled={!unassignDate}
               className="glass-card border border-red-200 hover:bg-red-500/20 text-red-700"
             >
               <X className="w-4 h-4 mr-2" />
@@ -9691,7 +9729,7 @@ La page va se recharger automatiquement...`)
                                 Carte {assignment.numero_carte}
                               </div>
                               <div className="text-sm text-gray-600">
-                                Montant: {assignment.montant_carte}€
+                                Consommation sur la période : {assignment.montant_carte}€ ({assignment.nombre_transactions || 0} transactions)
                               </div>
                             </div>
                           </div>
@@ -9701,9 +9739,10 @@ La page va se recharger automatiquement...`)
                                    assignment.statut_reel === 'terminee' ? 'destructive' : 'secondary'}
                             className="glass-card border border-white/20"
                           >
-                            {assignment.statut_reel === 'active' ? '🟢 Active' : 
-                             assignment.statut_reel === 'terminee' ? '🔴 Terminée' : 
-                             assignment.statut_reel === 'expiree' ? '🟠 Expirée' : 
+                            {assignment.statut_reel === 'active' ? '🟢 Active' :
+                             assignment.statut_reel === 'terminee' ? '🔴 Terminée' :
+                             assignment.statut_reel === 'expiree' ? '🟠 Expirée' :
+                             assignment.statut_reel === 'a_venir' ? '🔵 À venir' :
                              '🟡 ' + assignment.statut_reel}
                           </Badge>
                         </div>

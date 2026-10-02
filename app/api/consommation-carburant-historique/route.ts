@@ -13,30 +13,21 @@ export async function GET(request: NextRequest) {
 
     console.log('Paramètres reçus:', { date_debut, date_fin, employe_id, numero_carte })
 
-    // Requête pour récupérer les consommations avec l'historique des assignations
+    // Chaque transaction appartient à l'assignation qui couvre sa carte à sa date
+    // (une seule possible : les périodes ne se chevauchent pas en base)
     let consommationQuery = `
-      SELECT 
+      SELECT
         cc.*,
         ca.employe_id,
         e.nom as employe_nom,
         e.prenom as employe_prenom,
-        ca.date_assignation as assignation_debut,
-        ca.date_fin as assignation_fin_prevue,
-        ca.date_fin as assignation_fin_reelle,
-        CASE 
-          WHEN ca.date_fin IS NOT NULL THEN ca.date_fin
-          ELSE '2099-12-31'::DATE
-        END as assignation_fin_effective
+        to_char(ca.date_assignation, 'DD/MM/YYYY') as assignation_debut,
+        to_char(ca.date_fin, 'DD/MM/YYYY') as assignation_fin_prevue,
+        to_char(ca.date_fin, 'DD/MM/YYYY') as assignation_fin_reelle,
+        COALESCE(to_char(ca.date_fin, 'DD/MM/YYYY'), '2099-12-31') as assignation_fin_effective
       FROM carburant_consommation cc
-      LEFT JOIN carburant_assignations ca ON (
-        cc.numero_carte = ca.carte_id 
-        AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') >= ca.date_assignation 
-        AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') <= CASE 
-          WHEN ca.date_fin IS NOT NULL THEN ca.date_fin
-          ELSE '2099-12-31'::DATE
-        END
-        AND ca.statut = 'active'
-      )
+      LEFT JOIN carburant_assignations ca
+        ON ca.id = carburant_assignation_a_date(cc.numero_carte, carburant_parse_date(cc.date_livraison))
       LEFT JOIN employes e ON e.id = ca.employe_id
       WHERE 1=1
     `
@@ -46,14 +37,14 @@ export async function GET(request: NextRequest) {
 
     // Filtrer par date de début
     if (date_debut) {
-      consommationQuery += ` AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') >= $${paramIndex}`
+      consommationQuery += ` AND carburant_parse_date(cc.date_livraison) >= $${paramIndex}`
       params.push(date_debut)
       paramIndex++
     }
 
     // Filtrer par date de fin
     if (date_fin) {
-      consommationQuery += ` AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') <= $${paramIndex}`
+      consommationQuery += ` AND carburant_parse_date(cc.date_livraison) <= $${paramIndex}`
       params.push(date_fin)
       paramIndex++
     }
@@ -72,7 +63,7 @@ export async function GET(request: NextRequest) {
       paramIndex++
     }
 
-    consommationQuery += ` ORDER BY TO_DATE(cc.date_livraison, 'DD.MM.YYYY') DESC, cc.heure_livraison DESC`
+    consommationQuery += ` ORDER BY carburant_parse_date(cc.date_livraison) DESC, cc.heure_livraison DESC`
 
     console.log('Requête SQL:', consommationQuery)
     console.log('Paramètres:', params)

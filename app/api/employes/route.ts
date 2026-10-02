@@ -54,12 +54,14 @@ export async function GET() {
         ca.statut as statut_assignation
       FROM employes e
       LEFT JOIN LATERAL (
+        -- Carte carburant en cours aujourd'hui, sinon la prochaine à venir
         SELECT carte_id, date_assignation, date_fin, statut
         FROM carburant_assignations
-        WHERE employe_id = e.id 
-          AND statut = 'active'
+        WHERE employe_id = e.id
+          AND statut <> 'annulee'
+          AND NOT carburant_carte_peage(carte_id)
           AND (date_fin IS NULL OR date_fin > CURRENT_DATE)
-        ORDER BY date_assignation DESC
+        ORDER BY (date_assignation <= CURRENT_DATE) DESC, date_assignation
         LIMIT 1
       ) ca ON true
       LEFT JOIN carburant c ON ca.carte_id = c.numero_carte

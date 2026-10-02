@@ -30,22 +30,33 @@ export async function GET(request: NextRequest) {
     } else if (type === 'employe' && employe_id) {
       // Historique des assignations d'un employé
       const employeHistoriqueQuery = `
-        SELECT 
+        SELECT
           ca.carte_id as numero_carte,
           ca.date_assignation as date_debut,
           ca.date_fin as date_fin_prevue,
           ca.date_fin as date_fin_reelle,
           ca.statut,
-          '' as commentaires,
-          '0' as montant_carte,
-          CASE 
-            WHEN ca.date_fin IS NOT NULL THEN 'terminee'
-            WHEN ca.date_fin IS NOT NULL AND ca.date_fin < CURRENT_DATE THEN 'expiree'
+          COALESCE(ca.commentaires, '') as commentaires,
+          COALESCE(conso.montant, 0)::text as montant_carte,
+          COALESCE(conso.transactions, 0) as nombre_transactions,
+          CASE
+            WHEN ca.date_assignation > CURRENT_DATE THEN 'a_venir'
+            WHEN ca.date_fin IS NOT NULL AND ca.date_fin <= CURRENT_DATE THEN 'terminee'
             ELSE 'active'
           END as statut_reel,
           ca.created_at
         FROM carburant_assignations ca
+        LEFT JOIN LATERAL (
+          -- Consommation dont cette assignation est responsable
+          SELECT count(*) as transactions,
+                 round(sum(CASE WHEN replace(cc.ca_ttc, ',', '.') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                                THEN replace(cc.ca_ttc, ',', '.')::numeric ELSE 0 END), 2) as montant
+          FROM carburant_consommation cc
+          WHERE cc.numero_carte = ca.carte_id
+            AND carburant_assignation_a_date(cc.numero_carte, carburant_parse_date(cc.date_livraison)) = ca.id
+        ) conso ON true
         WHERE ca.employe_id = $1
+          AND ca.statut <> 'annulee'
         ORDER BY ca.date_assignation DESC
       `
       

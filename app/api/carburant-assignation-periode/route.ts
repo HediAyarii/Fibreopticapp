@@ -1,94 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/database'
+import { query, getClient } from '@/lib/database'
+import {
+  AssignationErreur,
+  assignerCarte,
+  commencer,
+  messageErreurBase,
+  verifierDate,
+  type Resolution
+} from '@/lib/carburant-assignations'
 
 export const dynamic = 'force-dynamic'
 
-// Créer une nouvelle assignation avec période
+// Créer une nouvelle assignation avec période.
+// Si la carte est déjà prise, renvoie 409 { code: 'conflit', conflits } : le client
+// renvoie alors la demande avec resolutions = { [assignation_id]: { action: 'liberer' }
+// | { action: 'changer', carte } } pour chaque titulaire en conflit.
 export async function POST(request: NextRequest) {
+  const client = await getClient()
   try {
-    const { 
-      numero_carte, 
-      employe_id, 
-      employe_nom, 
-      date_debut, 
-      date_fin_prevue, 
-      commentaires,
-      assignee_par,
-      force = false
-    } = await request.json()
+    const { numero_carte, employe_id, date_debut, date_fin_prevue, commentaires, resolutions } = await request.json()
 
-    if (!numero_carte || !employe_id || !employe_nom || !date_debut) {
-      return NextResponse.json({ 
-        error: 'Données manquantes: numero_carte, employe_id, employe_nom et date_debut sont requis' 
+    if (!numero_carte || !employe_id || !date_debut) {
+      return NextResponse.json({
+        error: 'Données manquantes: numero_carte, employe_id et date_debut sont requis'
       }, { status: 400 })
     }
 
-    // Vérifier les conflits d'assignation
-    const conflitsQuery = `
-      SELECT * FROM detecter_conflits_assignation($1, $2, $3, $4)
-    `
-    const conflits = await query(conflitsQuery, [
-      employe_id,  // employe_id en premier
-      numero_carte,  // carte_id en deuxième
-      date_debut,   // date_debut en troisième
-      date_fin_prevue  // date_fin en quatrième
-    ])
-
-    // Vérifier s'il y a vraiment un conflit
-    const hasConflict = conflits.rows.length > 0 && conflits.rows.some(row => row.conflit_existe === true)
-    
-    if (hasConflict && !force) {
-      return NextResponse.json({ 
-        error: 'Conflit détecté',
-        conflits: conflits.rows,
-        message: `La carte ${numero_carte} est déjà assignée pendant cette période`
-      }, { status: 409 })
+    const periode = {
+      debut: verifierDate(date_debut, 'Date de début'),
+      fin: date_fin_prevue ? verifierDate(date_fin_prevue, 'Date de fin') : null
     }
 
-    // Si force = true, désactiver les assignations en conflit
-    if (hasConflict && force) {
-      console.log(`🔄 Forçage d'assignation: désactivation des ${conflits.rows.length} conflits`)
-      
-      for (const conflit of conflits.rows.filter(row => row.conflit_existe === true)) {
-        await query(`
-          UPDATE carburant_assignations 
-          SET statut = 'inactive', 
-              date_fin = $1,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2
-        `, [date_debut, conflit.id])
-        
-        console.log(`✅ Assignation ${conflit.id} désactivée pour forcer la nouvelle assignation`)
-      }
-    }
-
-    // Créer l'assignation
-    const insertQuery = `
-      INSERT INTO carburant_assignations (
-        carte_id, employe_id, date_assignation, 
-        date_fin, statut
-      ) VALUES ($1, $2, $3, $4, 'active')
-      RETURNING *
-    `
-
-    const result = await query(insertQuery, [
-      numero_carte,
-      employe_id,
-      date_debut,
-      date_fin_prevue || null
-    ])
+    await commencer(client)
+    const resultat = await assignerCarte(client, {
+      carte: String(numero_carte).trim(),
+      employeId: parseInt(employe_id),
+      periode,
+      commentaires,
+      resolutions: resolutions as Record<string, Resolution> | undefined
+    })
+    await client.query('COMMIT')
 
     return NextResponse.json({
       success: true,
-      assignation: result.rows[0],
-      message: `Carte ${numero_carte} assignée à ${employe_nom} du ${date_debut}${date_fin_prevue ? ` au ${date_fin_prevue}` : ''}`
+      assignation_id: resultat.id,
+      actions: resultat.actions,
+      message: resultat.actions.join('\n')
     })
-
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    const erreur = error instanceof AssignationErreur ? error : messageErreurBase(error)
+    if (erreur) {
+      return NextResponse.json({ error: erreur.message, message: erreur.message, ...erreur.details }, { status: erreur.status })
+    }
     console.error('Erreur lors de l\'assignation de la carte:', error)
-    return NextResponse.json({ 
-      error: 'Erreur lors de l\'assignation de la carte' 
+    return NextResponse.json({
+      error: 'Erreur lors de l\'assignation de la carte'
     }, { status: 500 })
+  } finally {
+    client.release()
   }
 }
 

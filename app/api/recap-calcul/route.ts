@@ -275,9 +275,9 @@ export async function GET(request: NextRequest) {
           SUM(COALESCE(CAST(REPLACE(cc.ca_ttc, ',', '.') AS DECIMAL(10,2)), 0)) as consommation_totale_carburant,
           AVG(COALESCE(CAST(REPLACE(cc.ca_ttc, ',', '.') AS DECIMAL(10,2)), 0)) as consommation_moyenne_carburant
         FROM employes e
-        INNER JOIN carburant_assignations ca ON e.id = ca.employe_id
-        INNER JOIN carburant_consommation cc ON ca.carte_id = cc.numero_carte
-        WHERE cc.ca_ttc IS NOT NULL 
+        -- employe_assigné = titulaire de la carte à la date de la transaction (tenu à jour en base)
+        INNER JOIN carburant_consommation cc ON cc."employe_assigné" = e.id
+        WHERE cc.ca_ttc IS NOT NULL
           AND cc.ca_ttc != ''
           AND cc.ca_ttc != '0'
           AND cc.ca_ttc ~ '^[0-9]'

@@ -1,114 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/database'
+import { getPool, getClient } from '@/lib/database'
+import {
+  AssignationErreur,
+  commencer,
+  libererCarte,
+  messageErreurBase,
+  verifierDate
+} from '@/lib/carburant-assignations'
 
 export const dynamic = 'force-dynamic'
 
+// Retire la carte à l'employé à partir de date_fin (incluse : la consommation de
+// ce jour ne lui est plus attribuée). Par défaut : aujourd'hui.
 export async function POST(request: NextRequest) {
+  const client = await getClient()
   try {
-    const data = await request.json()
-    const { employe_id, employe_nom, numero_carte, commentaires } = data
-    
-    console.log('🔄 Début de la désassignation de carte pour l\'employé:', employe_nom)
-    
+    const { employe_id, numero_carte, date_fin, commentaires } = await request.json()
+
     if (!employe_id) {
       return NextResponse.json(
         { error: 'ID de l\'employé requis' },
         { status: 400 }
       )
     }
-    
-    const pool = getPool()
-    
-    // Vérifier si l'employé a une carte assignée
-    const checkQuery = `
-      SELECT id, carte_id, statut, date_assignation
-      FROM carburant_assignations 
-      WHERE employe_id = $1 AND statut = 'active'
-    `
-    
-    const checkResult = await pool.query(checkQuery, [employe_id])
-    
-    if (checkResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'Aucune carte assignée à cet employé' },
-        { status: 404 }
-      )
-    }
-    
-    const currentAssignment = checkResult.rows[0]
-    const cardToUnassign = numero_carte || currentAssignment.carte_id
-    
-    // Vérifier si la carte spécifiée correspond à l'assignation actuelle
-    if (numero_carte && numero_carte !== currentAssignment.carte_id) {
-      return NextResponse.json(
-        { error: `L'employé n'a pas la carte ${numero_carte} assignée` },
-        { status: 400 }
-      )
-    }
-    
-    // Désactiver l'assignation actuelle
-    const unassignComment = commentaires 
-      ? `Désassignation le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')} | ${commentaires}`
-      : `Désassignation le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`
-    
-    const unassignQuery = `
-      UPDATE carburant_assignations 
-      SET statut = 'inactive', 
-          date_fin = NOW(),
-          commentaires = CASE 
-            WHEN commentaires IS NULL OR commentaires = '' 
-            THEN $2
-            ELSE commentaires || ' | ' || $2
-          END,
-          updated_at = NOW()
-      WHERE employe_id = $1 AND statut = 'active'
-      RETURNING *
-    `
-    
-    const startTime = Date.now()
-    const result = await pool.query(unassignQuery, [employe_id, unassignComment])
-    const duration = Date.now() - startTime
-    
-    console.log(`📊 Unassign query executed in ${duration}ms`)
-    
-    if (result.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'Erreur lors de la désassignation' },
-        { status: 500 }
-      )
-    }
-    
-    const unassignedAssignment = result.rows[0]
-    
-    // Retirer l'assignation de la table carburant_consommation pour cette carte
-    const removeAssignmentQuery = `
-      UPDATE carburant_consommation 
-      SET employe_assigné = NULL
-      WHERE numero_carte = $1
-    `
-    
-    await pool.query(removeAssignmentQuery, [cardToUnassign])
-    console.log(`📊 Assignation retirée de carburant_consommation pour carte ${cardToUnassign}`)
-    
+
+    const dateFin = date_fin
+      ? verifierDate(date_fin, 'Date de fin')
+      : new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' })
+
+    await commencer(client)
+    const resultat = await libererCarte(client, {
+      employeId: parseInt(employe_id),
+      carte: numero_carte ? String(numero_carte) : null,
+      dateFin,
+      commentaires
+    })
+    await client.query('COMMIT')
+
     return NextResponse.json({
       success: true,
-      message: `Carte ${cardToUnassign} désassignée avec succès de ${employe_nom}`,
-      unassigned_assignment: unassignedAssignment,
-      summary: {
-        employe_id: employe_id,
-        employe_nom: employe_nom,
-        numero_carte: cardToUnassign,
-        date_desassignation: new Date().toISOString(),
-        duree_execution_ms: duration
-      }
+      actions: resultat.actions,
+      message: resultat.actions.join('\n')
     })
-    
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    const erreur = error instanceof AssignationErreur ? error : messageErreurBase(error)
+    if (erreur) {
+      return NextResponse.json({ error: erreur.message, ...erreur.details }, { status: erreur.status })
+    }
     console.error('❌ Erreur lors de la désassignation de la carte:', error)
     return NextResponse.json(
       { error: 'Erreur lors de la désassignation de la carte' },
       { status: 500 }
     )
+  } finally {
+    client.release()
   }
 }
 

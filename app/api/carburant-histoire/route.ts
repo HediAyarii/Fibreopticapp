@@ -100,6 +100,7 @@ export async function GET(request: NextRequest) {
         FROM carburant_assignations ca
         LEFT JOIN employes e ON ca.employe_id = e.id
         LEFT JOIN carburant c ON ca.carte_id = c.numero_carte
+        WHERE ca.statut <> 'annulee'
         ORDER BY ca.carte_id, ca.date_assignation
       ),
       consommation_per_period AS (
@@ -117,22 +118,23 @@ export async function GET(request: NextRequest) {
           cm.last_update,
           COALESCE(SUM(
             CASE 
-              WHEN TO_DATE(cc.date_livraison, 'DD.MM.YYYY') >= cm.date_assignation 
-               AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') <= cm.date_fin_effective
+              WHEN cc.assignation_id = cm.assignation_id
               THEN COALESCE(CAST(cc.ca_ttc AS DECIMAL), 0)
               ELSE 0
             END
           ), 0) as consommation_periode,
           COUNT(
             CASE 
-              WHEN TO_DATE(cc.date_livraison, 'DD.MM.YYYY') >= cm.date_assignation 
-               AND TO_DATE(cc.date_livraison, 'DD.MM.YYYY') <= cm.date_fin_effective
+              WHEN cc.assignation_id = cm.assignation_id
               THEN 1
               ELSE NULL
             END
           ) as nombre_transactions_periode
         FROM card_movements cm
-        LEFT JOIN carburant_consommation cc ON cm.carte_id = cc.numero_carte
+        LEFT JOIN (
+          SELECT c2.*, carburant_assignation_a_date(c2.numero_carte, carburant_parse_date(c2.date_livraison)) as assignation_id
+          FROM carburant_consommation c2
+        ) cc ON cm.carte_id = cc.numero_carte
         GROUP BY cm.assignation_id, cm.carte_id, cm.employe_id, 
                  cm.employe_nom_complet, cm.employe_prenom_complet, cm.matricule,
                  cm.date_assignation, cm.date_fin_effective, cm.mouvement_date,
