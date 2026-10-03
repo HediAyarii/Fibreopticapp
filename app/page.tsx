@@ -64,6 +64,7 @@ import KPIProductionSection from "@/components/KPIProductionSection"
 import ReclamationsTechniques from "@/components/ReclamationsTechniques"
 import { AbsencesManager } from "@/components/AbsencesManager"
 import { InterventionsSansCloture } from "@/components/InterventionsSansCloture"
+import { ReassignTechnicienInterventions } from "@/components/ReassignTechnicienInterventions"
 import ReclaFreeManager from "@/components/ReclaFreeManager"
 import FttoManager from "@/components/FttoManager"
 import AutoSyncTotalGenere from "@/components/AutoSyncTotalGenere"
@@ -481,7 +482,7 @@ export default function EmployeeTracker() {
   const [materialPage, setMaterialPage] = useState<number>(1)
   const [materialItemsPerPage] = useState<number>(20)
   const [penalties, setPenalties] = useState<any[]>([])
-  const [interventionsSubTab, setInterventionsSubTab] = useState<'toutes' | 'sans-cloture'>('toutes')
+  const [interventionsSubTab, setInterventionsSubTab] = useState<'toutes' | 'sans-cloture' | 'reattribuer'>('toutes')
   const [penaltyFilterDateDebut, setPenaltyFilterDateDebut] = useState('')
   const [penaltyFilterDateFin, setPenaltyFilterDateFin] = useState('')
   const [penaltyFilterSearch, setPenaltyFilterSearch] = useState('')
@@ -5014,9 +5015,19 @@ La page va se recharger automatiquement...`)
                  >
                    <AlertCircle className="w-4 h-4 mr-2" />Sans date de clôture (à classer)
                  </Button>
+                 {isAdmin && (
+                   <Button
+                     variant={interventionsSubTab === 'reattribuer' ? 'default' : 'outline'}
+                     size="sm"
+                     onClick={() => setInterventionsSubTab('reattribuer')}
+                   >
+                     <UserCog className="w-4 h-4 mr-2" />Réattribuer technicien
+                   </Button>
+                 )}
                </div>
 
                {interventionsSubTab === 'sans-cloture' && <InterventionsSansCloture />}
+               {interventionsSubTab === 'reattribuer' && isAdmin && <ReassignTechnicienInterventions />}
 
                {interventionsSubTab === 'toutes' && (
                <Card className="glass-card border border-white/20 hover-lift">
